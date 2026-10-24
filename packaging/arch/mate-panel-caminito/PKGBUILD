@@ -26,7 +26,7 @@ _basever=1.28.7
 # weekly job knows this source by its -stock name, and leaves it at the tag.
 _stocktag=v1.28.7
 pkgver=1.28.7.r111.g58ac6c1
-pkgrel=13
+pkgrel=14
 pkgdesc="The MATE Panel, with Caminito's carried patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
@@ -67,6 +67,9 @@ conflicts=("${_pkgname}" 'mate-panel-gtk3')
 # before a switch to a lower one (240).
 # The fourteenth is an upstream fix, with no gate: the scroll wheel over the workspace
 # switcher's buttons changes the workspace, where it did nothing on Wayland (240).
+# The fifteenth is active only while org.mate.Caminito has an owner: a panel has a Floating
+# property, beside Autohide in its properties, which stands it off its edge through the
+# layer-shell margin, with rounded corners (223).
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
 # makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
 _patches="file://$(realpath -m "$startdir/../../patches/mate-panel")"
@@ -86,7 +89,8 @@ source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         "$_patches/0011-properties-Choose-the-panel-s-display-under-Caminito.patch"
         "$_patches/0012-wayland-workspace-Show-the-workspaces-of-the-panel-s.patch"
         "$_patches/0013-wayland-workspace-Press-the-button-of-the-group-s-ac.patch"
-        "$_patches/0014-wayland-workspace-Take-the-scroll-wheel-over-the-but.patch")
+        "$_patches/0014-wayland-workspace-Take-the-scroll-wheel-over-the-but.patch"
+        "$_patches/0015-toplevel-Float-a-panel-off-its-edge-under-Caminito.patch")
 sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '030f76e59b0aa2880167968770a319e14bb91e38d77873f8ceab9718873da5ce'
             'SKIP'
@@ -103,7 +107,8 @@ sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '95d1fe862d03d95b74f0584d43738c0559598b0a92924dbfc3edaf2f911b39c7'
             'a34da48b20d86529e5b3ce18f9e2e03d66c0d050613514ece1d32502992cdf7c'
             'f0d9f14c12a8b85f7065bd24a7808365abf53a6b17fe818e5b72c9db9f02309b'
-            '2be33d3f7f79e14b5d96e3a72ceff13d2f94b1f9da50aab503284a03247dd04f')
+            '2be33d3f7f79e14b5d96e3a72ceff13d2f94b1f9da50aab503284a03247dd04f'
+            'e8fac76477bf91c516645acd0ef3904303c193aafae910dd65836a412a4f67a9')
 
 pkgver() {
     cd "${_pkgname}"

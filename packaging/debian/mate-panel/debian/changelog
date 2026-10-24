@@ -1,3 +1,10 @@
+mate-panel (1.29.0~git20260925.58ac6c1-0caminito4) resolute; urgency=medium
+
+  * Take the fifteenth carried patch: a panel has a Floating property, which
+    stands it off its edge, with rounded corners.
+
+ -- jpablo <jpablolassala@gmail.com>  Sat, 24 Oct 2026 00:00:00 +0000
+
 mate-panel (1.29.0~git20260925.58ac6c1-0caminito3) resolute; urgency=medium
 
   * Take the thirteenth patch, an upstream fix: the workspace switcher shows

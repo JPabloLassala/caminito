@@ -52,6 +52,7 @@ Patch111:      0011-properties-Choose-the-panel-s-display-under-Caminito.patch
 Patch112:      0012-wayland-workspace-Show-the-workspaces-of-the-panel-s.patch
 Patch113:      0013-wayland-workspace-Press-the-button-of-the-group-s-ac.patch
 Patch114:      0014-wayland-workspace-Take-the-scroll-wheel-over-the-but.patch
+Patch115:      0015-toplevel-Float-a-panel-off-its-edge-under-Caminito.patch
 
 Requires:      %{name}-libs%{?_isa} = %{version}-%{release}
 #for fish

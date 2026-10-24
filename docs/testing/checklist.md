@@ -3690,3 +3690,27 @@ They are the developer's to run.
 - **Debug tool:** `journalctl -t caminito` for `forcing … to quit` and `can't force … to
   quit`; `WAYLAND_DEBUG=1` on a native app for `xdg_wm_base.ping` and `pong`, and
   `xprop WM_PROTOCOLS _NET_WM_PID WM_CLIENT_MACHINE` on an X11 window.
+
+### A floating panel stands off its edge
+
+- **Milestone:** the Dock applet's, after M9 (CMN-223).
+- **Steps:**
+  1. With `mate-panel-caminito` at `pkgrel` 14 or later, log into *MATE on Caminito*. Right-click
+     the bottom panel, choose *Properties*, and tick *Floating*.
+  2. Open a window and maximise it. Then untick *Expand* in the panel's properties, and
+     close the dialog.
+  3. Do the same to a panel at the left edge. Add one with *New Panel* and set its orientation
+     to *Left* if there is none.
+  4. Untick *Floating* in each.
+  5. Log into *MATE on Wayfire* or an X11 *MATE* session, if there is one, and open the
+     panel's properties.
+- **Expected:** in step 1 the panel stands 8 pixels off the bottom edge, with rounded corners
+  and no line along its top, and a maximised window ends at the panel's top edge, not behind
+  it and not short of it. In step 2 the panel shrinks to its applets and stays centred along
+  the edge, still 8 pixels off it. In step 3 the left panel stands off the left edge in the same way, centred
+  from top to bottom. In step 4 each panel goes back to its edge, with square corners and
+  its frame, and the work area grows back. In step 5 *Floating* isn't in the properties, and
+  a panel whose `floating` key is set looks as it did (223).
+- **Debug tool:** each output's `layer_surfaces` (their `geometry` and `exclusive_zone`) and
+  `work_area` in `DumpState`, and `dconf watch /org/mate/panel/toplevels/` for the `floating`
+  key.

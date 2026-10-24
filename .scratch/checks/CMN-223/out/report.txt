@@ -1,0 +1,16 @@
+01-floating: output winit 1280x800, work area 1216x736 at 64,0
+01-floating:   panel 132x56 at 574,736, exclusive zone 56, gaps to the output's edges {'left': 574, 'top': 736, 'right': 574, 'bottom': 8}
+01-floating:   panel 56x100 at 8,318, exclusive zone 56, gaps to the output's edges {'left': 8, 'top': 318, 'right': 1216, 'bottom': 382}
+01-floating:   window 'CMN-223 test window' 1216x709 at 64,27
+02-not-floating: output winit 1280x800, work area 1224x744 at 56,0
+02-not-floating:   panel 132x56 at 574,744, exclusive zone 56, gaps to the output's edges {'left': 574, 'top': 744, 'right': 574, 'bottom': 0}
+02-not-floating:   panel 56x100 at 0,322, exclusive zone 56, gaps to the output's edges {'left': 0, 'top': 322, 'right': 1224, 'bottom': 378}
+02-not-floating:   window 'CMN-223 test window' 1224x717 at 56,27
+03-floating-expanded: output winit 1280x800, work area 1224x736 at 56,0
+03-floating-expanded:   panel 1280x56 at 0,736, exclusive zone 56, gaps to the output's edges {'left': 0, 'top': 736, 'right': 0, 'bottom': 8}
+03-floating-expanded:   panel 56x100 at 0,318, exclusive zone 56, gaps to the output's edges {'left': 0, 'top': 318, 'right': 1224, 'bottom': 382}
+03-floating-expanded:   window 'CMN-223 test window' 1224x709 at 56,27
+04-no-caminito: output winit 1280x800, work area 1224x744 at 56,0
+04-no-caminito:   panel 161x56 at 560,744, exclusive zone 56, gaps to the output's edges {'left': 560, 'top': 744, 'right': 559, 'bottom': 0}
+04-no-caminito:   panel 56x100 at 0,322, exclusive zone 56, gaps to the output's edges {'left': 0, 'top': 322, 'right': 1224, 'bottom': 378}
+04-no-caminito:   window 'CMN-223 test window' 1224x717 at 56,27

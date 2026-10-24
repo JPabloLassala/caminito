@@ -1,0 +1,455 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Sat, 24 Oct 2026 12:00:00 -0300
+Subject: [PATCH] toplevel: Float a panel off its edge under Caminito
+
+A panel could only be lined up with its screen edge, which Plasma's floating
+panel isn't.
+
+A panel has a Floating property, a key of its schema, in its properties
+below Autohide. Under Caminito, the Wayland compositor, a floating panel
+stands off the edge it is at by a gap of 8 pixels, which is the layer-shell
+margin of that edge, and its corners are rounded, with the frame along its
+edge left out. The exclusive zone is the panel's size as before: the
+compositor counts the margin in it, so a maximized window ends where the
+panel does, not behind it. A panel that isn't expanded keeps being centred
+along its edge, since it is anchored to the edge alone, and an expanded one
+reaches both of its sides.
+
+Without an owner of org.mate.Caminito, which is X11 and any other Wayland
+compositor, and for a drawer, the key does nothing and the properties have
+no row for it.
+---
+ data/org.mate.panel.toplevel.gschema.xml.in |   5 +
+ mate-panel/panel-multimonitor.c             |  15 +++
+ mate-panel/panel-multimonitor.h             |   1 +
+ mate-panel/panel-profile.c                  |   3 +
+ mate-panel/panel-profile.h                  |   3 +
+ mate-panel/panel-properties-dialog.c        |  40 +++++++
+ mate-panel/panel-schemas.h                  |   1 +
+ mate-panel/panel-toplevel.c                 | 116 +++++++++++++++++++-
+ mate-panel/panel-toplevel.h                 |   4 +
+ mate-panel/wayland-backend.c                |  18 +++
+ 10 files changed, 204 insertions(+), 2 deletions(-)
+
+diff --git a/data/org.mate.panel.toplevel.gschema.xml.in b/data/org.mate.panel.toplevel.gschema.xml.in
+index 25e712c1..4b80fef9 100644
+--- a/data/org.mate.panel.toplevel.gschema.xml.in
++++ b/data/org.mate.panel.toplevel.gschema.xml.in
+@@ -65,6 +65,11 @@
+       <summary>Automatically hide panel into corner</summary>
+       <description>If true, the panel is automatically hidden into a corner of the screen when the pointer leaves the panel area. Moving the pointer to that corner again will cause the panel to re-appear.</description>
+     </key>
++    <key name="floating" type="b">
++      <default>false</default>
++      <summary>Float the panel off the screen edge</summary>
++      <description>If true, the panel stands off the edge of the screen it is at, with rounded corners, and the space it reserves counts the gap. This is only done under Caminito, the Wayland compositor, and is ignored anywhere else.</description>
++    </key>
+     <key name="enable-animations" type="b">
+       <default>true</default>
+       <summary>Enable animations</summary>
+diff --git a/mate-panel/panel-multimonitor.c b/mate-panel/panel-multimonitor.c
+index de556bae..8856baef 100644
+--- a/mate-panel/panel-multimonitor.c
++++ b/mate-panel/panel-multimonitor.c
+@@ -94,6 +94,21 @@ panel_multimonitor_get_caminito_primary (void)
+ 	return connector;
+ }
+ 
++/* Whether Caminito owns its name, which is the only compositor a carried patch's
++ * Caminito-only behaviour turns on for. */
++gboolean
++panel_multimonitor_is_caminito (void)
++{
++	char     *connector;
++	gboolean  owned;
++
++	connector = panel_multimonitor_get_caminito_primary ();
++	owned = connector != NULL;
++	g_free (connector);
++
++	return owned;
++}
++
+ #ifdef HAVE_X11
+ #ifdef HAVE_RANDR
+ static gboolean
+diff --git a/mate-panel/panel-multimonitor.h b/mate-panel/panel-multimonitor.h
+index 6f33e157..a90b2fe0 100644
+--- a/mate-panel/panel-multimonitor.h
++++ b/mate-panel/panel-multimonitor.h
+@@ -40,6 +40,7 @@ int	panel_multimonitor_width                 (int monitor);
+ int	panel_multimonitor_height                (int monitor);
+ 
+ GdkMonitor *panel_multimonitor_get_caminito_monitor (int monitor);
++gboolean    panel_multimonitor_is_caminito           (void);
+ 
+ int	panel_multimonitor_locate_widget_monitor (GtkWidget *widget);
+ int	panel_multimonitor_get_monitor_at_point  (int x, int y);
+diff --git a/mate-panel/panel-profile.c b/mate-panel/panel-profile.c
+index 512a18b3..95adf301 100644
+--- a/mate-panel/panel-profile.c
++++ b/mate-panel/panel-profile.c
+@@ -351,6 +351,7 @@ panel_profile_get_toplevel_orientation (PanelToplevel *toplevel)
+ TOPLEVEL_GET_SET_FUNCS ("size",               toplevel,   int,     size,           int)
+ TOPLEVEL_GET_SET_FUNCS ("expand",             toplevel,   boolean, expand,         gboolean)
+ TOPLEVEL_GET_SET_FUNCS ("auto-hide",          toplevel,   boolean, auto_hide,      gboolean)
++TOPLEVEL_GET_SET_FUNCS ("floating",           toplevel,   boolean, floating,       gboolean)
+ TOPLEVEL_GET_SET_FUNCS ("enable-buttons",     toplevel,   boolean, enable_buttons, gboolean)
+ TOPLEVEL_GET_SET_FUNCS ("enable-arrows",      toplevel,   boolean, enable_arrows,  gboolean)
+ 
+@@ -775,6 +776,7 @@ panel_profile_toplevel_change_notify (GSettings *settings,
+ 	else UPDATE_CENTERED ("x-centered", x, x_right)
+ 	else UPDATE_CENTERED ("y-centered", y, y_bottom)
+ 	else UPDATE_BOOL ("auto-hide", auto_hide)
++	else UPDATE_BOOL ("floating", floating)
+ 	else UPDATE_BOOL ("enable-animations", animate)
+ 	else UPDATE_BOOL ("enable-buttons", enable_buttons)
+ 	else UPDATE_BOOL ("enable-arrows", enable_arrows)
+@@ -1149,6 +1151,7 @@ panel_profile_load_toplevel (const char *toplevel_id)
+ 	GET_ENUM ("orientation", orientation);
+ 	GET_INT ("size", size);
+ 	GET_BOOL ("auto-hide", auto_hide);
++	GET_BOOL ("floating", floating);
+ 	GET_BOOL ("enable-animations", animate);
+ 	GET_BOOL ("enable-buttons", enable_buttons);
+ 	GET_BOOL ("enable-arrows", enable_arrows);
+diff --git a/mate-panel/panel-profile.h b/mate-panel/panel-profile.h
+index 152603e2..442cfe3a 100644
+--- a/mate-panel/panel-profile.h
++++ b/mate-panel/panel-profile.h
+@@ -96,6 +96,9 @@ gboolean    panel_profile_get_toplevel_expand         (PanelToplevel *toplevel);
+ void        panel_profile_set_toplevel_auto_hide      (PanelToplevel *toplevel,
+ 						       gboolean       auto_hide);
+ gboolean    panel_profile_get_toplevel_auto_hide      (PanelToplevel *toplevel);
++void        panel_profile_set_toplevel_floating       (PanelToplevel *toplevel,
++						       gboolean       floating);
++gboolean    panel_profile_get_toplevel_floating       (PanelToplevel *toplevel);
+ 
+ void        panel_profile_set_toplevel_enable_buttons (PanelToplevel *toplevel,
+ 						       gboolean       enable_buttons);
+diff --git a/mate-panel/panel-properties-dialog.c b/mate-panel/panel-properties-dialog.c
+index bc7e8875..efd76ba6 100644
+--- a/mate-panel/panel-properties-dialog.c
++++ b/mate-panel/panel-properties-dialog.c
+@@ -66,6 +66,7 @@ typedef struct {
+ 	GtkWidget     *icon_label;
+   	GtkWidget     *expand_toggle;
+ 	GtkWidget     *autohide_toggle;
++	GtkWidget     *floating_toggle;
+ 	GtkWidget     *hidebuttons_toggle;
+ 	GtkWidget     *arrows_toggle;
+ 	GtkWidget     *default_radio;
+@@ -431,6 +432,37 @@ panel_properties_dialog_setup_display_combo (PanelPropertiesDialog *dialog)
+ 	panel_properties_dialog_update_display_combo (dialog);
+ }
+ 
++static void
++panel_properties_dialog_floating_toggled (PanelPropertiesDialog *dialog,
++					  GtkToggleButton       *floating_toggle)
++{
++	panel_profile_set_toplevel_floating (dialog->toplevel,
++					     gtk_toggle_button_get_active (floating_toggle));
++}
++
++/* A panel stands off its edge only under Caminito, so the toggle is added there
++ * alone, below Autohide. A drawer has none. */
++static void
++panel_properties_dialog_setup_floating_toggle (PanelPropertiesDialog *dialog)
++{
++	dialog->floating_toggle = gtk_check_button_new_with_mnemonic (_("_Floating"));
++	gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (dialog->floating_toggle),
++				      panel_profile_get_toplevel_floating (dialog->toplevel));
++	g_signal_connect_swapped (dialog->floating_toggle, "toggled",
++				  G_CALLBACK (panel_properties_dialog_floating_toggled),
++				  dialog);
++
++	gtk_box_pack_start (GTK_BOX (dialog->general_vbox), dialog->floating_toggle,
++			    FALSE, FALSE, 0);
++	gtk_box_reorder_child (GTK_BOX (dialog->general_vbox), dialog->floating_toggle, 4);
++	gtk_widget_show (dialog->floating_toggle);
++
++	if (! panel_profile_key_is_writable (dialog->toplevel, PANEL_TOPLEVEL_FLOATING_KEY)) {
++		gtk_widget_set_sensitive (dialog->floating_toggle, FALSE);
++		gtk_widget_show (dialog->writability_warn_general);
++	}
++}
++
+ static void
+ panel_properties_dialog_size_changed (PanelPropertiesDialog *dialog,
+ 				      GtkSpinButton         *spin_button)
+@@ -891,6 +923,10 @@ panel_properties_dialog_toplevel_notify (GSettings             *settings,
+ 		panel_properties_dialog_update_orientation (dialog, g_settings_get_enum (settings, key));
+ 	else if (!strcmp (key, "size"))
+ 		panel_properties_dialog_update_size (dialog, g_settings_get_int (settings, key));
++	else if (!strcmp (key, "floating")) {
++		if (dialog->floating_toggle != NULL)
++			UPDATE_TOGGLE ("floating", floating_toggle)
++	}
+ 	else UPDATE_TOGGLE ("expand",         expand_toggle)
+ 	else UPDATE_TOGGLE ("auto-hide",      autohide_toggle)
+ 	else UPDATE_TOGGLE ("enable-buttons", hidebuttons_toggle)
+@@ -1153,6 +1189,10 @@ panel_properties_dialog_new (PanelToplevel *toplevel)
+ 	if (!panel_toplevel_get_is_attached (dialog->toplevel))
+ 		panel_properties_dialog_setup_display_combo (dialog);
+ 
++	if (!panel_toplevel_get_is_attached (dialog->toplevel) &&
++	    panel_multimonitor_is_caminito ())
++		panel_properties_dialog_setup_floating_toggle (dialog);
++
+ 	panel_toplevel_push_autohide_disabler (dialog->toplevel);
+ 	panel_widget_register_open_dialog (panel_toplevel_get_panel_widget (dialog->toplevel),
+ 					   dialog->properties_dialog);
+diff --git a/mate-panel/panel-schemas.h b/mate-panel/panel-schemas.h
+index 6b22e2a7..c3229f87 100644
+--- a/mate-panel/panel-schemas.h
++++ b/mate-panel/panel-schemas.h
+@@ -31,6 +31,7 @@
+ #define PANEL_TOPLEVEL_X_CENTERED_KEY        "x-centered"
+ #define PANEL_TOPLEVEL_Y_CENTERED_KEY        "y-centered"
+ #define PANEL_TOPLEVEL_AUTO_HIDE_KEY         "auto-hide"
++#define PANEL_TOPLEVEL_FLOATING_KEY          "floating"
+ #define PANEL_TOPLEVEL_ENABLE_ANIMATIONS_KEY "enable-animations"
+ #define PANEL_TOPLEVEL_ENABLE_BUTTONS_KEY    "enable-buttons"
+ #define PANEL_TOPLEVEL_ENABLE_ARROWS_KEY     "enable-arrows"
+diff --git a/mate-panel/panel-toplevel.c b/mate-panel/panel-toplevel.c
+index 8a6fdabd..495ec805 100644
+--- a/mate-panel/panel-toplevel.c
++++ b/mate-panel/panel-toplevel.c
+@@ -66,6 +66,9 @@
+ #endif
+ 
+ #define DEFAULT_SIZE              48
++/* A floating panel's gap to its edge and the radius of its corners, in pixels. */
++#define PANEL_FLOATING_MARGIN     8
++#define PANEL_FLOATING_RADIUS     12
+ #define DEFAULT_AUTO_HIDE_SIZE    1
+ #define DEFAULT_HIDE_DELAY        300
+ #define DEFAULT_UNHIDE_DELAY      100
+@@ -173,6 +176,9 @@ struct _PanelToplevelPrivate {
+ 	gint			n_autohide_disablers;
+ 
+ 	guint                   auto_hide : 1;
++	/* Stands off the edge, as the Floating property says. Not the same as
++	 * floating below, which is a panel that isn't lined up with an edge. */
++	guint                   floating_panel : 1;
+ 	guint                   animate : 1;
+ 	guint                   buttons_enabled : 1;
+ 	guint                   arrows_enabled : 1;
+@@ -251,6 +257,7 @@ enum {
+ 	PROP_Y_CENTERED,
+ 	PROP_MONITOR,
+ 	PROP_AUTOHIDE,
++	PROP_FLOATING,
+ 	PROP_HIDE_DELAY,
+ 	PROP_UNHIDE_DELAY,
+ 	PROP_AUTOHIDE_SIZE,
+@@ -1632,6 +1639,10 @@ static gboolean panel_toplevel_update_struts(PanelToplevel* toplevel, gboolean e
+ 		else
+ 			exclusive = strut;
+ 
++		/* A floating panel stands off the edge by its layer-shell margin,
++		 * which the compositor counts in the zone: maximized windows stop
++		 * short of the panel, not behind it. Adding the gap here would
++		 * count it twice. */
+ 		wayland_panel_toplevel_update_exclusive_zone (toplevel, exclusive);
+ 	}
+ #endif /* HAVE_WAYLAND */
+@@ -3426,7 +3437,7 @@ panel_toplevel_size_allocate (GtkWidget     *widget,
+ 	set_background_region (toplevel);
+ }
+ 
+-static gboolean panel_toplevel_draw(GtkWidget* widget, cairo_t* cr)
++static gboolean panel_toplevel_draw_panel(GtkWidget* widget, cairo_t* cr)
+ {
+ 	PanelToplevel*   toplevel = (PanelToplevel*) widget;
+ 	PanelFrameEdge   edges;
+@@ -3444,7 +3455,9 @@ static gboolean panel_toplevel_draw(GtkWidget* widget, cairo_t* cr)
+ 		retval = GTK_WIDGET_CLASS (panel_toplevel_parent_class)->draw (widget, cr);
+ 
+ 	edges = toplevel->priv->edges;
+-	panel_frame_draw (widget, cr, edges);
++	/* A floating panel stands off the edge the frame is drawn along. */
++	if (panel_toplevel_get_floating_margin (toplevel) == 0)
++		panel_frame_draw (widget, cr, edges);
+ 
+ 	if (toplevel->priv->expand ||
+ 	    toplevel->priv->buttons_enabled ||
+@@ -3524,6 +3537,40 @@ static gboolean panel_toplevel_draw(GtkWidget* widget, cairo_t* cr)
+ 	return retval;
+ }
+ 
++/* A floating panel has rounded corners: what was drawn outside them is erased,
++ * the background that GDK paints before the draw signal too. */
++static gboolean panel_toplevel_draw(GtkWidget* widget, cairo_t* cr)
++{
++	PanelToplevel *toplevel = (PanelToplevel *) widget;
++	gboolean       retval;
++	double         width, height, radius;
++
++	retval = panel_toplevel_draw_panel (widget, cr);
++
++	if (!gtk_widget_is_drawable (widget) ||
++	    panel_toplevel_get_floating_margin (toplevel) == 0)
++		return retval;
++
++	width  = gtk_widget_get_allocated_width (widget);
++	height = gtk_widget_get_allocated_height (widget);
++	radius = MIN (PANEL_FLOATING_RADIUS, MIN (width, height) / 2);
++
++	cairo_save (cr);
++	cairo_set_operator (cr, CAIRO_OPERATOR_DEST_OUT);
++	cairo_set_fill_rule (cr, CAIRO_FILL_RULE_EVEN_ODD);
++	cairo_rectangle (cr, 0, 0, width, height);
++	cairo_new_sub_path (cr);
++	cairo_arc (cr, width - radius, radius, radius, -G_PI / 2, 0);
++	cairo_arc (cr, width - radius, height - radius, radius, 0, G_PI / 2);
++	cairo_arc (cr, radius, height - radius, radius, G_PI / 2, G_PI);
++	cairo_arc (cr, radius, radius, radius, G_PI, 3 * G_PI / 2);
++	cairo_close_path (cr);
++	cairo_fill (cr);
++	cairo_restore (cr);
++
++	return retval;
++}
++
+ static gboolean
+ panel_toplevel_button_press_event (GtkWidget      *widget,
+ 				   GdkEventButton *event)
+@@ -4294,6 +4341,9 @@ panel_toplevel_set_property (GObject      *object,
+ 	case PROP_EXPAND:
+ 		panel_toplevel_set_expand (toplevel, g_value_get_boolean (value));
+ 		break;
++	case PROP_FLOATING:
++		panel_toplevel_set_floating (toplevel, g_value_get_boolean (value));
++		break;
+ 	case PROP_ORIENTATION:
+ 		panel_toplevel_set_orientation (toplevel, g_value_get_enum (value));
+ 		break;
+@@ -4391,6 +4441,9 @@ panel_toplevel_get_property (GObject    *object,
+ 	case PROP_EXPAND:
+ 		g_value_set_boolean (value, toplevel->priv->expand);
+ 		break;
++	case PROP_FLOATING:
++		g_value_set_boolean (value, toplevel->priv->floating_panel);
++		break;
+ 	case PROP_ORIENTATION:
+ 		g_value_set_enum (value, toplevel->priv->orientation);
+ 		break;
+@@ -4561,6 +4614,16 @@ panel_toplevel_class_init (PanelToplevelClass *klass)
+ 			TRUE,
+ 			G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
+ 
++	g_object_class_install_property (
++		gobject_class,
++		PROP_FLOATING,
++		g_param_spec_boolean (
++			"floating",
++			"Floating",
++			"Stand off the screen edge, under Caminito",
++			FALSE,
++			G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
++
+ 	g_object_class_install_property (
+ 		gobject_class,
+ 		PROP_ORIENTATION,
+@@ -5712,6 +5775,55 @@ panel_toplevel_set_auto_hide (PanelToplevel *toplevel,
+ 	g_object_notify (G_OBJECT (toplevel), "auto-hide");
+ }
+ 
++void
++panel_toplevel_set_floating (PanelToplevel *toplevel,
++			     gboolean       floating)
++{
++	g_return_if_fail (PANEL_IS_TOPLEVEL (toplevel));
++
++	floating = floating != FALSE;
++
++	if (toplevel->priv->floating_panel == floating)
++		return;
++
++	toplevel->priv->floating_panel = floating;
++
++	if (gtk_widget_get_realized (GTK_WIDGET (toplevel))) {
++		panel_toplevel_move_resize_window (toplevel, TRUE, TRUE);
++		gtk_widget_queue_draw (GTK_WIDGET (toplevel));
++	}
++
++	g_object_notify (G_OBJECT (toplevel), "floating");
++}
++
++gboolean
++panel_toplevel_get_floating (PanelToplevel *toplevel)
++{
++	g_return_val_if_fail (PANEL_IS_TOPLEVEL (toplevel), FALSE);
++
++	return toplevel->priv->floating_panel;
++}
++
++/* The gap between a floating panel and its screen edge, in pixels: 0 for a panel
++ * that isn't floating, a drawer, and anywhere but Caminito's Wayland, where the
++ * property does nothing. The panel stands off only the edge it is at, so that a
++ * panel that isn't expanded stays centred along it, as it does lined up. */
++int
++panel_toplevel_get_floating_margin (PanelToplevel *toplevel)
++{
++	g_return_val_if_fail (PANEL_IS_TOPLEVEL (toplevel), 0);
++
++#ifdef HAVE_WAYLAND
++	if (toplevel->priv->floating_panel &&
++	    !toplevel->priv->attached &&
++	    GDK_IS_WAYLAND_DISPLAY (gtk_widget_get_display (GTK_WIDGET (toplevel))) &&
++	    panel_multimonitor_is_caminito ())
++		return PANEL_FLOATING_MARGIN;
++#endif /* HAVE_WAYLAND */
++
++	return 0;
++}
++
+ gboolean
+ panel_toplevel_get_auto_hide (PanelToplevel *toplevel)
+ {
+diff --git a/mate-panel/panel-toplevel.h b/mate-panel/panel-toplevel.h
+index 2d8961c0..2c6ee4f3 100644
+--- a/mate-panel/panel-toplevel.h
++++ b/mate-panel/panel-toplevel.h
+@@ -149,6 +149,10 @@ void                 panel_toplevel_pop_autohide_disabler  (PanelToplevel
+ void                 panel_toplevel_set_auto_hide          (PanelToplevel       *toplevel,
+                                                             gboolean             autohide);
+ gboolean             panel_toplevel_get_auto_hide          (PanelToplevel       *toplevel);
++void                 panel_toplevel_set_floating           (PanelToplevel       *toplevel,
++                                                            gboolean             floating);
++gboolean             panel_toplevel_get_floating           (PanelToplevel       *toplevel);
++int                  panel_toplevel_get_floating_margin    (PanelToplevel       *toplevel);
+ void                 panel_toplevel_set_hide_delay         (PanelToplevel       *toplevel,
+                                                             int                  hide_delay);
+ int                  panel_toplevel_get_hide_delay         (PanelToplevel       *toplevel);
+diff --git a/mate-panel/wayland-backend.c b/mate-panel/wayland-backend.c
+index 4030bacd..1d5c8eb8 100644
+--- a/mate-panel/wayland-backend.c
++++ b/mate-panel/wayland-backend.c
+@@ -234,6 +234,24 @@ wayland_panel_toplevel_move_resize (PanelToplevel           *toplevel,
+ 		}
+ 	}
+ 
++	/* A floating panel stands off the edge it is anchored to. The other
++	 * axis is as it was: an expanded panel is anchored along it, and one
++	 * that isn't is centred. */
++	switch (panel_toplevel_get_orientation (toplevel)) {
++	case PANEL_ORIENTATION_TOP:
++		margin[GTK_LAYER_SHELL_EDGE_TOP] += panel_toplevel_get_floating_margin (toplevel);
++		break;
++	case PANEL_ORIENTATION_BOTTOM:
++		margin[GTK_LAYER_SHELL_EDGE_BOTTOM] += panel_toplevel_get_floating_margin (toplevel);
++		break;
++	case PANEL_ORIENTATION_LEFT:
++		margin[GTK_LAYER_SHELL_EDGE_LEFT] += panel_toplevel_get_floating_margin (toplevel);
++		break;
++	case PANEL_ORIENTATION_RIGHT:
++		margin[GTK_LAYER_SHELL_EDGE_RIGHT] += panel_toplevel_get_floating_margin (toplevel);
++		break;
++	}
++
+ 	for (int i = 0; i < GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER; i++)
+ 		gtk_layer_set_margin (window, i, margin[i]);
+ }
