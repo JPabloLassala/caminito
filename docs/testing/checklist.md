@@ -3691,9 +3691,41 @@ They are the developer's to run.
   quit`; `WAYLAND_DEBUG=1` on a native app for `xdg_wm_base.ping` and `pong`, and
   `xprop WM_PROTOCOLS _NET_WM_PID WM_CLIENT_MACHINE` on an X11 window.
 
+### The Dock applet's items in a real Session
+
+- **Milestone:** `dock-applet`, the developer's to run (CMN-219).
+- **Steps:**
+  1. Log into *MATE on Caminito*, with Firefox, `mate-terminal`, `xterm` (X11) and a Flatpak
+     installed. Right-click a panel, choose *Add to Panel…* and add *Dock*.
+  2. Open Firefox from the main menu. Right-click its item and choose *Keep in Dock*, then
+     close Firefox and click its item. Right-click the item again: the menu has Firefox's
+     windows, its actions (*New Window*, *New Private Window*), *Remove from Dock* and
+     *Close all windows*.
+  3. Open `mate-terminal` twice, as two processes (`mate-terminal --disable-factory &`
+     twice). Click its item while another window has the focus, and then again while one
+     terminal has it.
+  4. Open `xterm`, and the Flatpak from the main menu.
+  5. Open pluma, keep it, and minimise it by a click on its item while it has the focus.
+  6. Drag pluma's item before Firefox's, drag a launcher from the main menu onto the dock,
+     and restart the panel with `mate-panel --replace &`.
+  7. Move the panel to the left edge from its Properties.
+- **Expected:** in step 2 Firefox's item stays after it closes and the click starts it again.
+  In step 3 both terminals are under one item, which has the indicator line, highlighted
+  while a terminal has the focus; the first click brings the most recent terminal forward
+  and the second does too, as the Application overview isn't there yet. In step 4 `xterm`
+  has an item of its own, by its `WM_CLASS`, and the Flatpak's window joins its entry's
+  item, with the entry's icon and name as tooltip. In step 5 the window shrinks into pluma's
+  item, not into the window list. In step 6 the order, and the launcher kept, are the same
+  after the restart. In step 7 the items are a column, with the indicator on the screen's
+  edge, and the menus open away from it.
+- **Debug tool:** `WAYLAND_DEBUG=1 mate-panel --replace` for
+  `zwlr_foreign_toplevel_handle_v1.set_rectangle` and `app_id`, `xprop WM_CLASS` on an X11
+  window, and `gsettings get` on the instance's `prefs/` path (`dconf dump
+  /org/mate/panel/objects/`) for `kept`.
+
 ### A floating panel stands off its edge
 
-- **Milestone:** the Dock applet's, after M9 (223).
+- **Milestone:** `dock-applet`, the developer's to run (CMN-223).
 - **Steps:**
   1. With `mate-panel-caminito` at `pkgrel` 14 or later, log into *MATE on Caminito*. Right-click
      the bottom panel, choose *Properties*, and tick *Floating*.
@@ -3708,9 +3740,9 @@ They are the developer's to run.
   and no line along its top, and a maximised window ends at the panel's top edge, not behind
   it and not short of it. In step 2 the panel shrinks to its applets and stays centred along
   the edge, still 8 pixels off it. In step 3 the left panel stands off the left edge in the
-  same way, centred from top to bottom. In step 4 each panel goes back to its edge, with square corners and
-  its frame, and the work area grows back. In step 5 *Floating* isn't in the properties, and
-  a panel whose `floating` key is set looks as it did (223).
+  same way, centred from top to bottom. In step 4 each panel goes back to its edge, with
+  square corners and its frame, and the work area grows back. In step 5 *Floating* isn't in
+  the properties, and a panel whose `floating` key is set looks as it did.
 - **Debug tool:** each output's `layer_surfaces` (their `geometry` and `exclusive_zone`) and
   `work_area` in `DumpState`, and `dconf watch /org/mate/panel/toplevels/` for the `floating`
   key.

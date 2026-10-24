@@ -26,6 +26,9 @@ subproject('caminito-network-applet')
 # The Sound applet (CMN-213), on caminito-applet-common too, which reads the sound server
 # through libpulse.
 subproject('caminito-sound-applet')
+# The Dock applet (CMN-219), on caminito-applet-common too, which reads the windows through
+# libxfce4windowing.
+subproject('caminito-dock-applet')
 
 # The display manager's entry for the session (08). Its name isn't the Wayfire session's
 # MATE.desktop, and it needs no wrapper script and no systemd unit.
