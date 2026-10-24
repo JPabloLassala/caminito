@@ -368,6 +368,18 @@ _Avoid_: task, launcher (a mate-panel launcher is a different panel object), App
 A Dock item the user has chosen to keep in the dock, which stays when the program has no window, until they remove it. The menu item is _Keep in Dock_.
 _Avoid_: pinned (pinning is the Sound applet's and the Thermal applet's), favourite, launcher
 
+**Kept folder**:
+A folder the user has chosen to keep in the Dock applet, after the Dock items, whose icon opens its contents. A bookmark or Home is kept as one. It isn't a Dock item: it has no program and no windows.
+_Avoid_: stack (that's the stacking order of windows), folder stack (macOS's name), Dock folder, place (that's Caja's sidebar)
+
+**Minimised window item**:
+An icon of the Dock applet for one minimised window, after the separator, showing a picture of the window as it was minimised, with its program's icon on the corner. It is there while the window is minimised, on any workspace and output, and a click unminimises it. Its program's Dock item still has the window, but shows it only in its menu.
+_Avoid_: minimised item alone (a Dock item can have minimised windows), iconified window (X11's word), thumbnail (that's the hover preview)
+
+**Removable drive item**:
+An icon of the Dock applet for a mounted disk the user can eject or unmount, such as a USB disk, an SD card, a phone or a disc, after the separator. It is there while the disk is mounted. Internal disks and network shares have none.
+_Avoid_: volume (that's sound's), mount, device, place (that's Caja's sidebar)
+
 **Launcher entry**:
 What a program tells the Dock applet about its Dock item through Unity's `com.canonical.Unity.LauncherEntry` D-Bus signal: a count, shown as a badge on the icon's corner, a progress, shown as a bar across the icon, and whether it is urgent. It lasts until the program clears it, leaves the bus, or has no window left.
 _Avoid_: notification count (the notification daemon's), quicklist (the API's menu, which the Dock applet doesn't take)
