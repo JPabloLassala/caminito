@@ -24,6 +24,10 @@ void       dk_dock_set_layout  (DkDock *dock, guint thickness, GtkPositionType e
 /* Leaves out the windows of an app id: the probe's own window, which no panel's applet has. */
 void       dk_dock_ignore_app_id (DkDock *dock, const char *app_id);
 
+/* How long an item pulses for a program that maps no window, in microseconds: the dock's ten
+   seconds, shortened for a test that waits for the end. */
+void       dk_dock_set_launch_timeout (DkDock *dock, gint64 timeout);
+
 /* The item widgets' keys, in order, and the first one for key. */
 GPtrArray *dk_dock_get_keys    (DkDock *dock);
 GtkWidget *dk_dock_get_item    (DkDock *dock, const char *key);

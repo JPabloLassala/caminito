@@ -14,14 +14,15 @@
  * stdout, a line each:
  *   ready                        the window is mapped
  *   window W H                   the window's size, first in the answer to "items"
- *   item KEY windows=N active=A kept=K x=X y=Y w=W h=H title=TITLE
+ *   item KEY windows=N active=A kept=K pulse=P bounce=B highlight=H x=X y=Y w=W h=H title=TITLE
  *                                one for each item, in order, in answer to "items": the
- *                                item's rectangle in the window and the title of its most
- *                                recent window, and then "items-end"
+ *                                item's launch and attention feedback (CMN-221), its
+ *                                rectangle in the window and the title of its most recent
+ *                                window, and then "items-end"
  *   menu LABEL                   one for each item of the open menu, in answer to "menu",
  *                                and then "menu-end"
  * stdin:
- *   items | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y | quit
+ *   items | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y | launch-timeout MS | quit
  * "choose" activates the open menu's item with that label.
  */
 
@@ -62,10 +63,13 @@ print_items (void)
       gtk_widget_get_allocation (item, &a);
       gtk_widget_translate_coordinates (item, window, 0, 0, &x, &y);
       GPtrArray *windows = dk_item_view_get_windows (view);
+      DkFeedbackState feedback = dk_item_view_get_feedback (view);
 
-      printf ("item %s windows=%u active=%d kept=%d x=%d y=%d w=%d h=%d title=%s\n",
+      printf ("item %s windows=%u active=%d kept=%d pulse=%d bounce=%d highlight=%d "
+              "x=%d y=%d w=%d h=%d title=%s\n",
               (char *) keys->pdata[i], windows->len, dk_item_view_is_active (view),
-              dk_store_is_kept (store, keys->pdata[i]), x, y, a.width, a.height,
+              dk_store_is_kept (store, keys->pdata[i]), feedback.pulsing, feedback.bouncing,
+              feedback.highlighted, x, y, a.width, a.height,
               windows->len > 0 ? xfw_window_get_name (windows->pdata[0]) : "");
     }
   printf ("items-end\n");
@@ -121,6 +125,8 @@ run_command (char *line)
       if (item != NULL)
         dk_dock_popup_menu (dock, item, NULL);
     }
+  else if (g_strcmp0 (words[0], "launch-timeout") == 0 && words[1] != NULL)
+    dk_dock_set_launch_timeout (dock, atoi (words[1]) * (G_USEC_PER_SEC / 1000));
   else if (g_strcmp0 (words[0], "keep") == 0 && words[1] != NULL)
     dk_store_keep (store, words[1]);
   else if (g_strcmp0 (words[0], "choose") == 0 && dk_dock_get_menu (dock) != NULL)

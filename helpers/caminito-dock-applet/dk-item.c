@@ -2,9 +2,20 @@
  * One Dock item's widget (CMN-219).
  */
 
+#include <math.h>
+
 #include <libxfce4windowing/libxfce4windowing.h>
 
 #include "dk-item.h"
+
+/* The pulse's period, and the bounce's count and height (CMN-221). */
+#define PULSE_PERIOD (1 * G_USEC_PER_SEC)
+#define BOUNCES 3
+/* The part of the item's thickness the icon gives up to bounce in, as the panel has no room
+   beside the item: the icon is smaller while it bounces. */
+#define BOUNCE_ROOM 0.2
+/* How long the icon takes to shrink into the bounce and to come back. */
+#define BOUNCE_RAMP (100 * (G_USEC_PER_SEC / 1000))
 
 struct _DkItemView
 {
@@ -15,6 +26,8 @@ struct _DkItemView
   gboolean         active;
   gboolean         hover;
   GtkPositionType  edge;
+  DkFeedbackState  feedback;
+  guint            tick_id;
   /* The icon at the size and scale it was last drawn at, until one of them or the theme
      changes. */
   cairo_surface_t *surface;
@@ -194,6 +207,90 @@ draw_stand_in (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int widt
   pango_cairo_show_layout (cr, layout);
 }
 
+/* The soft box behind the icon of an item with a window that demands attention: it stays
+   until the window is focused. */
+static void
+draw_highlight (cairo_t *cr, GtkStyleContext *context, int width, int height)
+{
+  GdkRGBA color;
+  double side = MIN (width, height) - 4.0, radius = side / 5;
+  double x = (width - side) / 2, y = (height - side) / 2;
+
+  highlight_color (context, &color);
+  cairo_new_sub_path (cr);
+  cairo_arc (cr, x + side - radius, y + radius, radius, -G_PI / 2, 0);
+  cairo_arc (cr, x + side - radius, y + side - radius, radius, 0, G_PI / 2);
+  cairo_arc (cr, x + radius, y + side - radius, radius, G_PI / 2, G_PI);
+  cairo_arc (cr, x + radius, y + radius, radius, G_PI, 3 * G_PI / 2);
+  cairo_close_path (cr);
+  color.alpha = 0.4;
+  gdk_cairo_set_source_rgba (cr, &color);
+  cairo_fill_preserve (cr);
+  color.alpha = 0.9;
+  gdk_cairo_set_source_rgba (cr, &color);
+  cairo_set_line_width (cr, 1.5);
+  cairo_stroke (cr);
+}
+
+/* Where the icon is and how it looks at now (CMN-221): a pulse breathes its opacity and size
+   about the item's middle; a bounce is smaller, and jumps from the panel's edge and back
+   BOUNCES times. */
+typedef struct
+{
+  double x, y, scale, alpha;
+} IconPose;
+
+static IconPose
+icon_pose (const DkItemView *view, int width, int height, int size, gint64 now)
+{
+  IconPose pose = { .scale = 1.0, .alpha = 1.0 };
+  gint64 since = now - view->feedback.bounce_start;
+  gboolean bouncing = view->feedback.bouncing && since >= 0 && since < DK_BOUNCE_LENGTH;
+  double side;
+
+  if (view->feedback.pulsing)
+    {
+      double breath = (1 + cos (2 * G_PI * (now % PULSE_PERIOD) / (double) PULSE_PERIOD)) / 2;
+
+      pose.alpha = 0.4 + 0.6 * breath;
+      pose.scale = 0.9 + 0.1 * breath;
+    }
+  if (bouncing)
+    {
+      double ramp = MIN (1.0, MIN (since, DK_BOUNCE_LENGTH - since) / (double) BOUNCE_RAMP);
+      double progress = since / (double) DK_BOUNCE_LENGTH;
+
+      pose.scale = 1.0 - BOUNCE_ROOM * ramp;
+      side = size * pose.scale;
+      pose.x = (width - side) / 2;
+      pose.y = (height - side) / 2;
+      /* Up from the edge to the room the shrinking left, and down again. */
+      {
+        double lift = fabs (sin (progress * BOUNCES * G_PI)) * size * (1.0 - pose.scale);
+
+        switch (view->edge)
+          {
+          case GTK_POS_TOP:
+            pose.y = lift;
+            break;
+          case GTK_POS_LEFT:
+            pose.x = lift;
+            break;
+          case GTK_POS_RIGHT:
+            pose.x = width - side - lift;
+            break;
+          default:
+            pose.y = height - side - lift;
+          }
+      }
+      return pose;
+    }
+  side = size * pose.scale;
+  pose.x = (width - side) / 2;
+  pose.y = (height - side) / 2;
+  return pose;
+}
+
 static gboolean
 on_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
 {
@@ -203,6 +300,7 @@ on_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
   int height = gtk_widget_get_allocated_height (widget);
   int size = MIN (width, height);
   int scale = gtk_widget_get_scale_factor (widget);
+  IconPose pose = icon_pose (view, width, height, size, g_get_monotonic_time ());
 
   if (view->hover)
     {
@@ -214,6 +312,8 @@ on_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
       cairo_arc (cr, width / 2.0, height / 2.0, size / 2.0, 0, 2 * G_PI);
       cairo_fill (cr);
     }
+  if (view->feedback.highlighted)
+    draw_highlight (cr, context, width, height);
   if (view->surface == NULL || view->surface_size != size || view->surface_scale != scale)
     {
       g_clear_pointer (&view->surface, cairo_surface_destroy);
@@ -221,14 +321,25 @@ on_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
       view->surface_size = size;
       view->surface_scale = scale;
     }
+  cairo_save (cr);
+  cairo_translate (cr, pose.x, pose.y);
+  cairo_scale (cr, pose.scale, pose.scale);
+  if (pose.alpha < 1.0)
+    cairo_push_group (cr);
   if (view->surface != NULL)
     {
       /* The icon fills the item's thickness. */
-      cairo_set_source_surface (cr, view->surface, (width - size) / 2.0, (height - size) / 2.0);
+      cairo_set_source_surface (cr, view->surface, 0, 0);
       cairo_paint (cr);
     }
   else
-    draw_stand_in (view, cr, context, width, height, size);
+    draw_stand_in (view, cr, context, size, size, size);
+  if (pose.alpha < 1.0)
+    {
+      cairo_pop_group_to_source (cr);
+      cairo_paint_with_alpha (cr, pose.alpha);
+    }
+  cairo_restore (cr);
   draw_indicator (view, cr, context, width, height);
   return FALSE;
 }
@@ -334,6 +445,36 @@ dk_item_view_new (void)
   g_signal_connect (view->widget, "drag-begin", G_CALLBACK (on_drag_begin), view);
   g_signal_connect (view->widget, "drag-data-get", G_CALLBACK (on_drag_data_get), view);
   return view;
+}
+
+static gboolean
+on_tick (GtkWidget *widget, GdkFrameClock *clock G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+{
+  gtk_widget_queue_draw (widget);
+  return G_SOURCE_CONTINUE;
+}
+
+void
+dk_item_view_set_feedback (DkItemView *view, const DkFeedbackState *state)
+{
+  gboolean animated = state->pulsing || state->bouncing;
+
+  view->feedback = *state;
+  /* A frame for every frame the compositor takes while it moves, and none once it's still. */
+  if (animated && view->tick_id == 0)
+    view->tick_id = gtk_widget_add_tick_callback (view->widget, on_tick, NULL, NULL);
+  else if (!animated && view->tick_id != 0)
+    {
+      gtk_widget_remove_tick_callback (view->widget, view->tick_id);
+      view->tick_id = 0;
+    }
+  gtk_widget_queue_draw (view->widget);
+}
+
+DkFeedbackState
+dk_item_view_get_feedback (DkItemView *view)
+{
+  return view->feedback;
 }
 
 void

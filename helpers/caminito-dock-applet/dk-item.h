@@ -8,6 +8,8 @@
 
 #include <gtk/gtk.h>
 
+#include "dk-feedback.h"
+
 typedef struct _DkItemView DkItemView;
 
 /* The drag target the items are dragged by inside the dock. */
@@ -35,5 +37,10 @@ void        dk_item_view_set          (DkItemView *view,
 const char *dk_item_view_get_key      (DkItemView *view);
 GPtrArray  *dk_item_view_get_windows  (DkItemView *view);
 gboolean    dk_item_view_is_active    (DkItemView *view);
+/* The launch and attention feedback (CMN-221): the icon pulses while the program starts,
+   bounces when a window begins to demand attention, and glows while one does. The view
+   animates what it is given against the monotonic clock, until it is given something else. */
+void            dk_item_view_set_feedback (DkItemView *view, const DkFeedbackState *state);
+DkFeedbackState dk_item_view_get_feedback (DkItemView *view);
 /* Tells the compositor where each window's item is, for the minimise animation. */
 void        dk_item_view_update_rectangles (DkItemView *view);

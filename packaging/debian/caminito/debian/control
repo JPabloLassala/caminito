@@ -19,7 +19,9 @@ Rules-Requires-Root: no
 # libnm-dev is NetworkManager's client library, which the Network applet reads it through (ADR
 # 0041). The applet links libnm0, which ${shlibs:Depends} brings at run time.
 # libxfce4windowing-dev is the library the Dock applet reads the windows through (CMN-219, ADR
-# 0013), and libgtk-layer-shell-dev the layer surface its test probe is.
+# 0013), and libgtk-layer-shell-dev the layer surface its test probe is. libwayland-dev's
+# wayland-scanner makes the xdg-activation client the applet asks for a launch's token with
+# (CMN-221), from the XML it vendors.
 Build-Depends:
  debhelper-compat (= 13),
  rustup,

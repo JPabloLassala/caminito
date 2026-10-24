@@ -20,6 +20,9 @@ typedef struct
   const char *title;
   gboolean minimised;
   gboolean active;
+  /* It demands attention (the xfce private protocol's state, which libxfce4windowing calls
+     urgent); Caminito clears it when the window is focused. */
+  gboolean urgent;
   /* When it was opened and when it was last active: a counter, larger for later. */
   guint64 opened;
   guint64 activated;
