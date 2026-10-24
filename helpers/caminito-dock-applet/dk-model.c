@@ -147,25 +147,38 @@ dk_after_item_clear (DkAfterItem *item)
   g_free (item->key);
 }
 
+/* Appends an item of kind for each key, once. */
+static void
+after_append (GArray *items, DkAfterKind kind, const char *const *keys)
+{
+  for (guint i = 0; keys != NULL && keys[i] != NULL; i++)
+    {
+      gboolean seen = FALSE;
+
+      for (guint j = 0; j < items->len && !seen; j++)
+        {
+          const DkAfterItem *item = &g_array_index (items, DkAfterItem, j);
+
+          seen = item->kind == kind && g_strcmp0 (item->key, keys[i]) == 0;
+        }
+      if (!seen)
+        {
+          DkAfterItem item = { .kind = kind, .key = g_strdup (keys[i]) };
+
+          g_array_append_val (items, item);
+        }
+    }
+}
+
 GArray *
-dk_after_build (const char *const *folders)
+dk_after_build (const char *const *folders, const char *const *drives)
 {
   GArray *items = g_array_new (FALSE, TRUE, sizeof (DkAfterItem));
   DkAfterItem trash = { .kind = DK_AFTER_TRASH, .key = g_strdup (DK_TRASH_KEY) };
 
   g_array_set_clear_func (items, (GDestroyNotify) dk_after_item_clear);
-  for (guint i = 0; folders != NULL && folders[i] != NULL; i++)
-    {
-      gboolean seen = FALSE;
-      DkAfterItem folder = { .kind = DK_AFTER_KEPT_FOLDER, .key = g_strdup (folders[i]) };
-
-      for (guint j = 0; j < items->len; j++)
-        seen = seen || g_strcmp0 (g_array_index (items, DkAfterItem, j).key, folders[i]) == 0;
-      if (seen)
-        g_free (folder.key);
-      else
-        g_array_append_val (items, folder);
-    }
+  after_append (items, DK_AFTER_KEPT_FOLDER, folders);
+  after_append (items, DK_AFTER_REMOVABLE_DRIVE, drives);
   g_array_append_val (items, trash);
   return items;
 }

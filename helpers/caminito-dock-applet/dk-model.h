@@ -5,8 +5,8 @@
  * user's order. What a click on an item does is decided here too.
  *
  * The items after the separator (CMN-239) are a second list: the Kept folders, in the user's
- * order, and the Trash last. The Removable drive items and the Minimised window items will
- * come between them (CMN-240, CMN-241).
+ * order, the Removable drive items (CMN-240), in the order the disks were mounted, and the Trash
+ * last. The Minimised window items will come before the Trash (CMN-241).
  */
 
 #pragma once
@@ -72,6 +72,7 @@ DkClick dk_item_click  (const DkItem *item, const DkWindow **target);
 typedef enum
 {
   DK_AFTER_KEPT_FOLDER,
+  DK_AFTER_REMOVABLE_DRIVE,
   DK_AFTER_TRASH,
 } DkAfterKind;
 
@@ -81,13 +82,16 @@ typedef enum
 typedef struct
 {
   DkAfterKind kind;
-  /* The folder's URI, or DK_TRASH_KEY. */
+  /* The folder's URI, the drive's mount's root URI, or DK_TRASH_KEY. */
   char *key;
 } DkAfterItem;
 
-/* The items after the separator for the folders' URIs (NULL-terminated, in the user's order):
-   a Kept folder for each, once, then the Trash. The array is of DkAfterItem, and owns them. */
-GArray *dk_after_build      (const char *const *folders);
+/* The items after the separator for the folders' URIs (NULL-terminated, in the user's order)
+   and the removable drives' roots (NULL-terminated, in the order they were mounted): a Kept
+   folder for each folder, once, then a Removable drive item for each drive, once, then the
+   Trash. A folder that is a drive's root has both. The array is of DkAfterItem, and owns
+   them. */
+GArray *dk_after_build      (const char *const *folders, const char *const *drives);
 void    dk_after_item_clear (DkAfterItem *item);
 
 /* The kept keys, changed. They return TRUE when the list changed. A key is added at the

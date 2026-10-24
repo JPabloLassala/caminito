@@ -3743,6 +3743,28 @@ They are the developer's to run.
 - **Debug tool:** `gio list trash:///` and `gio monitor trash:///` for what the Trash holds
   and what it tells; `ls ~/.local/share/Trash/files`.
 
+### The Dock applet's Removable drive items in a real Session
+
+- **Milestone:** `dock`, the developer's to run (CMN-240).
+- **Steps:**
+  1. Log into *MATE on Caminito* with the Dock on a panel, and plug in a USB disk. Look after
+     the separator, past the Kept folders if there are any. Rest the pointer on the new item.
+  2. Click the item.
+  3. Drag a file from Caja's home folder onto the item.
+  4. Open a terminal on the disk (`cd /run/media/$USER/<name>` or `/media/$USER/<name>`) and
+     leave it there. Right-click the item and choose *Eject*. Close the terminal, and choose
+     *Eject* again.
+  5. Plug in the disk again, and unmount it from Caja's sidebar. Mount a network share in Caja
+     (*Connect to Server…*), and look at the dock.
+- **Expected:** in step 1 the disk has an item with its icon, before the Trash, and its tooltip
+  is the disk's name; the internal disks have none. In step 2 Caja opens the disk. In step 3 the
+  file is copied to the disk and is still in the home folder. In step 4 the menu has *Open* and
+  *Eject* (*Unmount* for a disk that can't be ejected), the first eject shows an error that the
+  disk is busy, as the Trash shows its errors, and the second takes the item away. In step 5 the
+  item goes with the unmount, and the network share has no item.
+- **Debug tool:** `gio mount -li` for each mount's drive, volume and whether it can be ejected or
+  unmounted, and `gio mount -o` to watch the monitor's events.
+
 ### The Dock applet's launch and attention feedback in a real Session
 
 - **Milestone:** `dock-applet`, the developer's to run (CMN-221).

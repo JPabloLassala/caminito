@@ -51,8 +51,8 @@ void       dk_dock_drop_uris   (DkDock *dock, const char *const *uris);
    (GTK_RESPONSE_ACCEPT to empty). */
 GtkWidget *dk_dock_get_dialog  (DkDock *dock);
 
-/* The Kept folders (CMN-239), after the separator and before the Trash. Their widgets are
-   named by the folder's URI. */
+/* The Kept folders (CMN-239), after the separator and before the Removable drive items
+   (CMN-240) and the Trash. Their widgets are named by the folder's URI. */
 GPtrArray *dk_dock_get_folders      (DkDock *dock);
 GtkWidget *dk_dock_get_folder       (DkDock *dock, const char *uri);
 /* The folder is gone (deleted, or on a drive that isn't there), and its item is dimmed. */
