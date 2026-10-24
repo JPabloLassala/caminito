@@ -3789,14 +3789,15 @@ They are the developer's to run.
      then open Caja. Then `emit` a count for `application://nothing.desktop`.
   7. With a badge showing from an `emit` that is still running, close Caja's last window.
 - **Expected:** in step 1 Caja's item has a round badge with a white "5" on its top-right
-  corner, in the highlight colour. In step 2 it reads "99+", and then the badge goes away. In
-  step 3 a thin bar, 40 % full, runs across the side of the icon away from the panel's edge on
-  each of the four edges, never over the indicator line, and goes away with `progress-visible`
-  false. In step 4 the item gets the highlighted box and bounces a few times; focusing Caja's
-  window leaves the box, and `urgent` false takes it away. In step 5 the badge and bar are gone
-  as soon as the program ends. In step 6 the first signal makes no item, and when Caja opens
-  its item shows the badge; the last signal makes no item. In step 7 the badge goes with the
-  item's last window (CMN-227).
+  corner, in the highlight colour (on a top panel its bottom-right, and on a right panel its
+  top-left: the corner away from the edge). In step 2 it reads "99+", and then the badge goes
+  away. In step 3 a thin bar, 40 % full, runs across the icon just inside the indicator line on
+  each of the four edges, over neither the indicator nor the badge, and goes away with
+  `progress-visible` false. In step 4 the item gets the highlighted box and bounces a few times;
+  focusing Caja's window leaves the box, and `urgent` false takes it away. In step 5 the badge
+  and bar are gone as soon as the program ends. In step 6 the first signal makes no item, and
+  when Caja opens its item shows the badge; the last signal makes no item. In step 7 the badge
+  goes with the item's last window (CMN-227).
 - **Debug tool:** `dbus-monitor "interface='com.canonical.Unity.LauncherEntry'"` for what
   programs send and from which unique name, and `dbus-monitor --session
   "member='NameOwnerChanged'"` for a sender leaving.

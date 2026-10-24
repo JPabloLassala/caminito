@@ -246,8 +246,9 @@ rounded_rect (cairo_t *cr, double x, double y, double w, double h)
   cairo_close_path (cr);
 }
 
-/* The program's count (CMN-227): a pill on the icon's top-right corner, in the highlight
-   colour with white text, and "99+" above 99. */
+/* The program's count (CMN-227): a pill on the icon's corner away from the panel's edge, at
+   the end of the row or the top of the column, where neither the indicator nor the progress
+   bar is, in the highlight colour with white text, and "99+" above 99. */
 static void
 draw_badge (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int width, int height)
 {
@@ -257,7 +258,7 @@ draw_badge (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int width, 
   PangoFontDescription *font;
   GdkRGBA color;
   double size = MIN (width, height);
-  double pill_height, pill_width, pad;
+  double pill_height, pill_width, pad, x, y;
   int text_width, text_height;
 
   if (text == NULL)
@@ -273,18 +274,20 @@ draw_badge (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int width, 
   pill_height = text_height + pad;
   /* A circle for one digit, a pill for more. */
   pill_width = MAX (pill_height, text_width + 2 * pad);
+  x = view->edge == GTK_POS_RIGHT ? 0 : width - pill_width;
+  y = view->edge == GTK_POS_TOP ? height - pill_height : 0;
   highlight_color (context, &color);
-  rounded_rect (cr, width - pill_width, 0, pill_width, pill_height);
+  rounded_rect (cr, x, y, pill_width, pill_height);
   gdk_cairo_set_source_rgba (cr, &color);
   cairo_fill (cr);
   cairo_set_source_rgb (cr, 1, 1, 1);
-  cairo_move_to (cr, width - pill_width + (pill_width - text_width) / 2.0,
-                 (pill_height - text_height) / 2.0);
+  cairo_move_to (cr, x + (pill_width - text_width) / 2.0, y + (pill_height - text_height) / 2.0);
   pango_cairo_show_layout (cr, layout);
 }
 
-/* The program's progress (CMN-227): a thin bar across the side of the icon away from the
-   panel's edge, where the indicator isn't, filling from the start of the row or column. */
+/* The program's progress (CMN-227): a thin bar across the icon on the panel's side, just
+   inside the indicator and away from the badge, filling from the start of the row or
+   column. */
 static void
 draw_progress (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int width, int height)
 {
@@ -294,18 +297,19 @@ draw_progress (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int widt
   double thickness = MAX (3.0, MIN (width, height) / 12.0);
   double margin = along / 8.0;
   double length = along - 2 * margin;
-  /* Against the side opposite the edge, a little in. */
-  double inset = 1.0;
+  /* Past the indicator, which is MAX (2.0, along / 16.0) thick, and as much again. */
+  double inset = 2 * MAX (2.0, along / 16.0);
   double offset = (view->edge == GTK_POS_BOTTOM || view->edge == GTK_POS_RIGHT)
-                    ? inset : across - thickness - inset;
+                    ? across - thickness - inset : inset;
+  double x = horizontal ? margin : offset;
+  double y = horizontal ? offset : margin;
   double fill = length * view->launcher.progress;
   GdkRGBA color;
 
   if (!view->launcher.progress_visible)
     return;
   cairo_set_source_rgba (cr, 0, 0, 0, 0.55);
-  rounded_rect (cr, horizontal ? margin : offset, horizontal ? offset : margin,
-                horizontal ? length : thickness, horizontal ? thickness : length);
+  rounded_rect (cr, x, y, horizontal ? length : thickness, horizontal ? thickness : length);
   cairo_fill (cr);
   if (fill < thickness / 2)
     return;
@@ -313,8 +317,7 @@ draw_progress (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int widt
   gdk_cairo_set_source_rgba (cr, &color);
   /* The fill is at least as long as it is thick, so that its ends stay round. */
   fill = MAX (fill, thickness);
-  rounded_rect (cr, horizontal ? margin : offset, horizontal ? offset : margin,
-                horizontal ? fill : thickness, horizontal ? thickness : fill);
+  rounded_rect (cr, x, y, horizontal ? fill : thickness, horizontal ? thickness : fill);
   cairo_fill (cr);
 }
 

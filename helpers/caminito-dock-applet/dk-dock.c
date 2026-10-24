@@ -1449,7 +1449,8 @@ dk_dock_new (DkStore *store)
 
     dock->bus = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, &error);
     if (dock->bus == NULL)
-      g_warning ("no badges or progress bars, can't reach the session bus: %s", error->message);
+      g_warning ("can't reach the session bus, so no badges or progress bars: %s",
+                 error->message);
     else
       {
         dock->update_subscription = g_dbus_connection_signal_subscribe (

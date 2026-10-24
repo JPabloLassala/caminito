@@ -51,23 +51,21 @@ dk_launcher_free (DkLauncher *launcher)
   g_free (launcher);
 }
 
-/* The property of that name and type, or NULL: a value of another type is ignored. */
-static GVariant *
-property (GVariant *properties, const char *name, const GVariantType *type)
-{
-  return g_variant_lookup_value (properties, name, type);
-}
-
+/* The properties of the signal's types; a value of another type is ignored. */
 static void
 take_properties (DkLauncherEntry *shown, GVariant *properties)
 {
-  g_autoptr (GVariant) count = property (properties, "count", G_VARIANT_TYPE_INT64);
-  g_autoptr (GVariant) count_visible = property (properties, "count-visible",
-                                                 G_VARIANT_TYPE_BOOLEAN);
-  g_autoptr (GVariant) progress = property (properties, "progress", G_VARIANT_TYPE_DOUBLE);
-  g_autoptr (GVariant) progress_visible = property (properties, "progress-visible",
-                                                    G_VARIANT_TYPE_BOOLEAN);
-  g_autoptr (GVariant) urgent = property (properties, "urgent", G_VARIANT_TYPE_BOOLEAN);
+  g_autoptr (GVariant) count = g_variant_lookup_value (properties, "count",
+                                                       G_VARIANT_TYPE_INT64);
+  g_autoptr (GVariant) count_visible = g_variant_lookup_value (properties, "count-visible",
+                                                               G_VARIANT_TYPE_BOOLEAN);
+  g_autoptr (GVariant) progress = g_variant_lookup_value (properties, "progress",
+                                                          G_VARIANT_TYPE_DOUBLE);
+  g_autoptr (GVariant) progress_visible = g_variant_lookup_value (properties,
+                                                                  "progress-visible",
+                                                                  G_VARIANT_TYPE_BOOLEAN);
+  g_autoptr (GVariant) urgent = g_variant_lookup_value (properties, "urgent",
+                                                        G_VARIANT_TYPE_BOOLEAN);
 
   if (count != NULL)
     shown->count = g_variant_get_int64 (count);
@@ -142,13 +140,12 @@ dk_launcher_clear_id (DkLauncher *launcher, const char *id)
   return g_hash_table_remove (launcher->entries, id);
 }
 
-gboolean
+void
 dk_launcher_sync (DkLauncher *launcher, const GArray *items)
 {
   GHashTable *windowed = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   GHashTableIter iter;
   gpointer key;
-  gboolean cleared = FALSE;
 
   for (guint i = 0; i < items->len; i++)
     {
@@ -160,10 +157,9 @@ dk_launcher_sync (DkLauncher *launcher, const GArray *items)
   g_hash_table_iter_init (&iter, launcher->windowed);
   while (g_hash_table_iter_next (&iter, &key, NULL))
     if (!g_hash_table_contains (windowed, key))
-      cleared |= dk_launcher_clear_id (launcher, key);
+      dk_launcher_clear_id (launcher, key);
   g_hash_table_unref (launcher->windowed);
   launcher->windowed = windowed;
-  return cleared;
 }
 
 char *

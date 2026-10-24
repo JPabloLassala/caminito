@@ -19,7 +19,7 @@ typedef struct
   GHashTable *demanding;
   /* The item's Launcher entry is urgent (CMN-227): a source of attention beside the windows,
      which only the entry ends. */
-  gboolean    launcher;
+  gboolean    entry_urgent;
   /* When the latest began to, or -1. */
   gint64      bounce_start;
 } Attention;
@@ -155,7 +155,7 @@ update_attention (DkFeedback *feedback, const GArray *items, gint64 now)
       const DkItem *item = &g_array_index (items, DkItem, i);
       Attention *attention = g_hash_table_lookup (feedback->attention, item->key);
       g_autoptr (GHashTable) demanding = g_hash_table_new (NULL, NULL);
-      gboolean launcher = g_hash_table_contains (feedback->launcher_urgent, item->key);
+      gboolean entry_urgent = g_hash_table_contains (feedback->launcher_urgent, item->key);
       gboolean began = FALSE;
 
       /* The focused window demands nothing, whatever its flag says, and nor does one that
@@ -175,7 +175,7 @@ update_attention (DkFeedback *feedback, const GArray *items, gint64 now)
                 began = TRUE;
             }
         }
-      if (g_hash_table_size (demanding) == 0 && !launcher)
+      if (g_hash_table_size (demanding) == 0 && !entry_urgent)
         {
           g_hash_table_remove (feedback->attention, item->key);
           continue;
@@ -189,9 +189,9 @@ update_attention (DkFeedback *feedback, const GArray *items, gint64 now)
       g_clear_pointer (&attention->demanding, g_hash_table_unref);
       attention->demanding = g_hash_table_ref (demanding);
       /* The entry's urgency begins a bounce when it begins, as a window's does. */
-      if (launcher && !attention->launcher)
+      if (entry_urgent && !attention->entry_urgent)
         began = TRUE;
-      attention->launcher = launcher;
+      attention->entry_urgent = entry_urgent;
       if (began)
         attention->bounce_start = now;
       g_hash_table_add (seen, item->key);

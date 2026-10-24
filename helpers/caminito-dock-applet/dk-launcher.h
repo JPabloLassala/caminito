@@ -51,8 +51,8 @@ gboolean    dk_launcher_clear_sender (DkLauncher *launcher, const char *sender);
 gboolean    dk_launcher_clear_id     (DkLauncher *launcher, const char *id);
 
 /* Clears the entries of the items that had a window at the last sync and have none now,
-   with the dock's items (dk_items_build's). Returns whether anything was cleared. */
-gboolean    dk_launcher_sync (DkLauncher *launcher, const GArray *items);
+   with the dock's items (dk_items_build's). */
+void        dk_launcher_sync (DkLauncher *launcher, const GArray *items);
 
 /* The text of a badge: the count, "99+" above 99, and NULL for a count of 0 or less. */
 char       *dk_launcher_badge_text (gint64 count);

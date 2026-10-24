@@ -44,8 +44,8 @@ gboolean    dk_item_view_is_active    (DkItemView *view);
 void            dk_item_view_set_feedback (DkItemView *view, const DkFeedbackState *state);
 DkFeedbackState dk_item_view_get_feedback (DkItemView *view);
 /* The Launcher entry (CMN-227) the program has told the item: a count badge on the icon's
-   top-right corner, and a progress bar across the side of the icon away from the panel's
-   edge. Its urgency is the feedback's. */
+   corner away from the panel's edge, and a progress bar across the icon just inside the
+   indicator. Its urgency is the feedback's. */
 void            dk_item_view_set_launcher (DkItemView *view, const DkLauncherEntry *entry);
 /* Tells the compositor where each window's item is, for the minimise animation. */
 void        dk_item_view_update_rectangles (DkItemView *view);
