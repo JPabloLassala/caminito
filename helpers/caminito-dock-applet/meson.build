@@ -160,6 +160,41 @@ toplevel = static_library(
   pic: true,
 )
 
+# A window's picture (CMN-251): an ext-image-copy-capture session on the window's
+# ext-foreign-toplevel-image-capture-source, on GDK's connection, from the ext handle the
+# lookup above gives. The protocols' code is generated from their vendored XML.
+capture_sources = []
+foreach name : ['ext-image-capture-source-v1', 'ext-image-copy-capture-v1']
+  xml = files('protocols' / name + '.xml')
+  capture_sources += custom_target(
+    name + '-code',
+    input: xml,
+    output: name + '-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+  )
+  capture_sources += custom_target(
+    name + '-header',
+    input: xml,
+    output: name + '-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+  )
+endforeach
+capture = static_library(
+  'dk-capture',
+  'dk-capture.c',
+  capture_sources,
+  link_with: toplevel,
+  dependencies: [glib, gtk, wayland_client],
+  pic: true,
+)
+
+# Without a Wayland display, a capture fails at once and says so.
+test(
+  'capture',
+  executable('test-capture', 'test-capture.c', link_with: capture,
+             dependencies: [glib, gtk, wayland_client]),
+)
+
 # A Kept folder's folder (CMN-239): its icon, its contents and putting files in it, through GIO.
 folder = static_library('dk-folder', 'dk-folder.c', dependencies: [glib, gio], pic: true)
 
@@ -195,7 +230,7 @@ probe_args = layer_shell.found() ? ['-DHAVE_GTK_LAYER_SHELL'] : []
 executable(
   'dk-probe',
   'dk-probe.c',
-  link_with: [dock, toplevel, activation, feedback, launcher, store, model, resolve, trash, folder],
+  link_with: [dock, capture, toplevel, activation, feedback, launcher, store, model, resolve, trash, folder],
   # The layer shell first: it has to be linked before libwayland-client.
   dependencies: [layer_shell, glib, gio_unix, gtk, xfw, wayland_client, m],
   c_args: probe_args,

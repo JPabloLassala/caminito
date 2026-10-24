@@ -18,7 +18,7 @@ use smithay::wayland::image_copy_capture::{
 };
 
 use crate::capture::{self, CaptureSource, SHM_FORMATS, Shot};
-use crate::state::State;
+use crate::state::{Caminito, State};
 
 /// A capture session, and what Caminito keeps for it.
 pub(crate) struct CaptureSession {
@@ -184,5 +184,15 @@ impl State {
             }
         }
         true
+    }
+}
+
+impl Caminito {
+    /// How many capture sessions are open on the window, for a test that a client's stop
+    /// reached Caminito.
+    #[cfg(test)]
+    pub(crate) fn window_capture_sessions(&self, id: caminito_policy::WindowId) -> usize {
+        let source = CaptureSource::Toplevel(id);
+        self.captures.iter().filter(|c| c.source == source).count()
     }
 }

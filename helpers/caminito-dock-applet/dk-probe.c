@@ -30,6 +30,15 @@
  *                                "identifiers" (CMN-243): the identifier Caminito names it by,
  *                                or "-" for none, and EXT=1 if the dock found its ext handle,
  *                                and then "identifiers-end"
+ *   capture W H COLOR            the size of the picture of the window "capture" names, and the
+ *                                colour of its centre pixel as ARGB in hex (CMN-251), and then
+ *                                "capture-end"
+ *   capture-error MESSAGE        instead, why that window or the one "live" names can't be
+ *                                captured, and then "capture-end" or "live-end"
+ *   live frames=N open=O w=W h=H color=COLOR
+ *                                the live session's frames so far, whether it is open, and its
+ *                                last frame's size and centre colour, in answer to "live-status",
+ *                                and then "live-end"
  *   folder URI gone=G x=X y=Y w=W h=H
  *                                one for each Kept folder (CMN-239), in order, in answer to
  *                                "folders", and then "folders-end"
@@ -38,11 +47,14 @@
  *   error PRIMARY                the error being shown, if any, in answer to "error", and
  *                                then "error-end"
  * stdin:
- *   items | identifiers | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y |
+ *   items | identifiers | capture TITLE | live TITLE | live-status | live-stop | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y |
  *   launch-timeout MS | trash | popup-trash | drop-files URI... | dialog |
  *   respond accept|cancel | folders | open-folder URI | popup-folder URI | grid | error |
  *   keep-folders POSITION URI... | move-folder URI POSITION | drop-on-folder URI FILE_URI... |
  *   quit
+ * "capture" takes one frame of the window with that title; "live" opens a session on it that
+ * takes every frame until "live-stop", which answers "live-end" once Caminito has the stop. The
+ * answer to "live" is "live-end", or an error.
  * "choose" activates the open menu's item with that label. "drop-files" is a drop of files
  * on the Trash, "drop-on-folder" on a Kept folder.
  */
@@ -56,6 +68,7 @@
 
 #include <libxfce4windowing/libxfce4windowing.h>
 
+#include "dk-capture.h"
 #include "dk-dock.h"
 #include "dk-item.h"
 #include "dk-toplevel.h"
@@ -172,6 +185,98 @@ print_identifiers (void)
   printf ("identifiers-end\n");
 }
 
+/* The ext handle of the window with that title, or NULL. */
+static struct ext_foreign_toplevel_handle_v1 *
+handle_titled (const char *title)
+{
+  XfwScreen *screen = xfw_screen_get_default ();
+
+  for (GList *windows = xfw_screen_get_windows (screen); windows != NULL; windows = windows->next)
+    {
+      struct ext_foreign_toplevel_handle_v1 *handle = NULL;
+
+      if (g_strcmp0 (xfw_window_get_name (windows->data), title) == 0
+          && dk_toplevel_lookup (G_OBJECT (windows->data), NULL, &handle))
+        return handle;
+    }
+  return NULL;
+}
+
+/* The colour of a frame's centre pixel, as the 32-bit native-endian word cairo keeps. */
+static guint32
+centre_colour (cairo_surface_t *frame)
+{
+  int width = cairo_image_surface_get_width (frame);
+  int height = cairo_image_surface_get_height (frame);
+  const guint8 *row =
+    cairo_image_surface_get_data (frame) + (height / 2) * cairo_image_surface_get_stride (frame);
+
+  return ((const guint32 *) row)[width / 2];
+}
+
+/* A capture of a window, through the dock's own capture, or why it fails. */
+static DkCapture *
+start_capture (const char *title, gboolean once, DkCaptureFunc func)
+{
+  struct ext_foreign_toplevel_handle_v1 *handle = handle_titled (title);
+  g_autoptr (GError) error = NULL;
+  DkCapture *capture;
+
+  if (handle == NULL)
+    {
+      printf ("capture-error no window titled %s with a name for Caminito\n", title);
+      return NULL;
+    }
+  capture = dk_capture_start (handle, once, func, NULL, &error);
+  if (capture == NULL)
+    printf ("capture-error %s\n", error->message);
+  return capture;
+}
+
+static void
+on_one_frame (DkCapture *capture, cairo_surface_t *frame, const GError *error,
+              gpointer data G_GNUC_UNUSED)
+{
+  if (frame != NULL)
+    printf ("capture %d %d %08x\n", cairo_image_surface_get_width (frame),
+            cairo_image_surface_get_height (frame), centre_colour (frame));
+  else
+    printf ("capture-error %s\n", error->message);
+  printf ("capture-end\n");
+  dk_capture_free (capture);
+}
+
+/* The live session, and what it has given. */
+static struct
+{
+  DkCapture *capture;
+  guint      frames;
+  int        width;
+  int        height;
+  guint32    colour;
+} live;
+
+static void
+on_live_frame (DkCapture *capture G_GNUC_UNUSED, cairo_surface_t *frame,
+               const GError *error G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+{
+  if (frame == NULL)
+    return;
+  live.frames++;
+  live.width = cairo_image_surface_get_width (frame);
+  live.height = cairo_image_surface_get_height (frame);
+  live.colour = centre_colour (frame);
+}
+
+static void
+print_live (void)
+{
+  printf ("live frames=%u open=%d w=%d h=%d color=%08x\n", live.frames,
+          live.capture != NULL && dk_capture_is_open (live.capture), live.width, live.height,
+          live.colour);
+  printf ("live-end\n");
+}
+
 static void
 print_folders (void)
 {
@@ -242,6 +347,28 @@ run_command (char *line)
     }
   else if (g_strcmp0 (words[0], "identifiers") == 0)
     print_identifiers ();
+  else if (g_strcmp0 (words[0], "capture") == 0 && words[1] != NULL)
+    {
+      /* The title is the rest of the line. */
+      if (start_capture (strchr (g_strstrip (line), ' ') + 1, TRUE, on_one_frame) == NULL)
+        printf ("capture-end\n");
+    }
+  else if (g_strcmp0 (words[0], "live") == 0 && words[1] != NULL)
+    {
+      g_clear_pointer (&live.capture, dk_capture_free);
+      memset (&live, 0, sizeof live);
+      live.capture = start_capture (strchr (g_strstrip (line), ' ') + 1, FALSE, on_live_frame);
+      printf ("live-end\n");
+    }
+  else if (g_strcmp0 (words[0], "live-status") == 0)
+    print_live ();
+  else if (g_strcmp0 (words[0], "live-stop") == 0)
+    {
+      g_clear_pointer (&live.capture, dk_capture_free);
+      /* Caminito has read the session's end before the answer. */
+      gdk_display_sync (gdk_display_get_default ());
+      printf ("live-end\n");
+    }
   else if (g_strcmp0 (words[0], "menu") == 0)
     print_menu ();
   else if (g_strcmp0 (words[0], "trash") == 0)
