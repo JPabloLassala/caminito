@@ -80,7 +80,11 @@ icon_surface (DkItemView *view, int size, int scale)
                                                  scale, GTK_ICON_LOOKUP_FORCE_SIZE);
   if (info != NULL)
     {
-      surface = gtk_icon_info_load_surface (info, gtk_widget_get_window (view->widget), NULL);
+      g_autoptr (GError) error = NULL;
+
+      surface = gtk_icon_info_load_surface (info, gtk_widget_get_window (view->widget), &error);
+      if (surface == NULL)
+        g_warning ("can't load the icon of %s: %s", view->key, error->message);
       g_object_unref (info);
     }
   return surface;
@@ -150,6 +154,47 @@ draw_indicator (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int wid
     }
 }
 
+/* What stands for an icon the theme can't give, as it can't where the image loaders are
+   missing: a rounded square with the program's first letter. */
+static void
+draw_stand_in (DkItemView *view, cairo_t *cr, GtkStyleContext *context, int width, int height,
+               int size)
+{
+  g_autofree char *name = gtk_widget_get_tooltip_text (view->widget);
+  g_autofree char *letter = NULL;
+  g_autoptr (PangoLayout) layout = NULL;
+  PangoFontDescription *font;
+  GdkRGBA color;
+  double side = size * 0.72, radius = side / 4;
+  double x = (width - side) / 2, y = (height - side) / 2;
+  int text_width, text_height;
+
+  gtk_style_context_get_color (context, GTK_STATE_FLAG_NORMAL, &color);
+  color.alpha = 0.25;
+  gdk_cairo_set_source_rgba (cr, &color);
+  cairo_new_sub_path (cr);
+  cairo_arc (cr, x + side - radius, y + radius, radius, -G_PI / 2, 0);
+  cairo_arc (cr, x + side - radius, y + side - radius, radius, 0, G_PI / 2);
+  cairo_arc (cr, x + radius, y + side - radius, radius, G_PI / 2, G_PI);
+  cairo_arc (cr, x + radius, y + radius, radius, G_PI, 3 * G_PI / 2);
+  cairo_close_path (cr);
+  cairo_fill (cr);
+  if (name == NULL || name[0] == '\0')
+    return;
+  letter = g_utf8_strup (name, g_utf8_next_char (name) - name);
+  layout = gtk_widget_create_pango_layout (view->widget, letter);
+  font = pango_font_description_new ();
+  pango_font_description_set_absolute_size (font, side * 0.55 * PANGO_SCALE);
+  pango_font_description_set_weight (font, PANGO_WEIGHT_BOLD);
+  pango_layout_set_font_description (layout, font);
+  pango_font_description_free (font);
+  pango_layout_get_pixel_size (layout, &text_width, &text_height);
+  gtk_style_context_get_color (context, GTK_STATE_FLAG_NORMAL, &color);
+  gdk_cairo_set_source_rgba (cr, &color);
+  cairo_move_to (cr, (width - text_width) / 2.0, (height - text_height) / 2.0);
+  pango_cairo_show_layout (cr, layout);
+}
+
 static gboolean
 on_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
 {
@@ -183,6 +228,8 @@ on_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
       cairo_set_source_surface (cr, view->surface, (width - size) / 2.0, (height - size) / 2.0);
       cairo_paint (cr);
     }
+  else
+    draw_stand_in (view, cr, context, width, height, size);
   draw_indicator (view, cr, context, width, height);
   return FALSE;
 }

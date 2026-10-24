@@ -382,12 +382,7 @@ item_click (DkDock *dock, DkItemView *view, const GdkEvent *event)
   g_clear_pointer (&dock->pressed, g_array_unref);
   dock->pressed_view = NULL;
 
-  DkClick click = dk_item_click (&item, &target);
-
-  g_debug ("click on %s with %u windows: %d (first: active %d, minimised %d)", key, windows->len, click,
-           windows->len > 0 ? g_array_index (windows, DkWindow, 0).active : -1,
-           windows->len > 0 ? g_array_index (windows, DkWindow, 0).minimised : -1);
-  switch (click)
+  switch (dk_item_click (&item, &target))
     {
     case DK_CLICK_LAUNCH:
       launch_entry (dock, key, NULL);
@@ -619,8 +614,6 @@ on_item_button_press (GtkWidget *widget, GdkEventButton *event, gpointer data)
   g_clear_pointer (&dock->pressed, g_array_unref);
   dock->pressed_view = view_of (widget);
   dock->pressed = item_for_click (dock, dock->pressed_view);
-  g_debug ("press: %u windows, first active %d", dock->pressed->len,
-           dock->pressed->len > 0 ? g_array_index (dock->pressed, DkWindow, 0).active : -1);
   return GDK_EVENT_PROPAGATE;
 }
 

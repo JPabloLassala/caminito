@@ -14,9 +14,10 @@
  * stdout, a line each:
  *   ready                        the window is mapped
  *   window W H                   the window's size, first in the answer to "items"
- *   item KEY windows=N active=A kept=K x=X y=Y w=W h=H
+ *   item KEY windows=N active=A kept=K x=X y=Y w=W h=H title=TITLE
  *                                one for each item, in order, in answer to "items": the
- *                                item's rectangle in the window, and then "items-end"
+ *                                item's rectangle in the window and the title of its most
+ *                                recent window, and then "items-end"
  *   menu LABEL                   one for each item of the open menu, in answer to "menu",
  *                                and then "menu-end"
  * stdin:
@@ -30,6 +31,8 @@
 #ifdef HAVE_GTK_LAYER_SHELL
 #include <gtk-layer-shell.h>
 #endif
+
+#include <libxfce4windowing/libxfce4windowing.h>
 
 #include "dk-dock.h"
 #include "dk-item.h"
@@ -45,6 +48,8 @@ print_items (void)
 {
   g_autoptr (GPtrArray) keys = dk_dock_get_keys (dock);
 
+  /* The items as they are laid out now, not as of the last frame: a reorder has moved them. */
+  gtk_container_check_resize (GTK_CONTAINER (window));
   printf ("window %d %d\n", gtk_widget_get_allocated_width (window),
           gtk_widget_get_allocated_height (window));
   for (guint i = 0; i < keys->len; i++)
@@ -56,10 +61,12 @@ print_items (void)
 
       gtk_widget_get_allocation (item, &a);
       gtk_widget_translate_coordinates (item, window, 0, 0, &x, &y);
-      printf ("item %s windows=%u active=%d kept=%d x=%d y=%d w=%d h=%d\n",
-              (char *) keys->pdata[i], dk_item_view_get_windows (view)->len,
-              dk_item_view_is_active (view), dk_store_is_kept (store, keys->pdata[i]), x, y,
-              a.width, a.height);
+      GPtrArray *windows = dk_item_view_get_windows (view);
+
+      printf ("item %s windows=%u active=%d kept=%d x=%d y=%d w=%d h=%d title=%s\n",
+              (char *) keys->pdata[i], windows->len, dk_item_view_is_active (view),
+              dk_store_is_kept (store, keys->pdata[i]), x, y, a.width, a.height,
+              windows->len > 0 ? xfw_window_get_name (windows->pdata[0]) : "");
     }
   printf ("items-end\n");
 }
@@ -215,7 +222,9 @@ main (int argc, char **argv)
   /* No client-side frame or shadow: the window's geometry is its allocation. */
   gtk_window_set_decorated (GTK_WINDOW (window), FALSE);
 #ifdef HAVE_GTK_LAYER_SHELL
-  if (gtk_layer_is_supported ())
+  if (!gtk_layer_is_supported ())
+    g_warning ("no layer shell: the probe is a toplevel, and takes the focus when it's clicked");
+  else
     {
       gtk_layer_init_for_window (GTK_WINDOW (window));
       gtk_layer_set_layer (GTK_WINDOW (window), GTK_LAYER_SHELL_LAYER_TOP);
@@ -237,7 +246,7 @@ main (int argc, char **argv)
         gtk_widget_set_size_request (window, size, -1);
     }
 #endif
-  gtk_css_provider_load_from_data (css, "window { background: #303236; color: #eff0f1; }", -1,
+  gtk_css_provider_load_from_data (css, "window.background:not(.popup) { background: #303236; color: #eff0f1; }", -1,
                                    NULL);
   gtk_style_context_add_provider_for_screen (gdk_screen_get_default (), GTK_STYLE_PROVIDER (css),
                                              GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);

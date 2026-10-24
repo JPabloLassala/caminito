@@ -18,6 +18,8 @@ Rules-Requires-Root: no
 # (270).
 # libnm-dev is NetworkManager's client library, which the Network applet reads it through (ADR
 # 0041). The applet links libnm0, which ${shlibs:Depends} brings at run time.
+# libxfce4windowing-dev is the library the Dock applet reads the windows through (CMN-219, ADR
+# 0013), and libgtk-layer-shell-dev the layer surface its test probe is.
 Build-Depends:
  debhelper-compat (= 13),
  rustup,
@@ -41,6 +43,8 @@ Build-Depends:
  libmate-panel-applet-dev (>= 1.29.0~git20260925.58ac6c1),
  libsensors-dev,
  libnm-dev,
+ libxfce4windowing-dev,
+ libgtk-layer-shell-dev,
  libpam0g-dev,
  libaudit-dev,
  dbus-daemon,

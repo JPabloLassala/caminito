@@ -55,6 +55,8 @@ struct Item {
     kept: bool,
     /// The item's rectangle in the probe's window.
     rect: Rectangle<i32, Logical>,
+    /// The title of the item's most recent window.
+    title: String,
 }
 
 /// The probe in a scratch directory with its log, its settings and its desktop entries.
@@ -207,6 +209,7 @@ impl Probe {
             .iter()
             .filter_map(|line| line.strip_prefix("item "))
             .map(|line| {
+                let (line, title) = line.split_once(" title=").unwrap();
                 let mut words = line.split(' ');
                 let key = words.next().unwrap().to_owned();
                 let field =
@@ -221,6 +224,7 @@ impl Probe {
                     active: active != 0,
                     kept: kept != 0,
                     rect: Rectangle::new((x, y).into(), (w, h).into()),
+                    title: title.to_owned(),
                 }
             })
             .collect()
@@ -315,7 +319,7 @@ impl Desk {
     fn with(edge: &'static str, size: i32) -> Self {
         let mut f = Fixture::new();
         f.add_output(OUTPUT, 1.0);
-        let probe = Probe::start(&mut f, tempfile::tempdir().unwrap(), edge, size);
+        let mut probe = Probe::start(&mut f, tempfile::tempdir().unwrap(), edge, size);
         probe.wait_for_items(&mut f, |_| true);
         Desk { f, probe }
     }
@@ -340,6 +344,12 @@ impl Desk {
                 ..WindowSpec::plain((240, 160))
             },
         );
+        // The dock has seen it take the focus before the next window comes: windows that come
+        // within a millisecond of each other leave it no order to go by.
+        self.wait_for_focus(window);
+        self.probe.wait_for_items(&mut self.f, |items| {
+            items.iter().any(|item| item.active && item.title == title)
+        });
         let dock = self.probe.surface();
         let geometry = self.f.geometry(window);
         assert!(
@@ -407,8 +417,11 @@ impl Desk {
     #[track_caller]
     fn wait_for_focus(&mut self, window: ClientWindow) {
         let pid = self.f.pid(window);
-        self.f
-            .dispatch_until(|f| f.state.caminito.policy.focus(SEAT) == Some(pid));
+        let probe = &self.probe;
+        self.f.dispatch_until_explained(
+            |f| f.state.caminito.policy.focus(SEAT) == Some(pid),
+            || format!("{pid:?} never had the focus: {}", probe.log()),
+        );
     }
 
     /// Leaves a picture of the output where `CAMINITO_DOCK_SHOTS` says, as a PPM.
@@ -499,21 +512,32 @@ fn a_click_on_a_program_with_several_windows_activates_the_most_recent_one() {
     let other = d.open("caja", "Files");
     let item = d.wait_for("mate-terminal.desktop", 2);
     assert_eq!(d.items().len(), 2, "two processes, one item");
+    d.shot("06-two-processes-one-item");
 
-    // The first is the one the user used last.
+    // The first is the one the user used last. The dock sees each focus before the next, as it
+    // does when a person's clicks are that far apart.
     let now = d.f.state.caminito.now();
     d.f.state
         .caminito
         .policy
         .activate(SEAT, d.f.pid(first), now);
-    d.f.dispatch();
     d.wait_for_focus(first);
+    d.probe.wait_for_items(&mut d.f, |items| {
+        items
+            .iter()
+            .any(|item| item.key == "mate-terminal.desktop" && item.active)
+    });
     let now = d.f.state.caminito.now();
     d.f.state
         .caminito
         .policy
         .activate(SEAT, d.f.pid(other), now);
     d.wait_for_focus(other);
+    d.probe.wait_for_items(&mut d.f, |items| {
+        items
+            .iter()
+            .any(|item| item.key == "caja.desktop" && item.active)
+    });
 
     d.click(&item);
 
@@ -573,9 +597,14 @@ fn a_window_with_no_desktop_entry_has_an_item_of_its_own() {
     );
     d.shot("02-running-items");
 
-    // It is clicked as any other item is.
-    d.click(&items[1]);
+    // It is clicked as any other item is: the terminal has the focus, and the most recent of
+    // the item's windows is the one the click brings forward.
     d.wait_for_focus(terminal);
+    d.probe.wait_for_items(&mut d.f, |items| {
+        items
+            .iter()
+            .any(|item| item.key == "mate-terminal.desktop" && item.active)
+    });
     d.click(item);
     d.wait_for_focus(again);
     d.shot("03-focused-indicator");
@@ -619,12 +648,15 @@ fn a_minimised_window_animates_into_its_dock_item() {
         active: true,
         ..item
     };
+    // The probe takes real time to answer the click: only the test moves the clock on.
+    d.f.stop_clock();
     d.click(&item);
     d.f.dispatch_until(|f| f.state.caminito.policy.is_minimized(pid));
     d.f.advance_clock(PART_WAY);
 
-    // A spot the window covers part-way to the item, and that neither does at rest.
-    let at = |from: i32, to: i32| from + (to - from) * 55 / 100;
+    // A spot the window covers 100 ms into the 250 of its way to the item, which neither it
+    // nor the item does at rest. The clock is stopped, so the way is exactly two fifths.
+    let at = |from: i32, to: i32| from + (to - from) * 2 / 5;
     let way = Rectangle::new(
         (at(frame.loc.x, target.loc.x), at(frame.loc.y, target.loc.y)).into(),
         (
@@ -722,7 +754,7 @@ fn keeping_removing_and_reordering_survive_the_panels_restart() {
     }
     let items = d.probe.wait_for_items(&mut d.f, |items| items.len() == 3);
     // Caja dragged to the front: dropped on the left half of the first item.
-    let (first, last) = (items[0].rect, items[2].rect);
+    let first = items[0].rect;
     d.probe.send(&format!(
         "drop caja.desktop {} {}",
         first.loc.x + 2,
@@ -743,7 +775,6 @@ fn keeping_removing_and_reordering_survive_the_panels_restart() {
     d.probe.send("choose Remove from Dock");
     let items = d.probe.wait_for_items(&mut d.f, |items| items.len() == 2);
     assert_eq!(keys(&items), ["caja.desktop", "mate-terminal.desktop"]);
-    let _ = last;
 
     // The panel restarts: a second probe over the same settings.
     let Desk { mut f, probe } = d;
