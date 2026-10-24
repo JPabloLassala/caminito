@@ -2,6 +2,8 @@
  * A window's name for Caminito (CMN-243).
  */
 
+#include <gtk/gtk.h>
+
 #include "dk-toplevel.h"
 
 #ifdef GDK_WINDOWING_WAYLAND
@@ -37,6 +39,8 @@ on_identifier (void *data, struct ext_foreign_toplevel_handle_v1 *handle G_GNUC_
 {
   Entry *entry = data;
 
+  if (entry->identifier != NULL)
+    g_hash_table_remove (entry->binding->handles, entry->identifier);
   g_free (entry->identifier);
   entry->identifier = g_strdup (identifier);
   g_hash_table_replace (entry->binding->handles, entry->identifier, entry);
@@ -103,8 +107,9 @@ on_global (void *data, struct wl_registry *registry, uint32_t name, const char *
   if (g_str_equal (interface, ext_foreign_toplevel_list_v1_interface.name))
     {
       binding->list = wl_registry_bind (registry, name, &ext_foreign_toplevel_list_v1_interface, 1);
-      /* Before the roundtrip that follows dispatches the handles the compositor sends at once:
-         a handle that arrives with no listener is never heard from again. */
+      /* Before any dispatch of the handles the compositor sends at once, which the registry's
+         roundtrip or the first lookup's may be: a handle that arrives with no listener is never
+         heard from again. */
       ext_foreign_toplevel_list_v1_add_listener (binding->list, &list_listener, binding);
     }
   else if (g_str_equal (interface, caminito_toplevel_identifier_manager_v1_interface.name))
@@ -213,8 +218,9 @@ dk_toplevel_lookup (GObject *window, char **identifier,
     return FALSE;
   request = caminito_toplevel_identifier_manager_v1_get_identifier (binding->manager, wlr_handle);
   caminito_toplevel_identifier_v1_add_listener (request, &answer_listener, &name);
-  /* The compositor answers before it answers the round trip, and it sent the list's handle
-     for a window before it sent the window to the panel's library, so this reads both. */
+  /* The compositor answers before it answers the round trip. It refreshes the foreign toplevel
+     list after management in one pass, before it reads a request, so by the time the answer
+     is sent the list's handle for the window has been too, and this round trip reads both. */
   wl_display_roundtrip_queue (binding->display, binding->queue);
   caminito_toplevel_identifier_v1_destroy (request);
   if (name == NULL)

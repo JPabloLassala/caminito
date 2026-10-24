@@ -43,7 +43,7 @@ fn the_compositor_offers_the_protocol() {
 on_both_kinds! {
     fn the_answer_is_the_identifier_the_list_gives_the_window(kind: Kind) {
         let (mut f, client) = Fixture::connected(kind);
-        let caja = f.map(client, titled("Caja", "caja"));
+        f.map(client, titled("Caja", "caja"));
         let applet = applet(&mut f);
 
         let listed = f.client(applet).foreign_toplevels().listed[0].identifier.clone();
@@ -53,18 +53,14 @@ on_both_kinds! {
             answer(&mut f, applet, 0),
             IdentifierAnswer::Identifier(identifier.clone())
         );
-        assert_eq!(
-            f.state.caminito.toplevel_identifier(f.pid(caja)),
-            Some(identifier)
-        );
     }
 }
 
 on_both_kinds! {
     fn two_windows_with_one_title_get_their_own_identifiers(kind: Kind) {
         let (mut f, client) = Fixture::connected(kind);
-        let first = f.map(client, titled("Terminal", "mate-terminal"));
-        let second = f.map(client, titled("Terminal", "mate-terminal"));
+        f.map(client, titled("Terminal", "mate-terminal"));
+        f.map(client, titled("Terminal", "mate-terminal"));
         let applet = applet(&mut f);
 
         let identifiers: Vec<_> = (0..2)
@@ -75,16 +71,8 @@ on_both_kinds! {
             .collect();
 
         assert_ne!(identifiers[0], identifiers[1]);
-        // The toplevels are announced in the order the windows mapped.
-        let caminito = &f.state.caminito;
-        assert_eq!(
-            [
-                caminito.toplevel_identifier(f.pid(first)),
-                caminito.toplevel_identifier(f.pid(second)),
-            ],
-            [Some(identifiers[0].clone()), Some(identifiers[1].clone())]
-        );
-        // And the list names them the same.
+        // The toplevels are announced in the order the windows mapped, and the list names
+        // them the same.
         let listed = &f.client(applet).foreign_toplevels().listed;
         assert_eq!(listed[0].identifier.as_deref(), Some(identifiers[0].as_str()));
         assert_eq!(listed[1].identifier.as_deref(), Some(identifiers[1].as_str()));

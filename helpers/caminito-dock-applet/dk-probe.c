@@ -31,8 +31,9 @@
  *                                or "-" for none, and EXT=1 if the dock found its ext handle,
  *                                and then "identifiers-end"
  * stdin:
- *   items | identifiers | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y | launch-timeout MS |
- *   trash | popup-trash | drop-files URI... | dialog | respond accept|cancel | quit
+ *   items | identifiers | menu | popup KEY | choose LABEL | keep KEY | drop KEY X Y |
+ *   launch-timeout MS | trash | popup-trash | drop-files URI... | dialog | respond accept|cancel |
+ *   quit
  * "choose" activates the open menu's item with that label. "drop-files" is a drop of files
  * on the Trash.
  */
