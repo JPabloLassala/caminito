@@ -415,6 +415,7 @@ dialog_timed_out (gpointer user_data)
 {
 	GSLockPlug *plug = user_data;
 
+	gs_debug ("The dialog timed out, which cancels the prompt");
 	gs_lock_plug_set_sensitive (plug, FALSE);
 	set_status_text (plug, _("Time has expired."));
 

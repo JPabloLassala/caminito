@@ -197,6 +197,7 @@ impl State {
     fn logind_event(&mut self, event: Event) {
         match event {
             Event::Lock => {
+                tracing::debug!(target: crate::lock::TARGET, "logind locks the session");
                 self.request_lock();
             }
             Event::Unlock => self.caminito.end_lock(),

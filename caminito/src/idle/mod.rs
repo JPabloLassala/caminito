@@ -186,6 +186,7 @@ impl State {
                 }
                 // A lock that's refused, as with `disable-lock-screen`, is logged there.
                 Effect::Lock => {
+                    tracing::debug!(target: crate::lock::TARGET, "the blank lasted lock-delay; locking");
                     self.request_lock();
                 }
                 Effect::PowerOff => {

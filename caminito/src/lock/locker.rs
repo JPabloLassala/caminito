@@ -213,6 +213,11 @@ fn locker_event(state: &mut State, event: HelperEvent<'_>) {
     let locker = &mut caminito.locker;
     match event {
         HelperEvent::Started => {
+            tracing::debug!(
+                "the locker started as process {:?}, while {}",
+                locker.helper.process(),
+                locker.state_name()
+            );
             if locker.supervision == Supervision::Starting {
                 locker.supervision = Supervision::Running;
             }
@@ -221,6 +226,11 @@ fn locker_event(state: &mut State, event: HelperEvent<'_>) {
             tracing::debug!("locker: {}", String::from_utf8_lossy(bytes).trim_end());
         }
         HelperEvent::Exited => {
+            tracing::debug!(
+                "the locker exited while {}, with the session {}",
+                locker.state_name(),
+                caminito.lock.state().name()
+            );
             if locker.supervision == Supervision::Running {
                 locker.supervision = Supervision::Starting;
             }
@@ -249,6 +259,11 @@ impl State {
         }
         // The locker that held the lock may have gone in this same dispatch.
         caminito.notice_locker_gone();
+        tracing::debug!(
+            "the session lock is asked for, while the session is {} and the locker {}",
+            caminito.lock.state().name(),
+            caminito.locker.state_name()
+        );
         let was_locked = caminito.lock.is_locked();
         caminito.lock.request();
         if !was_locked {
@@ -270,12 +285,14 @@ impl Caminito {
     fn spawn_locker(&mut self) {
         let locker = &mut self.locker;
         if locker.supervision != Supervision::Idle {
+            tracing::debug!("not spawning a locker: it's {}", locker.state_name());
             return;
         }
         let settings = &self.settings.locker;
         if settings.command.is_empty() {
             tracing::warn!("can't start the locker: org.mate.Caminito locker-command is empty");
         }
+        tracing::debug!("spawning the locker: {:?}", settings.command);
         let command = command(settings, &self.environment, locker.socket.as_ref());
         // The locker of an earlier lock that's still exiting is ended here.
         locker.helper = helper(

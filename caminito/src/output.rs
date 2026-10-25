@@ -259,6 +259,9 @@ impl Caminito {
     /// Starts showing an output the backend found: in its preferred mode, at its default
     /// scale, and to the right of the outputs there are, at the layout's top (82).
     pub fn add_output(&mut self, output: Output) {
+        if self.lock.is_locked() {
+            tracing::debug!(target: crate::lock::TARGET, "{} was plugged in while locked", output.name());
+        }
         self.monitors_changed = true;
         let mode = output.preferred_mode();
         self.show_output(output, mode);
@@ -311,6 +314,9 @@ impl Caminito {
 
     /// Stops showing an output that was unplugged. A disabled output is only forgotten.
     pub fn remove_output(&mut self, output: &Output) {
+        if self.lock.is_locked() {
+            tracing::debug!(target: crate::lock::TARGET, "{} was unplugged while locked", output.name());
+        }
         self.monitors_changed = true;
         if let Some(index) = self.disabled_outputs.iter().position(|o| o == output) {
             self.disabled_outputs.remove(index);

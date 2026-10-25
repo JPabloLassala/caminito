@@ -224,7 +224,7 @@ impl State {
         // A caller that has gone away doesn't want the answer.
         match request {
             Request::Lock { caller, reply } => {
-                tracing::debug!("{caller} locks the session");
+                tracing::debug!(target: crate::lock::TARGET, "{caller} locks the session");
                 // A refusal is logged there.
                 let locked = self.request_lock();
                 let _ = reply.send(if locked {

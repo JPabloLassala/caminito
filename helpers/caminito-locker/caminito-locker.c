@@ -309,7 +309,9 @@ static gboolean auth_check_idle(gpointer data)
 {
 	GSLockPlug* plug = data;
 	gboolean res;
+	static guint conversations = 0;
 
+	gs_debug("Starting conversation %u", ++conversations);
 	cancelled = FALSE;
 	res = do_auth_check(plug);
 
@@ -652,7 +654,7 @@ static gboolean move_dialog(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gp
 
 	if (parent != window)
 	{
-		gs_debug("Moving the dialog");
+		gs_debug("Moving the dialog to %s", gdk_monitor_get_model(g_object_get_data(G_OBJECT(window), "monitor")));
 
 		/* With its monitor's window gone and none left, the dialog has no window. */
 		if (parent != NULL)
@@ -693,7 +695,7 @@ static void add_lock_window(GdkMonitor* monitor)
 
 static void monitor_added_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* monitor, gpointer data G_GNUC_UNUSED)
 {
-	gs_debug("Monitor added");
+	gs_debug("Monitor added: %s", gdk_monitor_get_model(monitor));
 
 	add_lock_window(monitor);
 }
@@ -705,7 +707,7 @@ static void monitor_removed_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* mo
 	GHashTableIter iter;
 	gpointer other;
 
-	gs_debug("Monitor removed");
+	gs_debug("Monitor removed: %s", gdk_monitor_get_model(monitor));
 
 	window = g_hash_table_lookup(lock_windows, monitor);
 	if (window == NULL)
@@ -786,6 +788,7 @@ int main(int argc, char** argv)
 	if (verbose)
 	{
 		g_log_set_debug_enabled(TRUE);
+		gs_auth_set_verbose(TRUE);
 	}
 
 	if (!gtk_session_lock_is_supported())

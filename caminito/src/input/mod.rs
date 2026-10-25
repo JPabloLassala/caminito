@@ -1046,6 +1046,19 @@ impl State {
             let focus = self.caminito.lock_surface_with_keyboard();
             let focus = focus.map(KeyboardFocus::Surface);
             if keyboard.current_focus() != focus {
+                match &focus {
+                    Some(KeyboardFocus::Surface(surface)) => tracing::debug!(
+                        target: crate::lock::TARGET,
+                        "the keyboard goes to the lock surface on {}",
+                        self.caminito
+                            .lock_surface_output_name(surface)
+                            .unwrap_or_default()
+                    ),
+                    _ => tracing::debug!(
+                        target: crate::lock::TARGET,
+                        "the session is locked, and no lock surface takes the keyboard"
+                    ),
+                }
                 keyboard.set_focus(self, focus, SERIAL_COUNTER.next_serial());
             }
             return;

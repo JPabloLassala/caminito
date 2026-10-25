@@ -232,6 +232,7 @@ impl State {
                 self.caminito.policy.action(SEAT, Action::ShowDesktop, now);
             }
             HotCornerAction::Lock => {
+                tracing::debug!(target: crate::lock::TARGET, "the hot corner locks the session");
                 self.request_lock();
             }
         }

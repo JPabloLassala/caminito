@@ -8,6 +8,10 @@
 mod locker;
 mod state;
 
+/// The target every lock log line is under, wherever it's logged from, so that
+/// `RUST_LOG=info,caminito::lock=debug` follows a lock from its request to its unlock.
+pub(crate) const TARGET: &str = "caminito::lock";
+
 pub(crate) use locker::Locker;
 pub(crate) use state::LockState;
 
@@ -165,6 +169,7 @@ impl Lock {
         if self.undrawn.is_empty()
             && let Some(confirmation) = self.confirmation.take()
         {
+            tracing::debug!(target: TARGET, "every output drew the lock; telling the locker it's locked");
             confirmation.lock();
         }
     }
@@ -189,16 +194,26 @@ impl SessionLockHandler for State {
         self.caminito.notice_locker_gone();
         let caminito = &mut self.caminito;
         let asker = caminito.asker(confirmation.ext_session_lock());
+        let process = caminito.lock_process(confirmation.ext_session_lock());
         let was_locked = caminito.lock.is_locked();
         match caminito.lock.state.client_locks(asker) {
             Ok(state) => {
+                tracing::debug!(
+                    target: TARGET,
+                    "process {process:?} ({asker:?}) takes the lock: {} to {}, waiting for {} outputs to draw it",
+                    caminito.lock.state.name(),
+                    state.name(),
+                    caminito.outputs.len(),
+                );
                 caminito.lock.take(state, confirmation, &caminito.outputs);
                 caminito.queue_redraw_all();
                 if !was_locked {
                     self.session_locked();
                 }
             }
-            Err(refused) => tracing::warn!("can't give a client the session lock: {refused}"),
+            Err(refused) => tracing::warn!(
+                "can't give process {process:?} ({asker:?}) the session lock: {refused}"
+            ),
         }
     }
 
@@ -210,8 +225,15 @@ impl SessionLockHandler for State {
         // the lock until another is told `locked`. Its unlock mustn't end a later lock.
         let lock = &self.caminito.lock;
         if lock.state() != LockState::Locked || lock.confirmation.is_some() {
+            tracing::debug!(
+                target: TARGET,
+                "ignoring an unlock: the session is {}, and the locker {} told it's locked",
+                lock.state().name(),
+                if lock.confirmation.is_some() { "isn't" } else { "was" },
+            );
             return;
         }
+        tracing::debug!(target: TARGET, "the locker unlocked the session");
         self.caminito.lock.release();
         self.caminito.locker.finish();
         self.caminito.queue_redraw_all();
@@ -222,14 +244,17 @@ impl SessionLockHandler for State {
         // Smithay doesn't call this for a lock that was refused, but it may for one that
         // unlocked.
         if caminito.lock.held.as_ref() != Some(surface.ext_session_lock()) {
+            tracing::debug!(target: TARGET, "ignoring a lock surface of a lock that isn't held");
             return;
         }
         // Left unconfigured, a surface for an output that's gone never shows.
         let Some(output) =
             Output::from_resource(&output).filter(|output| caminito.outputs.contains(output))
         else {
+            tracing::debug!(target: TARGET, "ignoring a lock surface for an output that's gone");
             return;
         };
+        tracing::debug!(target: TARGET, "the locker put a lock surface on {}", output.name());
         configure_lock_surface(&surface, &output);
         caminito.lock.surfaces.push((output, surface));
     }
@@ -289,13 +314,17 @@ impl Caminito {
     /// Who the client that asks for `lock` is: a locker Caminito spawned is known by its
     /// process (12).
     fn asker(&self, lock: &ExtSessionLockV1) -> Asker {
-        let process = lock
-            .client()
-            .and_then(|client| client_process(&client, &self.display_handle));
+        let process = self.lock_process(lock);
         match self.locker.process() {
             Some(spawned) if process == Some(spawned) => Asker::SpawnedLocker,
             _ => Asker::Other,
         }
+    }
+
+    /// The process of the client that asks for `lock`.
+    fn lock_process(&self, lock: &ExtSessionLockV1) -> Option<u32> {
+        lock.client()
+            .and_then(|client| client_process(&client, &self.display_handle))
     }
 
     /// A locker that went away without `unlock_and_destroy` leaves the session locked,
@@ -319,7 +348,18 @@ impl Caminito {
         self.lock.undrawn.retain(|output| outputs.contains(output));
         self.lock.confirm_if_drawn();
         let surfaces = &mut self.lock.surfaces;
-        surfaces.retain(|(output, surface)| surface.alive() && outputs.contains(output));
+        surfaces.retain(|(output, surface)| {
+            let kept = surface.alive() && outputs.contains(output);
+            if !kept {
+                tracing::debug!(
+                    target: TARGET,
+                    "dropping the lock surface on {}: {}",
+                    output.name(),
+                    if surface.alive() { "the output is gone" } else { "the locker destroyed it" },
+                );
+            }
+            kept
+        });
         let shown = &mut self.lock.shown;
         shown.retain(|output| surfaces.iter().any(|(on, _)| on == output));
         for (output, surface) in surfaces.iter() {
@@ -386,5 +426,13 @@ impl Caminito {
         pointed
             .or(lock.surfaces().map(|(_, surface)| surface).next())
             .map(|surface| surface.wl_surface().clone())
+    }
+
+    /// The name of the output `surface` is the lock surface of, for the log.
+    pub(crate) fn lock_surface_output_name(&self, surface: &WlSurface) -> Option<String> {
+        let mut surfaces = self.lock.surfaces();
+        surfaces
+            .find(|(_, lock_surface)| lock_surface.wl_surface() == surface)
+            .map(|(output, _)| output.name())
     }
 }
