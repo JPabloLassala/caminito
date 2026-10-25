@@ -405,7 +405,7 @@ on_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
       gtk_style_context_get_color (context, GTK_STATE_FLAG_NORMAL, &color);
       color.alpha = 0.12;
       gdk_cairo_set_source_rgba (cr, &color);
-      cairo_arc (cr, width / 2.0, height / 2.0, size / 2.0, 0, 2 * G_PI);
+      cairo_rectangle (cr, 0, 0, width, height);
       cairo_fill (cr);
     }
   if (view->feedback.highlighted)
