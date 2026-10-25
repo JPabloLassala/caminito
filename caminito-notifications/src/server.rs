@@ -32,7 +32,7 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(7);
 pub const MAX_SHOWN: usize = 3;
 
 /// What the server tells of itself: its name, its vendor, its version and the spec's.
-const NAME_OF_SERVER: &str = "Caminito";
+const SERVER_NAME: &str = "Caminito";
 const VENDOR: &str = "MATE";
 const SPEC_VERSION: &str = "1.3";
 
@@ -104,6 +104,7 @@ pub struct Bubble {
     pub app_name: String,
     /// The app's icon, from `app_icon` or else its desktop entry.
     pub app_icon: Option<Icon>,
+    /// The summary, as plain text.
     pub summary: String,
     /// The body as Pango markup, with what the spec allows and nothing else.
     pub body: String,
@@ -116,26 +117,37 @@ pub struct Bubble {
 /// An icon, by its icon theme's name or as a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Icon {
+    /// An icon theme's icon.
     Name(String),
+    /// An image file.
     File(PathBuf),
 }
 
 /// A bubble's image.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Image {
+    /// From `image-path`.
     Icon(Icon),
+    /// From `image-data`.
     Pixels(Pixels),
 }
 
 /// The pixels of an `image-data` hint, as GdkPixbuf has them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pixels {
+    /// The width, in pixels.
     pub width: i32,
+    /// The height, in pixels.
     pub height: i32,
+    /// The bytes from one row's start to the next's.
     pub rowstride: i32,
+    /// Whether each pixel has an alpha byte after its red, green and blue.
     pub has_alpha: bool,
+    /// The bits of each sample, which are 8.
     pub bits_per_sample: i32,
+    /// The samples of each pixel: 3, or 4 with alpha.
     pub channels: i32,
+    /// The rows, top first.
     pub data: glib::Bytes,
 }
 
@@ -156,7 +168,9 @@ impl Pixels {
 /// An action with a button.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Action {
+    /// What `ActionInvoked` gives the app.
     pub key: String,
+    /// The button's text.
     pub label: String,
 }
 
@@ -165,6 +179,7 @@ pub struct Action {
 pub enum Sound {
     /// A sound theme's sound, by its name in the sound naming spec.
     Name(String),
+    /// A sound file.
     File(PathBuf),
 }
 
@@ -203,7 +218,9 @@ impl Events {
     }
 
     /// The user clicked the bubble: its default action, or else a dismissal. `token` is an
-    /// xdg-activation token, for the app to bring its window forward with.
+    /// xdg-activation token, for the app to bring its window forward with. Without a default
+    /// action the click is to bring the app forward through Caminito (CMN-266); until then
+    /// it only dismisses the bubble.
     pub fn click(&self, token: Option<String>) {
         let Some(state) = self.state.upgrade() else {
             return;
@@ -294,9 +311,7 @@ impl Drop for Server {
         }
         let mut state = self.state.borrow_mut();
         for entry in state.notifications.values_mut() {
-            if let Some((timer, _)) = entry.timer.take() {
-                timer.abort();
-            }
+            entry.stop_timer();
         }
     }
 }
@@ -377,13 +392,7 @@ fn handle(
             invocation.return_value(Some(&(CAPABILITIES.to_vec(),).to_variant()));
         }
         "GetServerInformation" => invocation.return_value(Some(
-            &(
-                NAME_OF_SERVER,
-                VENDOR,
-                env!("CARGO_PKG_VERSION"),
-                SPEC_VERSION,
-            )
-                .to_variant(),
+            &(SERVER_NAME, VENDOR, env!("CARGO_PKG_VERSION"), SPEC_VERSION).to_variant(),
         )),
         "Notify" => {
             let string = |index| parameters.child_value(index).str().unwrap_or("").to_owned();
@@ -424,9 +433,7 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         let bubble = notification.bubble.clone();
         entry.notification = notification;
         // A replacement starts its time again.
-        if let Some((timer, _)) = entry.timer.take() {
-            timer.abort();
-        }
+        entry.stop_timer();
         entry.remaining = timeout;
         let shown = guard.shown.contains(&replaces);
         if shown {
@@ -490,9 +497,7 @@ fn close(state: &Rc<RefCell<State>>, id: u32, reason: Reason) {
     let Some(mut entry) = guard.notifications.remove(&id) else {
         return;
     };
-    if let Some((timer, _)) = entry.timer.take() {
-        timer.abort();
-    }
+    entry.stop_timer();
     guard.queued.retain(|queued| *queued != id);
     let was_shown = guard.shown.contains(&id);
     guard.shown.retain(|shown| *shown != id);
@@ -546,8 +551,7 @@ fn hover(state: &Rc<RefCell<State>>, id: u32, hovered: bool) {
     }
     entry.hovered = hovered;
     if hovered {
-        if let Some((timer, end)) = entry.timer.take() {
-            timer.abort();
+        if let Some(end) = entry.stop_timer() {
             entry.remaining = Some(end.saturating_duration_since(Instant::now()));
         }
     } else {
@@ -560,6 +564,15 @@ fn emit(connection: &gio::DBusConnection, signal: &str, arguments: impl ToVarian
         connection.emit_signal(None, PATH, NAME, signal, Some(&arguments.to_variant()))
     {
         glib::g_warning!(DOMAIN, "can't emit {signal}: {err}");
+    }
+}
+
+impl Entry {
+    /// Stops its timer, if it runs, and returns when it would have ended.
+    fn stop_timer(&mut self) -> Option<Instant> {
+        let (timer, end) = self.timer.take()?;
+        timer.abort();
+        Some(end)
     }
 }
 

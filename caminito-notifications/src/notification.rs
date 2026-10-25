@@ -164,14 +164,14 @@ fn icon(text: &str) -> Option<Icon> {
 }
 
 /// What a desktop entry tells of its app.
-struct Entry {
+struct DesktopEntry {
     name: String,
     icon: Option<Icon>,
 }
 
 /// The app of the `desktop-entry` hint, which is the entry's id without `.desktop`, from the
 /// XDG data directories' `applications/`.
-fn desktop_entry(id: &str) -> Option<Entry> {
+fn desktop_entry(id: &str) -> Option<DesktopEntry> {
     const GROUP: &str = "Desktop Entry";
     let file = glib::KeyFile::new();
     file.load_from_data_dirs(
@@ -181,7 +181,7 @@ fn desktop_entry(id: &str) -> Option<Entry> {
     .ok()?;
     let name = file.locale_string(GROUP, "Name", None).ok()?;
     let icon = file.string(GROUP, "Icon").ok().and_then(|text| icon(&text));
-    Some(Entry {
+    Some(DesktopEntry {
         name: name.to_string(),
         icon,
     })

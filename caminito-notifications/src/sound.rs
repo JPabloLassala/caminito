@@ -1,8 +1,8 @@
 //! The notifications' sounds, through libcanberra (CMN-258), as Caminito plays its own
 //! (`caminito/src/sound.rs`, ADR 0027): a theme's sound by its name, from the sound theme
-//! `org.mate.sound theme-name` names, or a file.
+//! `org.mate.sound theme-name` names, or a file, and none while `event-sounds` is off.
 
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::ptr::{self, NonNull};
 
@@ -107,8 +107,8 @@ impl Drop for Props {
 #[derive(Default)]
 pub(crate) struct Canberra {
     context: RefCell<Option<NonNull<CaContext>>>,
-    /// MATE's sound settings, if their schema is installed.
-    settings: RefCell<Option<Option<gio::Settings>>>,
+    /// MATE's sound settings, looked up at the first sound, if their schema is installed.
+    settings: OnceCell<Option<gio::Settings>>,
 }
 
 impl Canberra {
@@ -141,16 +141,21 @@ impl Canberra {
         Ok(context)
     }
 
+    /// MATE's sound settings, if their schema is installed.
+    fn settings(&self) -> Option<&gio::Settings> {
+        self.settings
+            .get_or_init(|| {
+                gio::SettingsSchemaSource::default()
+                    .and_then(|source| source.lookup(SOUND_SCHEMA, true))
+                    .map(|_| gio::Settings::new(SOUND_SCHEMA))
+            })
+            .as_ref()
+    }
+
     /// The sound theme MATE's settings name, or libcanberra's default.
     fn theme(&self) -> CString {
-        let mut settings = self.settings.borrow_mut();
-        let settings = settings.get_or_insert_with(|| {
-            gio::SettingsSchemaSource::default()
-                .and_then(|source| source.lookup(SOUND_SCHEMA, true))
-                .map(|_| gio::Settings::new(SOUND_SCHEMA))
-        });
-        let theme = settings
-            .as_ref()
+        let theme = self
+            .settings()
             .map(|settings| settings.string("theme-name").to_string())
             .filter(|theme| !theme.is_empty())
             .unwrap_or_else(|| "freedesktop".to_owned());
@@ -182,6 +187,13 @@ impl Canberra {
 
 impl Sounds for Canberra {
     fn play(&self, sound: &Sound) {
+        // MATE's switch for every event sound, which Caminito's own follow too.
+        if self
+            .settings()
+            .is_some_and(|settings| !settings.boolean("event-sounds"))
+        {
+            return;
+        }
         if let Err(code) = self.try_play(sound) {
             glib::g_debug!(DOMAIN, "can't play {sound:?}: {}", ca_error(code));
         }

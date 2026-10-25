@@ -33,8 +33,9 @@ impl Notifications {
         }
     }
 
-    /// Starts the daemon with `environment`, which has the socket, and supervises it. It's
-    /// spawned when the loop next runs, which is before the command has run anything.
+    /// Spawns the daemon with `environment`, which has the socket, before this returns, and
+    /// supervises it. Nothing waits for it to own the name: one that D-Bus activation
+    /// started meanwhile gives it back (CMN-258).
     pub(crate) fn start(
         &mut self,
         handle: LoopHandle<'static, State>,
@@ -63,7 +64,7 @@ impl Notifications {
             },
             daemon_event,
         );
-        helper.start();
+        helper.start_at_once();
         self.helper = Some(helper);
     }
 

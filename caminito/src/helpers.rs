@@ -158,6 +158,42 @@ impl<D: 'static> Helper<D> {
             .insert_idle(move |data| Self::spawn(data, access));
     }
 
+    /// [`Helper::start`], with the first spawn before this returns rather than when the loop
+    /// next runs: for a helper that must be running before what Caminito spawns next, as the
+    /// notification daemon before the session command (ADR 0051). One that can't be spawned
+    /// is handled as one that exited, when the loop next runs.
+    pub fn start_at_once(&mut self) {
+        if self.sigchld.is_some() {
+            return;
+        }
+        match self.watch_exits() {
+            Ok(sigchld) => self.sigchld = Some(sigchld),
+            Err(err) => {
+                tracing::error!("{}: can't watch for exits: {err}", self.command.identifier);
+                return;
+            }
+        }
+        let access = self.access;
+        match self.try_spawn() {
+            Ok(running) => {
+                self.running = Some(running);
+                self.handle.insert_idle(move |data| {
+                    let on_event = access(data).on_event;
+                    on_event(data, HelperEvent::Started);
+                });
+            }
+            Err(err) => {
+                tracing::warn!(
+                    "{}: can't start {}: {err}",
+                    self.command.identifier,
+                    self.command.program.display()
+                );
+                self.handle
+                    .insert_idle(move |data| Self::exited(data, access));
+            }
+        }
+    }
+
     /// Stops the helper for good, as Caminito tears down (08): it's sent SIGTERM, and it's
     /// neither watched nor started again. Caminito doesn't wait for it to exit.
     pub fn stop(&mut self) {

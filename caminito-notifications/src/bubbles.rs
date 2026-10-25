@@ -2,7 +2,9 @@
 //! `caminito-notification`, anchored to the top-right corner, that holds the bubbles on
 //! screen, newest nearest the corner. Its exclusive zone is 0, so it sits under the panel, and
 //! it names no output, so Caminito puts it on the output under the pointer as it maps. It's
-//! hidden while there's no bubble, and maps again where the pointer is for the next one.
+//! hidden while there's no bubble, and maps again where the pointer is for the next one; a
+//! bubble that opens while others show joins them on their output, as bubbles are on one
+//! output at a time in v1 (the spec's "Not in v1").
 //!
 //! The server decides what's on screen; this draws it, from the GTK theme, and tells the server
 //! what the user does through each bubble's [`Events`].

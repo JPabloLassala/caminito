@@ -28,9 +28,7 @@ pub(crate) fn sanitize(body: &str) -> String {
                         // and one for a tag that isn't open is dropped.
                         if let Some(position) = open.iter().rposition(|open| *open == name) {
                             for inner in open.drain(position..).rev() {
-                                out.push_str("</");
-                                out.push_str(inner);
-                                out.push('>');
+                                close(&mut out, inner);
                             }
                         }
                     }
@@ -55,11 +53,15 @@ pub(crate) fn sanitize(body: &str) -> String {
         rest = &rest[c.len_utf8()..];
     }
     for inner in open.into_iter().rev() {
-        out.push_str("</");
-        out.push_str(inner);
-        out.push('>');
+        close(&mut out, inner);
     }
     out
+}
+
+fn close(out: &mut String, tag: &str) {
+    out.push_str("</");
+    out.push_str(tag);
+    out.push('>');
 }
 
 enum Tag {
@@ -131,13 +133,12 @@ fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(c) = rest.chars().next() {
+        if let Some(length) = entity(rest) {
+            out.push_str(&rest[..length]);
+            rest = &rest[length..];
+            continue;
+        }
         match c {
-            '&' if entity(rest).is_some() => {
-                let length = entity(rest).expect("it was found");
-                out.push_str(&rest[..length]);
-                rest = &rest[length..];
-                continue;
-            }
             '&' => out.push_str("&amp;"),
             '"' => out.push_str("&quot;"),
             '<' => out.push_str("&lt;"),
