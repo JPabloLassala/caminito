@@ -168,6 +168,38 @@ fn a_configure_request_is_honoured_for_a_floating_window_and_refused_for_a_maxim
     assert_eq!(f.geometry(window), maximized);
 }
 
+/// A launcher such as Albert, undecorated, resizes itself as its list of results grows and
+/// shrinks: it's shown at the size it last drew at until it has drawn the new one, as a
+/// window being resized is, rather than black where it hasn't drawn yet.
+#[test]
+fn a_window_that_takes_sync_requests_and_asks_for_a_new_size_keeps_its_size_until_it_has_drawn_it()
+ {
+    let (mut f, x) = Fixture::connected(Kind::X11);
+    let window = f.map(
+        x,
+        WindowSpec {
+            decoration: Decoration::Client,
+            sync_request: true,
+            ..spec(400, 300)
+        },
+    );
+    let start = f.geometry(window);
+    let at = x_position(&mut f, window);
+
+    let id = window.x11();
+    f.x11_call(x, move |x| x.configure(id, at, (400, 500)))
+        .unwrap();
+    f.sync(window);
+
+    assert_eq!(f.x11_call(x, move |x| x.size(id)).unwrap(), (400, 500));
+    assert_eq!(f.geometry(window), start);
+
+    let acked = f.x11_call(x, move |x| x.ack_sync_requests(id));
+    assert_eq!(acked.unwrap(), 1);
+    f.dispatch_until(|f| f.geometry(window).size == (400, 500).into());
+    assert_eq!(f.geometry(window).loc, start.loc);
+}
+
 #[test]
 fn a_window_with_motif_decorations_off_gets_no_frame() {
     let (mut f, x) = Fixture::connected(Kind::X11);

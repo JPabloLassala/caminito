@@ -146,9 +146,6 @@ struct Unflushed {
     geometry: Option<(Rectangle<i32, Logical>, WindowStates)>,
     /// `_NET_WM_STATE_MODAL`, as the client asked.
     modal: Option<bool>,
-    /// The last geometry was sent with a sync request, which another flush mustn't cancel.
-    /// Unlike the rest, it's kept from one flush to the next.
-    syncing: bool,
 }
 
 /// Runs `f` on what hasn't been flushed yet.
@@ -392,12 +389,7 @@ impl Adapter for X11Surface {
     }
 
     fn flush(&self, _size: Size<i32, Logical>) {
-        let Unflushed {
-            geometry,
-            modal,
-            syncing,
-        } = unflushed(self, std::mem::take);
-        unflushed(self, |unflushed| unflushed.syncing = syncing);
+        let Unflushed { geometry, modal } = unflushed(self, std::mem::take);
         let mut set = Ok(());
         if let Some(modal) = modal {
             set = set.and(self.set_modal(modal));
@@ -405,20 +397,14 @@ impl Adapter for X11Surface {
         if let Some((geometry, states)) = geometry {
             set_net_wm_states(self, states.maximized, states.fullscreen);
             set = set.and(self.set_shaded(states.shaded));
-            let rect = x_rect(self, geometry);
-            // A window being resized is asked to say when it has drawn at each size, with
-            // `_NET_WM_SYNC_REQUEST`, and keeps the size it last drew at until then: X
-            // resizes it at once, and what it hasn't drawn yet is black. The resize's last
-            // size is waited for too, though the grab is over by then. A window that
-            // doesn't take the request is configured as ever.
-            let sync = states.resizing || (syncing && rect.size != self.last_configure().size);
-            unflushed(self, |unflushed| unflushed.syncing = sync);
-            let configured = if sync {
-                self.configure_with_sync(rect, None)
-            } else {
-                self.configure(rect)
-            };
-            if let Err(err) = configured {
+            // A window whose size changes is asked to say when it has drawn at the new one,
+            // with `_NET_WM_SYNC_REQUEST`, and keeps the size it last drew at until then: X
+            // resizes it at once, and what it hasn't drawn yet is black. That's so whether
+            // the user resizes it or it asks itself, as a launcher does as its results
+            // change. A size asked for while one is waited for is sent once it's drawn, so a
+            // resize's last size is waited for too. A window that doesn't take the request
+            // is configured as ever.
+            if let Err(err) = self.configure_with_sync(x_rect(self, geometry), None) {
                 tracing::debug!("can't configure an X window: {err}");
             }
         }
