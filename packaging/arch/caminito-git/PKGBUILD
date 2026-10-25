@@ -31,8 +31,9 @@ license=(GPL-2.0-or-later GPL-3.0-only)
 # patched packages are named by their real names, so the stock ones don't satisfy them (16,
 # ADR 0011); caja draws the desktop, on the primary output (81), mate-utils has
 # mate-screenshot, which the screenshot keys run (104), mate-power-manager has the
-# brightness and power keys (107), and mate-session autostarts the notification daemon and
-# the polkit agent. caminito links none of them.
+# brightness and power keys (107), and mate-session autostarts the polkit agent. caminito
+# links none of them. mate-session-manager-caminito 1.28.0.r23.g57a9178-7 skips
+# mate-notification-daemon's autostart, which caminito-notifications takes the place of.
 #
 # caminito-locker (131, ADR 0007) links gtk3, gtk-session-lock, mate-desktop and pam. It
 # shows mate-screensaver's lock-dialog-*.ui themes and authenticates through its
@@ -80,16 +81,21 @@ license=(GPL-2.0-or-later GPL-3.0-only)
 # gtk4 and speaks to NetworkManager and the Secret Service over D-Bus, so it needs nothing more.
 # The applet works under X11 MATE too, where caminito-network exits and nm-applet stays the
 # agent.
+# caminito-notifications (CMN-258, ADR 0051), the notification daemon that the session starts
+# before mate-session, links gtk4, gtk4-layer-shell for the bubbles' layer surface, and
+# libcanberra for their sounds. The package doesn't depend on mate-notification-daemon, nor
+# conflict with it: X11 MATE keeps it.
 # The Dock applet (CMN-219) reads the windows through libxfce4windowing, as mate-panel's window
 # list does on Caminito (ADR 0013), and works under X11 MATE too. Its Trash is GIO's
 # trash:///, which gvfs serves, as it does Caja (CMN-220).
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
   gtk-session-lock mate-desktop pam mate-screensaver glib-networking
-  mate-session-manager-caminito mate-panel-caminito 'mate-settings-daemon-caminito>=1.29.1-8' caja-caminito
+  'mate-session-manager-caminito>=1.28.0.r23.g57a9178-7' mate-panel-caminito
+  'mate-settings-daemon-caminito>=1.29.1-8' caja-caminito
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
-  mate-notification-daemon mate-polkit hicolor-icon-theme bluez lm_sensors upower libnm
-  nm-connection-editor libxfce4windowing gvfs)
+  mate-polkit hicolor-icon-theme bluez lm_sensors upower libnm
+  nm-connection-editor libxfce4windowing gvfs gtk4-layer-shell)
 # wayland's wayland-scanner makes the xdg-activation client the Dock applet asks for a launch's
 # token with (CMN-221), from the XML it vendors.
 makedepends=(cargo git meson wayland)
@@ -107,7 +113,7 @@ optdepends=("appmenu-gtk-module-caminito: the menus of MATE's own apps in the pa
 # caminito's tests link pixman for the headless backend, its test clients load
 # libwayland-client (21), and they run on a private session bus (14). caminito-bluetooth's
 # run against python-dbusmock's BlueZ (255), and caminito-network's and the Network applet's
-# against its NetworkManager.
+# against its NetworkManager. caminito-notifications's start a dbus-daemon of their own.
 checkdepends=(dbus pixman wayland python-dbusmock)
 provides=("$_pkgname")
 conflicts=("$_pkgname")
@@ -168,5 +174,6 @@ package() {
   install -Dm755 target/release/caminito target/release/caminito-displays \
     target/release/caminito-about target/release/caminito-wallpaperd \
     target/release/caminito-wallpaper target/release/caminito-bluetooth \
-    target/release/caminito-behaviour target/release/caminito-network -t "$pkgdir/usr/bin"
+    target/release/caminito-behaviour target/release/caminito-network \
+    target/release/caminito-notifications -t "$pkgdir/usr/bin"
 }

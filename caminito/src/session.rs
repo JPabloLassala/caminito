@@ -7,7 +7,8 @@
 //! into `Caminito::environment`, and from there to the D-Bus activation environment and to
 //! systemd's user manager (`dbus::systemd`), which then restarts the portal (232), and only
 //! once the bus has answered is the command spawned, with `GDK_BACKEND=x11` for itself alone.
-//! caminito-wallpaperd starts with it, as a helper (210).
+//! caminito-notifications starts just before it, and caminito-wallpaperd with it, as helpers
+//! (ADR 0051, 210).
 //!
 //! The Session ends when the command exits: Caminito stops its helpers and Xwayland, closes
 //! its socket, has systemd forget the variables, and stops the loop, for `run` to exit with
@@ -487,6 +488,13 @@ impl Caminito {
         if !self.environment.contains_key(OsStr::new("DISPLAY")) {
             command.env_remove("DISPLAY");
         }
+        // Before the command, so that it owns the notification name before anything the
+        // command starts could have another daemon D-Bus-activated (ADR 0051).
+        self.notifications.start(
+            self.loop_handle.clone(),
+            &self.environment,
+            self.helper_stderr,
+        );
         match command.spawn() {
             Ok(child) => {
                 tracing::info!(
@@ -596,6 +604,7 @@ impl Caminito {
         self.palette.stop();
         self.locker.stop();
         self.wallpaper.stop();
+        self.notifications.stop();
         self.end_xwayland();
         self.close_socket();
 

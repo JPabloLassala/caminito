@@ -8,6 +8,7 @@ members = [
     "caminito-displays",
     "caminito-layout",
     "caminito-network",
+    "caminito-notifications",
     "caminito-policy",
     "caminito-theme",
     "caminito-test-client",

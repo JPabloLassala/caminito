@@ -109,6 +109,7 @@ use crate::maximize_animation::MaximizeAnimations;
 use crate::minimize_animation::MinimizeAnimations;
 use crate::night_light::NightLight;
 use crate::not_responding::NotResponding;
+use crate::notifications::Notifications;
 use crate::open_close_animation::OpenCloseAnimations;
 use crate::output::OutputRecord;
 use crate::output::primary::PrimaryChoice;
@@ -234,6 +235,8 @@ pub struct Caminito {
     pub(crate) locker: Locker,
     /// The wallpaper's drawer, which a Session starts (210).
     pub(crate) wallpaper: Wallpaper,
+    /// The notification daemon, which a Session starts before its command (ADR 0051).
+    pub(crate) notifications: Notifications,
     /// ext-idle-notify and idle-inhibit, which `idle` times and counts (128).
     pub idle_notify_state: IdleNotifyState,
     pub idle_inhibit_state: IdleInhibitManagerState,
@@ -1020,6 +1023,7 @@ impl Caminito {
             lock: Lock::default(),
             locker: Locker::new(loop_handle.clone()),
             wallpaper: Wallpaper::new(),
+            notifications: Notifications::new(),
             idle_notify_state: IdleNotifyState::new::<State>(dh),
             idle_inhibit_state: IdleInhibitManagerState::new::<State>(dh),
             idle: Idle::new(settings.idle, clock.now().into()),

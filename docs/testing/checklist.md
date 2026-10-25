@@ -3853,3 +3853,32 @@ They are the developer's to run.
   and under any other compositor *Properties* has no *Intellihide* (CMN-224, ADR 0047).
 - **Debug tool:** `DumpState`'s `outputs`, whose panel's layer surface has `intellihide` with
   `hidden` and where it is `drawn`.
+
+### Notification bubbles in a real Session
+
+- **Milestone:** `notifications`.
+- **Steps:**
+  1. With `caminito-git` and `mate-session-manager-caminito` at `pkgrel` 7 or later, log into
+     *MATE on Caminito*. Run `pgrep -a mate-notification` and
+     `busctl --user status org.freedesktop.Notifications | grep -E '^(PID|Comm)'`.
+  2. Run `notify-send -a Test 'Hello' '<b>bold</b> and <a href="https://mate-desktop.org">a link</a>'`,
+     with the pointer on a second output if there is one.
+  3. Run `notify-send -A open=Open -A later=Later 'Two actions' 'Click one'` and click
+     *Later*. Then run `notify-send -w -A default=Open 'Click me' 'Anywhere on the bubble'` and
+     click the bubble's text.
+  4. Run `notify-send -t 3000 'Hover me' x`, and keep the pointer on its bubble for ten seconds,
+     then move it away. Click the close button that showed while it was there on another.
+  5. Run `notify-send 'One'` five times in a row, numbered, and `notify-send -u critical
+     'Critical' 'stays'`.
+  6. Run `killall caminito-notifications`, wait a second, and run `notify-send 'Back'`.
+- **Expected:** in step 1 there's no mate-notification-daemon, and the name's owner is
+  `caminito-notifications`. In step 2 a bubble opens in the top-right corner, under the panel, of
+  the output under the pointer, with the app's name, *Hello* in bold, the body's bold and its link,
+  which opens in the browser, and a sound plays. It closes after about 7 seconds. In step 3
+  `notify-send` prints `later` and then `default`, and each bubble closes. In step 4 the bubble
+  stays while the pointer is on it and closes about 3 seconds after it leaves. In step 5 three
+  bubbles show, the newest nearest the corner, and the others take their places as they close;
+  *Critical* stays until it's closed. In step 6 Caminito starts the daemon again and *Back* has a
+  bubble (CMN-258, ADR 0051).
+- **Debug tool:** `busctl --user monitor org.freedesktop.Notifications`, for the calls and the
+  signals.

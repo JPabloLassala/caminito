@@ -569,6 +569,50 @@ fn the_session_starts_the_wallpaper_drawer_again_when_it_exits_and_stops_it_at_t
 }
 
 #[test]
+fn the_session_starts_the_notification_daemon_before_its_command_and_again_when_it_exits() {
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let daemon = scripts.write(
+        "notifications",
+        &format!(
+            "trap 'touch \"$dir/daemon-stopped\"; exit 0' TERM\n\
+             {}\necho $$ >>\"$dir/daemon-processes\"\n{WAIT}",
+            write_environment("daemon-environment")
+        ),
+    );
+    f.state.caminito.notifications.program = Some(daemon.clone());
+    // The daemon's process is there as the command runs its first line, whether or not the
+    // daemon's script has run its own.
+    let command = scripts.session_command(&format!(
+        "pgrep -f '{}' >\"$dir/daemon-at-start.partial\"\n\
+         mv \"$dir/daemon-at-start.partial\" \"$dir/daemon-at-start\"\n{}\nexit 0",
+        daemon.display(),
+        wait_for("end")
+    ));
+
+    start(&mut f, command);
+    f.dispatch_until(|_| scripts.exists("daemon-processes") && scripts.exists("daemon-at-start"));
+
+    assert!(!scripts.read("daemon-at-start").trim().is_empty());
+    // On Caminito's socket, with what tells it it's under Caminito.
+    let environment = scripts.environment("daemon-environment");
+    assert_eq!(environment["WAYLAND_DISPLAY"], SOCKET);
+    assert_eq!(environment["MATE_WM_NAME"], "Caminito");
+    // Killed, as a crash would, it's started again.
+    let processes = || scripts.read("daemon-processes");
+    let first: i32 = processes().trim().parse().unwrap();
+    let first = rustix::process::Pid::from_raw(first).unwrap();
+    rustix::process::kill_process(first, rustix::process::Signal::KILL).unwrap();
+    f.dispatch_until(|_| processes().lines().count() == 2);
+    assert!(!scripts.exists("daemon-stopped"));
+
+    fs::write(scripts.path("end"), "").unwrap();
+    f.dispatch_until(|f| {
+        f.state.caminito.session_exit().is_some() && scripts.exists("daemon-stopped")
+    });
+}
+
+#[test]
 fn a_stop_reaches_the_command_as_sigterm_and_the_session_ends_with_its_status() {
     let mut f = fixture();
     let scripts = Scripts::new();

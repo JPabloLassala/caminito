@@ -150,7 +150,9 @@ soname (`libmate-panel-applet-4.so.2`). Arch's applets in other packages, such a
 are linked to the old one, so the package also builds the 1.28 library and installs it beside
 master's: each of those applets is a program of its own, which talks to the panel over D-Bus.
 The applet of `mate-notification-daemon` is loaded into the panel's process instead, where the two
-libraries can't work together, and doesn't work until that package is built again.
+libraries can't work together, and doesn't work until that package is built again. A Session
+doesn't run `mate-notification-daemon` at all: `caminito-notifications` is its notification daemon
+(ADR 0051).
 
 `mate-settings-daemon-caminito` is msd 1.29.1, which asks for mate-desktop 1.29.0. Arch has 1.28.2,
 so one of the package's patches takes out the one upstream commit that needs the newer library (a
