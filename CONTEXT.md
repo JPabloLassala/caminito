@@ -365,7 +365,7 @@ One icon of the Dock applet: a program, known by its desktop entry, with the win
 _Avoid_: task, launcher (a mate-panel launcher is a different panel object), Application (one process's windows only), group
 
 **Kept Dock item**:
-A Dock item the user has chosen to keep in the dock, which stays when the program has no window, until they remove it. The menu item is _Keep in Dock_.
+A Dock item the user has chosen to keep in the dock, which stays when the program has no window, until they remove it. The menu item is _Keep in Taskbar_.
 _Avoid_: pinned (pinning is the Sound applet's and the Thermal applet's), favourite, launcher
 
 **Kept folder**:
@@ -447,3 +447,35 @@ _Avoid_: gamma tool, redshift client
 **Pause**:
 Holding Night Light off until the next sunrise while it stays enabled. It ends by itself at sunrise and the schedule takes over again.
 _Avoid_: inhibit (that's an app holding it off, which Caminito doesn't offer), suspend, disable (that's turning Night Light off)
+
+**Notification bubble**:
+A notification shown on the desktop for a few seconds, over the windows, until it times out, is dismissed or is acted on. It's then in the Notification history, unless it was transient.
+_Avoid_: banner (macOS's), toast, popup (that's an applet's), OSD (that's the volume and brightness display)
+
+**Notification history**:
+The notifications the user hasn't dismissed yet, kept across sessions for a week at most, grouped by their Notifying app. A transient notification is never in it, and one its app withdraws leaves it.
+_Avoid_: notification list, log, inbox
+
+**Notification center**:
+The Notifications applet's popup, showing the Notification history and the Do Not Disturb choices.
+_Avoid_: notification drawer, action center, tray
+
+**Notifications applet**:
+Caminito's mate-panel applet for notifications: the icon in the panel, which shows when Do Not Disturb is on, and its popup, the Notification center. It takes the place of mate-notification-daemon's applet.
+_Avoid_: notification area (that's the panel's tray of status icons), notification daemon (that's the program showing the bubbles)
+
+**Notifying app**:
+A program as the notification settings know it: by its desktop entry, or by the name it gives when it has none. Its settings are its own, and any app without its own follows the default.
+_Avoid_: sender (the bus's connection), client, source
+
+**Delivery**:
+What a Notifying app's notifications get: a bubble and a place in the Notification history, a place in the history only, or nothing at all (Off).
+_Avoid_: alert style (macOS's), banners and alerts, mode
+
+**Do Not Disturb**:
+A state in which notifications get no bubble and no sound but still go to the Notification history. The user turns it on for an hour, four hours, until tomorrow morning or until they turn it off, and it also comes on during its daily schedule, while a window is fullscreen and while the screen is shared or recorded. Critical notifications, and those of apps allowed to, break through it.
+_Avoid_: focus, focus mode (macOS's), quiet mode, silent mode, DND alone (in the UI)
+
+**Previews**:
+A notification's summary, body and image in its bubble. With previews off, a bubble shows only its app and "Notification"; the Notification center always shows the whole notification.
+_Avoid_: content, details, privacy mode

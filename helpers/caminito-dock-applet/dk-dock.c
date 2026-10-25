@@ -797,7 +797,7 @@ dk_dock_popup_menu (DkDock *dock, GtkWidget *widget, const GdkEvent *event)
 
       if (menu_has_items (menu))
         menu_separator (menu);
-      item = menu_item (menu, kept ? "Remove from Dock" : "Keep in Dock",
+      item = menu_item (menu, kept ? "Remove from Taskbar" : "Keep in Taskbar",
                         kept ? G_CALLBACK (on_menu_remove) : G_CALLBACK (on_menu_keep), dock);
       g_object_set_data_full (G_OBJECT (item), "key", g_strdup (key), g_free);
     }
@@ -1519,7 +1519,7 @@ popup_folder_menu (DkDock *dock, DkItemView *view, const GdkEvent *event)
   const char *uri = dk_item_view_get_key (view);
   GtkWidget *menu = menu_begin (dock);
   GtkWidget *open = menu_item (menu, "Open in Caja", G_CALLBACK (on_folder_menu_open), dock);
-  GtkWidget *remove = menu_item (menu, "Remove from Dock", G_CALLBACK (on_folder_menu_remove),
+  GtkWidget *remove = menu_item (menu, "Remove from Taskbar", G_CALLBACK (on_folder_menu_remove),
                                  dock);
 
   g_object_set_data_full (G_OBJECT (open), "uri", g_strdup (uri), g_free);

@@ -1214,7 +1214,7 @@ fn the_context_menu_has_the_windows_the_actions_keep_and_close_all() {
             "---",
             "New Window",
             "---",
-            "Keep in Dock",
+            "Keep in Taskbar",
             "Close all windows",
         ]
         .map(str::to_owned),
@@ -1229,11 +1229,11 @@ fn the_context_menu_has_the_windows_the_actions_keep_and_close_all() {
     // Keep, then the menu says remove.
     d.press(&item, BTN_RIGHT);
     d.f.dispatch_until_mut(|f| !d.probe.menu(f).is_empty());
-    d.probe.send("choose Keep in Dock");
+    d.probe.send("choose Keep in Taskbar");
     let kept = d.probe.wait_for_items(&mut d.f, |items| items[0].kept);
     assert_eq!(kept[0].key, "mate-terminal.desktop");
     d.press(&item, BTN_RIGHT);
-    d.f.dispatch_until_mut(|f| d.probe.menu(f).iter().any(|l| l == "Remove from Dock"));
+    d.f.dispatch_until_mut(|f| d.probe.menu(f).iter().any(|l| l == "Remove from Taskbar"));
 
     // Close all windows asks each one to close.
     d.probe.send("choose Close all windows");
@@ -1250,8 +1250,8 @@ fn removing_a_kept_program_with_no_window_takes_its_item_away() {
 
     d.press(&item, BTN_RIGHT);
     d.f.dispatch_until_mut(|f| !d.probe.menu(f).is_empty());
-    assert_eq!(d.probe.menu(&mut d.f), ["Remove from Dock"]);
-    d.probe.send("choose Remove from Dock");
+    assert_eq!(d.probe.menu(&mut d.f), ["Remove from Taskbar"]);
+    d.probe.send("choose Remove from Taskbar");
 
     d.probe.wait_for_items(&mut d.f, |items| items.is_empty());
 }
@@ -1266,8 +1266,8 @@ fn a_kept_program_whose_entry_is_gone_can_be_removed() {
 
     d.press(&item, BTN_RIGHT);
     d.f.dispatch_until_mut(|f| !d.probe.menu(f).is_empty());
-    assert_eq!(d.probe.menu(&mut d.f), ["Remove from Dock"]);
-    d.probe.send("choose Remove from Dock");
+    assert_eq!(d.probe.menu(&mut d.f), ["Remove from Taskbar"]);
+    d.probe.send("choose Remove from Taskbar");
 
     d.probe.wait_for_items(&mut d.f, |items| items.is_empty());
 }
@@ -1299,7 +1299,7 @@ fn keeping_removing_and_reordering_survive_the_panels_restart() {
     let firefox = items[2].clone();
     d.press(&firefox, BTN_RIGHT);
     d.f.dispatch_until_mut(|f| !d.probe.menu(f).is_empty());
-    d.probe.send("choose Remove from Dock");
+    d.probe.send("choose Remove from Taskbar");
     let items = d.probe.wait_for_items(&mut d.f, |items| items.len() == 2);
     assert_eq!(keys(&items), ["caja.desktop", "mate-terminal.desktop"]);
 
@@ -1823,10 +1823,10 @@ fn a_kept_folder_survives_the_panels_restart_and_remove_from_dock_takes_it_away(
     d.press_rect(folders[1].rect, BTN_RIGHT);
     assert_eq!(
         d.wait_for_menu(),
-        ["Open in Caja", "Remove from Dock"].map(str::to_owned)
+        ["Open in Caja", "Remove from Taskbar"].map(str::to_owned)
     );
     d.shot("12-kept-folder-menu");
-    d.probe.send("choose Remove from Dock");
+    d.probe.send("choose Remove from Taskbar");
     let folders = d.wait_for_folders(|folders| folders.len() == 1);
     assert!(!uris(&folders).contains(&documents));
 }

@@ -3697,9 +3697,9 @@ They are the developer's to run.
 - **Steps:**
   1. Log into *MATE on Caminito*, with Firefox, `mate-terminal`, `xterm` (X11) and a Flatpak
      installed. Right-click a panel, choose *Add to Panel…* and add *Dock*.
-  2. Open Firefox from the main menu. Right-click its item and choose *Keep in Dock*, then
+  2. Open Firefox from the main menu. Right-click its item and choose *Keep in Taskbar*, then
      close Firefox and click its item. Right-click the item again: the menu has Firefox's
-     windows, its actions (*New Window*, *New Private Window*), *Remove from Dock* and
+     windows, its actions (*New Window*, *New Private Window*), *Remove from Taskbar* and
      *Close all windows*.
   3. Open `mate-terminal` twice, as two processes (`mate-terminal --disable-factory &`
      twice). Click its item while another window has the focus, and then again while one
