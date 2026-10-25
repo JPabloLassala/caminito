@@ -117,7 +117,6 @@ use crate::output::saved::{self, SavedLayouts};
 use crate::overview::Overview;
 use crate::popup_slide::PopupSlides;
 use crate::protocols::appmenu::AppmenuState;
-use crate::protocols::dock_activation::DockActivationState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gamma_control::GammaControlState;
@@ -125,7 +124,6 @@ use crate::protocols::gtk_shell::GtkShellState;
 use crate::protocols::idle_notify::IdleNotifyState;
 use crate::protocols::intellihide::IntellihideState;
 use crate::protocols::output_management::OutputManagementState;
-use crate::protocols::toplevel_identifier::ToplevelIdentifierState;
 use crate::protocols::xfce_foreign_toplevel::XfceForeignToplevelState;
 use crate::session::Session;
 use crate::settings::translate::MARCO_GENERAL;
@@ -194,10 +192,6 @@ pub struct Caminito {
     pub(crate) layer_shell_state: WlrLayerShellState,
     /// Which layer surfaces ask for intellihide (CMN-224).
     pub(crate) intellihide_state: IntellihideState,
-    /// The global that names a window by its ext identifier to the Dock applet (CMN-243).
-    pub(crate) _toplevel_identifier_state: ToplevelIdentifierState,
-    /// The Dock applets Caminito tells which Dock item to activate (CMN-245).
-    pub(crate) dock_activation_state: DockActivationState,
 
     // The windows as a panel sees them (65).
     pub foreign_toplevel_state: ForeignToplevelState,
@@ -988,8 +982,6 @@ impl Caminito {
             popups: PopupManager::default(),
             layer_shell_state: WlrLayerShellState::new_with_filter::<State, _>(dh, privileged),
             intellihide_state: IntellihideState::new::<State, _>(dh, privileged),
-            _toplevel_identifier_state: ToplevelIdentifierState::new::<State, _>(dh, privileged),
-            dock_activation_state: DockActivationState::new::<State, _>(dh, privileged),
 
             foreign_toplevel_state: ForeignToplevelState::new::<State, _>(dh, privileged),
             foreign_toplevel_list_state: ForeignToplevelListState::new_with_filter::<State>(

@@ -145,12 +145,6 @@ step "the Sound popup's wheel against caminito"
 CAMINITO_SOUND_WHEEL_PROBE=$PWD/target/meson/helpers/caminito-sound-applet/sd-wheel-probe \
   cargo test -p caminito tests::sound_popup_wheel -- --ignored
 
-# The Dock applet's copy of Caminito's protocol that names a window (CMN-243): meson can't
-# reach the original from the subproject.
-step "the Dock applet's copy of caminito-toplevel-identifier-v1"
-cmp caminito/resources/caminito-toplevel-identifier-v1.xml \
-  helpers/caminito-dock-applet/protocols/caminito-toplevel-identifier-v1.xml
-
 # The Dock applet's items and clicks end to end (CMN-219): its probe, the dock as a layer
 # surface on GDK's Wayland backend, against the headless fixture, with the real
 # libxfce4windowing reading the windows.

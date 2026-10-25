@@ -2,7 +2,6 @@
 //! of something from it, a handler trait (15).
 
 pub mod appmenu;
-pub mod dock_activation;
 pub mod ext_workspace;
 pub mod foreign_toplevel;
 pub mod gamma_control;
@@ -11,7 +10,6 @@ pub mod idle_notify;
 pub mod intellihide;
 pub mod output_management;
 pub mod raw;
-pub mod toplevel_identifier;
 pub mod xfce_foreign_toplevel;
 
 use smithay::reexports::wayland_server::Client;

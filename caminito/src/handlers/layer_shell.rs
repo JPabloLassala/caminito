@@ -9,7 +9,6 @@ use smithay::wayland::shell::wlr_layer::{
 };
 use smithay::wayland::shell::xdg::PopupSurface;
 
-use crate::protocols::dock_activation::{DockActivationHandler, DockActivationState};
 use crate::protocols::intellihide::{IntellihideHandler, IntellihideState};
 use crate::state::State;
 
@@ -52,11 +51,5 @@ impl WlrLayerShellHandler for State {
 impl IntellihideHandler for State {
     fn intellihide_state(&mut self) -> &mut IntellihideState {
         &mut self.caminito.intellihide_state
-    }
-}
-
-impl DockActivationHandler for State {
-    fn dock_activation_state(&mut self) -> &mut DockActivationState {
-        &mut self.caminito.dock_activation_state
     }
 }

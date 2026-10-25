@@ -3,7 +3,6 @@
 
 use caminito_policy::{PolicyWindow, WindowId};
 use smithay::output::Output;
-use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle};
 use smithay::wayland::foreign_toplevel_list::{
@@ -14,7 +13,6 @@ use crate::output::{output_geometry, output_id};
 use crate::protocols::foreign_toplevel::{
     ForeignToplevelHandler, ForeignToplevelState, Toplevel, ToplevelId, ToplevelStates,
 };
-use crate::protocols::toplevel_identifier::ToplevelIdentifierHandler;
 use crate::state::{Caminito, SEAT, State};
 use crate::window::Mapped;
 
@@ -26,13 +24,6 @@ pub(super) fn window_id(toplevel: ToplevelId) -> WindowId {
 /// What foreign toplevel management names a window by.
 fn toplevel_id(window: WindowId) -> ToplevelId {
     ToplevelId(window.0)
-}
-
-impl ToplevelIdentifierHandler for State {
-    fn identifier_of(&mut self, handle: &ZwlrForeignToplevelHandleV1) -> Option<String> {
-        let toplevel = self.caminito.foreign_toplevel_state.toplevel(handle)?;
-        self.caminito.toplevel_identifier(window_id(toplevel))
-    }
 }
 
 impl ForeignToplevelHandler for State {

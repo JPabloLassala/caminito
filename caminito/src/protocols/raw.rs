@@ -3,10 +3,7 @@
 //! Xfce's extension of foreign toplevel management, from
 //! `xfce-foreign-toplevel-management-private-v1.xml` (75), and in [`appmenu`] KDE's
 //! `org_kde_kwin_appmenu_manager`, from `appmenu.xml` (112), and in [`intellihide`] Caminito's
-//! own `caminito_intellihide_manager_v1`, from `caminito-intellihide-v1.xml` (CMN-224), and in
-//! [`toplevel_identifier`] `caminito_toplevel_identifier_manager_v1`, from
-//! `caminito-toplevel-identifier-v1.xml` (CMN-243), and in [`dock_activation`]
-//! `caminito_dock_activation_manager_v1`, from `caminito-dock-activation-v1.xml` (CMN-245).
+//! own `caminito_intellihide_manager_v1`, from `caminito-intellihide-v1.xml` (CMN-224).
 
 #![allow(
     dead_code,
@@ -85,38 +82,4 @@ pub mod intellihide {
     use self::__interfaces::*;
 
     wayland_scanner::generate_server_code!("resources/caminito-intellihide-v1.xml");
-}
-
-/// `caminito_toplevel_identifier_manager_v1` and the `caminito_toplevel_identifier_v1` it
-/// makes (CMN-243). Its request names a handle of wlr-foreign-toplevel-management.
-pub mod toplevel_identifier {
-    use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::*;
-    use smithay::reexports::wayland_server;
-    use smithay::reexports::wayland_server::protocol::*;
-
-    pub mod __interfaces {
-        use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::__interfaces::*;
-        use smithay::reexports::wayland_server::backend as wayland_backend;
-        use smithay::reexports::wayland_server::protocol::__interfaces::*;
-        wayland_scanner::generate_interfaces!("resources/caminito-toplevel-identifier-v1.xml");
-    }
-    use self::__interfaces::*;
-
-    wayland_scanner::generate_server_code!("resources/caminito-toplevel-identifier-v1.xml");
-}
-
-/// `caminito_dock_activation_manager_v1` and the `caminito_dock_activation_v1` it makes
-/// (CMN-245). Its request names the panel's `wl_surface`.
-pub mod dock_activation {
-    use smithay::reexports::wayland_server;
-    use smithay::reexports::wayland_server::protocol::*;
-
-    pub mod __interfaces {
-        use smithay::reexports::wayland_server::backend as wayland_backend;
-        use smithay::reexports::wayland_server::protocol::__interfaces::*;
-        wayland_scanner::generate_interfaces!("resources/caminito-dock-activation-v1.xml");
-    }
-    use self::__interfaces::*;
-
-    wayland_scanner::generate_server_code!("resources/caminito-dock-activation-v1.xml");
 }
