@@ -50,8 +50,10 @@ update_layout (Applet *applet)
                       edge_of (mate_panel_applet_get_orient (applet->applet)));
 }
 
+/* Both "change-size" and "change-orient" carry the new value before the user data. */
 static void
-on_layout_changed (MatePanelApplet *panel_applet G_GNUC_UNUSED, gpointer data)
+on_layout_changed (MatePanelApplet *panel_applet G_GNUC_UNUSED, guint value G_GNUC_UNUSED,
+                   gpointer data)
 {
   update_layout (data);
 }
