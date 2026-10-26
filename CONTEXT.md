@@ -57,7 +57,7 @@ The light or dark preference that apps read through the portal. It is separate f
 _Avoid_: dark mode, dark theme (a GTK theme that happens to be dark)
 
 **Helper**:
-A process that Caminito itself starts and supervises: Xwayland, the palette helper, the locker and, in a Session, caminito-wallpaperd. MATE components aren't helpers, because mate-session starts and restarts them.
+A process that Caminito itself starts and supervises: Xwayland, the palette helper, the locker and, in a Session, caminito-wallpaperd and caminito-notifications. MATE components aren't helpers, because mate-session starts and restarts them.
 _Avoid_: daemon, child (for MATE components)
 
 **Session**:
@@ -385,8 +385,8 @@ An icon of the Dock applet for a mounted disk the user can eject or unmount, suc
 _Avoid_: volume (that's sound's), mount, device, place (that's Caja's sidebar)
 
 **Launcher entry**:
-What a program tells the Dock applet about its Dock item through Unity's `com.canonical.Unity.LauncherEntry` D-Bus signal: a count, shown as a badge on the icon's corner, a progress, shown as a bar across the icon, and whether it is urgent. It lasts until the program clears it, leaves the bus, or has no window left.
-_Avoid_: notification count (the notification daemon's), quicklist (the API's menu, which the Dock applet doesn't take)
+What a program tells the Dock applet about its Dock item through Unity's `com.canonical.Unity.LauncherEntry` D-Bus signal: a count, shown as the Badge, a progress, shown as a bar across the icon, and whether it is urgent. It lasts until the program clears it, leaves the bus, or has no window left.
+_Avoid_: notification count (that's the Badge's other source), quicklist (the API's menu, which the Dock applet doesn't take)
 
 **Intellihide**:
 A panel's hiding off its edge whenever a window on its output's active workspace overlaps it, and coming back when none does or when the pointer rests at that edge. A panel with intellihide reserves no space. Caminito decides when it hides and slides it, not the panel.
@@ -479,3 +479,7 @@ _Avoid_: focus, focus mode (macOS's), quiet mode, silent mode, DND alone (in the
 **Previews**:
 A notification's summary, body and image in its bubble. With previews off, a bubble shows only its app and "Notification"; the Notification center always shows the whole notification.
 _Avoid_: content, details, privacy mode
+
+**Badge**:
+The count on a Dock item's corner: its Launcher entry's count when the program sets one, and otherwise the number of its Notifying app's notifications in the Notification history, unless the user has turned that off for the app.
+_Avoid_: notification count, unread count (notifications aren't read or unread), dot (that's the Notifications applet's)
