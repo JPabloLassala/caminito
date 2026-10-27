@@ -585,6 +585,11 @@ Some checks need a real desktop and are run by hand before a milestone closes. T
 - [docs/adr/](docs/adr/): architecture decision records, from the choice of Rust and Smithay to how
   MATE packages are patched.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Contributions come under GPL-3.0-or-later, with a DCO
+`Signed-off-by:` line on each commit, and bugs and ideas go to GitHub issues.
+
 ## License
 
 GPL-3.0-or-later. See [COPYING](COPYING).
