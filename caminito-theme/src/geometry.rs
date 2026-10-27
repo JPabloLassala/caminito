@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! Where every part of a frame goes, as Marco computes it (`theme.c:514-1100`).
 
 use std::sync::Arc;

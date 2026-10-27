@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! Position and size expressions, parsed as Marco does at load time (`theme.c:1914-3125`).
 //!
 //! When a theme loads they are tokenized, theme constants are substituted, and an

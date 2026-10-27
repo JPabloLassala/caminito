@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! Finding and loading a theme by name, as Marco's `meta_theme_load` does
 //! (`theme-parser.c:4338`), over the XDG data directories (09).
 

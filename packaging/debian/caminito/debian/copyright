@@ -35,6 +35,44 @@ Copyright: 2001 Havoc Pennington
 License: GPL-3+ and GPL-2+
 Comment: Ported from Marco's src/ui/theme-parser.c.
 
+Files: caminito-theme/src/color.rs
+       caminito-theme/src/draw.rs
+       caminito-theme/src/expr.rs
+       caminito-theme/src/geometry.rs
+       caminito-theme/src/image.rs
+       caminito-theme/src/load.rs
+       caminito-theme/src/model.rs
+Copyright: 2001 Havoc Pennington
+           2025-2026 Juan Pablo Lassala
+License: GPL-3+ and GPL-2+
+Comment: Follows Marco's src/ui/theme.c, theme.h and theme-parser.c.
+
+Files: caminito-theme/src/button_layout.rs
+Copyright: 2001 Havoc Pennington
+           2002 Red Hat, Inc.
+           2006 Elijah Newren
+           2008 Thomas Thurman
+           2025-2026 Juan Pablo Lassala
+License: GPL-3+ and GPL-2+
+Comment: Follows Marco's src/core/prefs.c.
+
+Files: caminito-theme/src/title.rs
+Copyright: 2001 Havoc Pennington
+           2003 Red Hat, Inc.
+           2005-2006 Elijah Newren
+           2025-2026 Juan Pablo Lassala
+License: GPL-3+ and GPL-2+
+Comment: Follows Marco's src/ui/frames.c.
+
+Files: caminito-policy/src/placement.rs
+Copyright: 2001 Havoc Pennington
+           2002-2003 Red Hat, Inc.
+           2003 Rob Adams
+           2005 Elijah Newren
+           2025-2026 Juan Pablo Lassala
+License: GPL-3+ and GPL-2+
+Comment: Follows Marco's src/core/place.c.
+
 Files: caminito-theme/src/markup.rs
 Copyright: 2000, 2003 Red Hat, Inc.
            2007-2008 Ryan Lortie <desrt@desrt.ca>

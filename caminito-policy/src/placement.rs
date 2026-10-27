@@ -1,3 +1,10 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2002-2003 Red Hat, Inc.
+// SPDX-FileCopyrightText: 2003 Rob Adams
+// SPDX-FileCopyrightText: 2005 Elijah Newren
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! Marco's placement (`place.c`), on frame rectangles: the automatic, pointer and manual
 //! modes, and `center-new-windows` (154).
 
