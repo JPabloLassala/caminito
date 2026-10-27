@@ -5,10 +5,9 @@
 //! `planckian_locus` and `calc_whitepoint`: the CIE daylight locus from
 //! 2500 K, Kim et al.'s cubic fit of the Planckian locus up to 4000 K, blended between the
 //! two from 2500 to 4000 K, then XYZ to sRGB. They're published formulas, not tables:
-//! nothing comes from redshift's or gammastep's tables. Two things
-//! differ from wlsunset: the sRGB transfer function is the standard's, and the white point
-//! is taken relative to 6500 K's, so 6500 K is the identity ramp and the temperatures near it
-//! don't jump to it.
+//! nothing comes from redshift's or gammastep's tables. Two things differ from wlsunset: the
+//! sRGB transfer function is the standard's, and the white point is taken relative to
+//! 6500 K's, so 6500 K is the identity ramp and the temperatures near it don't jump to it.
 
 /// Neutral: the identity ramp, as with Night Light off.
 pub(crate) const NEUTRAL: u32 = 6500;

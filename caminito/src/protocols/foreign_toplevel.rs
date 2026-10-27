@@ -9,7 +9,8 @@
 //! answers requests through [`ForeignToplevelHandler`].
 //!
 //! Written from the protocol's XML: nothing was copied from niri's or cosmic-comp's
-//! implementations (03). cosmic-comp's code can't be used, as it is GPL-3.0-only (ADR 0051).
+//! implementations (03). niri's code can be, with its notice; cosmic-comp's can't, because
+//! it is GPL-3.0-only (ADR 0051).
 
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_handle_v1::{

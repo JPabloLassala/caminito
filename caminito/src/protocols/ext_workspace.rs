@@ -11,8 +11,8 @@
 //! output (ADR 0032, 226).
 //!
 //! Smithay has no ext-workspace at the pinned revision. Written from the protocol's XML;
-//! nothing was copied from niri's or cosmic-comp's implementations (03). cosmic-comp's code
-//! can't be used, as it is GPL-3.0-only (ADR 0051).
+//! nothing was copied from niri's or cosmic-comp's implementations (03). niri's code can
+//! be, with its notice; cosmic-comp's can't, because it is GPL-3.0-only (ADR 0051).
 
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::ext::workspace::v1::server::ext_workspace_group_handle_v1::{

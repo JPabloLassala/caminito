@@ -10,10 +10,10 @@
 //!
 //! Written from the protocol's XML, after niri's `src/protocols/gamma_control.rs` (at
 //! d0cd58e) in its shape: the handler's three calls, the live controls by output, and a
-//! failed control forgotten at once. None of niri's code was copied (03).
-//! Unlike niri, the table is read with `pread` from the file's start, as wlroots'
-//! `types/wlr_gamma_control_v1.c` does: a client needn't seek back after writing it, and a
-//! pipe, which could block the loop, is refused.
+//! failed control forgotten at once. None of niri's code was copied (03), though ADR 0051
+//! allows it with niri's notice. Unlike niri, the table is read with `pread` from the file's
+//! start, as wlroots' `types/wlr_gamma_control_v1.c` does: a client needn't seek back after
+//! writing it, and a pipe, which could block the loop, is refused.
 
 use std::fmt;
 use std::io;
