@@ -587,8 +587,8 @@ Some checks need a real desktop and are run by hand before a milestone closes. T
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Contributions come under GPL-3.0-or-later, with a DCO
-`Signed-off-by:` line on each commit, and bugs and ideas go to GitHub issues.
+See [CONTRIBUTING.md](CONTRIBUTING.md). It tells the licence of a contribution, the sign-off
+that each commit must have, and where to report bugs.
 
 ## License
 
