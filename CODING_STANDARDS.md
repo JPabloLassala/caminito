@@ -62,7 +62,7 @@ The layout is ticket 15's ([.scratch/issues/15-crate-and-module-architecture.md]
 - Comments say *why*, or name the constraint the code respects. They don't narrate *what* the code does.
 - Refer to a ticket by its number in parentheses, e.g. `(14)`, and to an ADR by its number. If a ticket's decision was changed on purpose, the comment says so.
 - Use CONTEXT.md's terms and avoid the ones it lists under *Avoid*. For example: compositor, never "Wayland window manager"; carried patch, never "fork".
-- When reference code is copied or adapted (niri, anvil, cosmic-comp, Marco), cite the source file and line.
+- Copy or adapt reference code only from a project whose licence allows GPL-3.0-or-later (niri, anvil, Marco, mate-screensaver), keep its notice, and cite the source file and line. From cosmic-comp, which is GPL-3.0-only, take behaviour only, never code (ADR 0051).
 
 ## Tests
 

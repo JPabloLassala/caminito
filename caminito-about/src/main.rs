@@ -22,8 +22,8 @@ const BUILT_ON: [(&str, &str); 2] = [
 ];
 /// The licence's SPDX name, and the GNU page of its text.
 const LICENCE: (&str, &str) = (
-    "GPL-2.0-or-later",
-    "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
+    "GPL-3.0-or-later",
+    "https://www.gnu.org/licenses/gpl-3.0.html",
 );
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 

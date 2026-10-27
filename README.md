@@ -587,4 +587,4 @@ Some checks need a real desktop and are run by hand before a milestone closes. T
 
 ## License
 
-GPL-2.0-or-later. See [COPYING](COPYING).
+GPL-3.0-or-later. See [COPYING](COPYING).

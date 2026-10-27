@@ -6,7 +6,7 @@ pkgrel=1
 pkgdesc='The whole MATE desktop on Caminito: the compositor, its patched MATE packages and the rest of MATE'
 arch=(any)
 url='https://github.com/JPabloLassala/caminito'
-license=(GPL-2.0-or-later)
+license=(GPL-3.0-or-later)
 # A package can't depend on a group, so these are the members of Arch's mate and mate-extra
 # groups, by name. The four that Caminito patches (mate-session-manager, mate-panel,
 # mate-settings-daemon and caja) aren't listed: caminito-git depends on their -caminito packages,

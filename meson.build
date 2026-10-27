@@ -7,7 +7,7 @@
 project(
   'caminito',
   'c',
-  license: 'GPL-2.0-or-later',
+  license: 'GPL-3.0-or-later',
   meson_version: '>=1.1',
   subproject_dir: 'helpers',
 )

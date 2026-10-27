@@ -7,8 +7,8 @@ Comment: Built locally, from the checkout's committed HEAD. The files taken from
  doesn't list: one fit for the archive waits for a public repository.
 
 Files: *
-Copyright: 2025-2026 jpablo <jpablolassala@gmail.com>
-License: GPL-2.0-or-later
+Copyright: 2025-2026 Juan Pablo Lassala
+License: GPL-3.0-or-later
 
 Files: data/remap-templates/macos-pc.remaps
 Copyright: RedBearAK, the author of Toshy (https://github.com/RedBearAK/toshy)
@@ -17,10 +17,10 @@ License: GPL-3
 Comment: The macOS Remap template, converted from Toshy's config by
  tools/toshy-to-remaps (CMN-190). Toshy's config is based on Kinto's.
 
-License: GPL-2.0-or-later
- This program is free software; you can redistribute it and/or modify
+License: GPL-3.0-or-later
+ This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
- the Free Software Foundation; either version 2 of the License, or
+ the Free Software Foundation, either version 3 of the License, or
  (at your option) any later version.
  .
  This program is distributed in the hope that it will be useful,
@@ -29,7 +29,7 @@ License: GPL-2.0-or-later
  GNU General Public License for more details.
  .
  On Debian systems, the complete text of the GNU General Public License
- version 2 can be found in `/usr/share/common-licenses/GPL-2'.
+ version 3 can be found in `/usr/share/common-licenses/GPL-3'.
 
 License: GPL-3
  This program is free software: you can redistribute it and/or modify

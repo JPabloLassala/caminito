@@ -8,7 +8,7 @@ The template's own mock methods, as AddWiFiDevice, are found on the module that'
 they're imported here too.
 """
 
-# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 from dbusmock.templates import networkmanager
 from dbusmock.templates.networkmanager import *  # noqa: F403, the template's attributes and methods

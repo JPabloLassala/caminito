@@ -10,7 +10,7 @@ pkgrel=1
 pkgdesc="Caminito's global menu for VS Code, VSCodium, Code - OSS and Cursor"
 arch=(any)
 url='https://github.com/JPabloLassala/caminito'
-license=(GPL-2.0-or-later)
+license=(GPL-3.0-or-later)
 # The extension runs in the editor's own Node and links nothing. The link script, which the
 # hooks and the install script run, is sh with readlink and awk.
 depends=(bash coreutils gawk)

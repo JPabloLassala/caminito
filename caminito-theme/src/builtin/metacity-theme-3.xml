@@ -8,7 +8,7 @@
   <info>
     <name>Caminito</name>
     <author>The Caminito authors</author>
-    <copyright>GPL-2.0-or-later</copyright>
+    <copyright>GPL-3.0-or-later</copyright>
     <date>2026</date>
     <description>The frame Caminito falls back to when the configured theme fails.</description>
   </info>

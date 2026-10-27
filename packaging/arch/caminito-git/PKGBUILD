@@ -10,8 +10,8 @@ url='https://github.com/JPabloLassala/caminito'
 # The macOS Remap template, /usr/share/caminito/remap-templates/macos-pc.remaps, is converted
 # from Toshy's config (https://github.com/RedBearAK/toshy, by RedBearAK), which is based on
 # Kinto's (https://github.com/rbreaves/kinto, by Ben Reaves), and is GPL-3, as Toshy is
-# (CMN-190). The rest is GPL-2.0-or-later.
-license=(GPL-2.0-or-later GPL-3.0-only)
+# (CMN-190).
+license=(GPL-3.0-or-later GPL-3.0-only)
 # Only what the binaries link (16), and what they load at run time. winit dlopens
 # libwayland-client, libEGL and libxcb, which the desktop a nested run sits inside always
 # has. On the tty (55), caminito takes its seat through libseat (seatd's, which talks to
