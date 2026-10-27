@@ -590,5 +590,5 @@ Some checks need a real desktop and are run by hand before a milestone closes. T
 GPL-3.0-or-later. See [COPYING](COPYING).
 
 The files from third parties keep their own licences and copyright. [REUSE.toml](REUSE.toml) and
-each such file's SPDX header give them, in the [REUSE](https://reuse.software) layout, and
-[LICENSES/](LICENSES/) has each licence's text.
+the SPDX headers of those files give each file's licence and copyright, in the
+[REUSE](https://reuse.software) layout. [LICENSES/](LICENSES/) has the text of each licence.

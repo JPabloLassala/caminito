@@ -8,30 +8,42 @@ Comment: Built locally, from the checkout's committed HEAD. The stanzas
 
 Files: *
 Copyright: 2025-2026 Juan Pablo Lassala
-License: GPL-3.0-or-later
+License: GPL-3+
 
 Files: caminito/src/backend/tty.rs
        caminito/src/handlers/compositor.rs
 Copyright: 2017 Victor Berger and Victoria Brekenfeld
            2025-2026 Juan Pablo Lassala
-License: GPL-3.0-or-later and Expat
+License: GPL-3+ and Expat
 Comment: Adapted from Smithay's anvil, at Smithay commit 928d4a9.
 
 Files: caminito/src/backend/tty/gamma.rs
 Copyright: Ivan Molodetskikh and the niri contributors
            2025-2026 Juan Pablo Lassala
-License: GPL-3.0-or-later
+License: GPL-3+
 Comment: Adapted from niri's src/backend/tty.rs.
 
 Files: caminito-policy/src/edges.rs
 Copyright: 2005-2006 Elijah Newren
            2025-2026 Juan Pablo Lassala
-License: GPL-2+
+License: GPL-3+ and GPL-2+
 Comment: Ported from Marco's src/core/edge-resistance.c.
+
+Files: caminito-theme/src/parser.rs
+Copyright: 2001 Havoc Pennington
+           2025-2026 Juan Pablo Lassala
+License: GPL-3+ and GPL-2+
+Comment: Ported from Marco's src/ui/theme-parser.c.
+
+Files: caminito-theme/src/markup.rs
+Copyright: 2000, 2003 Red Hat, Inc.
+           2007-2008 Ryan Lortie <desrt@desrt.ca>
+           2025-2026 Juan Pablo Lassala
+License: GPL-3+ and LGPL-2.1+
+Comment: Ported from GLib's glib/gmarkup.c.
 
 Files: helpers/caminito-locker/caminito-locker.c
        helpers/caminito-locker/gs-*
-       helpers/caminito-locker/lock-dialog-default.ui
 Copyright: 1993-2003 Jamie Zawinski <jwz@jwz.org>
            2003 Bill Nottingham <notting@redhat.com>
            2004-2006 William Jon McCann <mccann@jhu.edu>
@@ -40,8 +52,14 @@ Copyright: 1993-2003 Jamie Zawinski <jwz@jwz.org>
            2019 Paul Wolneykien <manowar@altlinux.org>
            2012-2021 MATE Developers
            2025-2026 Juan Pablo Lassala
-License: GPL-2+
+License: GPL-3+ and GPL-2+
 Comment: Ported from mate-screensaver 60b2db3. Each file's header names its own holders.
+
+Files: helpers/caminito-locker/lock-dialog-default.ui
+Copyright: 2012-2021 MATE Developers
+           2025-2026 Juan Pablo Lassala
+License: GPL-3+ and GPL-2+
+Comment: mate-screensaver 60b2db3's data/lock-dialog-default.ui.
 
 Files: data/remap-templates/macos-pc.remaps
 Copyright: RedBearAK, the author of Toshy (https://github.com/RedBearAK/toshy)
@@ -83,7 +101,7 @@ License: Expat
 
 Files: .claude/skills/ship/*
 Copyright: 2025-2026 Juan Pablo Lassala
-License: GPL-3.0-or-later
+License: GPL-3+
 
 Files: tests/themes/Menta/*
        tests/goldens/frames/Menta/*
@@ -130,7 +148,7 @@ License: GPL-3
 Files: tests/themes/Mint-Y/*
        tests/goldens/frames/Mint-Y/*
 Copyright: Linux Mint
-License: GPL-3.0-or-later
+License: GPL-3+
 
 Files: tests/themes/Yaru/*
        tests/goldens/frames/Yaru/*
@@ -225,7 +243,7 @@ Copyright: MATE Developers
            Fedora Project contributors
 License: GPL-2+
 
-License: GPL-3.0-or-later
+License: GPL-3+
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or
@@ -411,5 +429,7 @@ License: OFL-1.1
  OTHER DEALINGS IN THE FONT SOFTWARE.
 
 License: public-domain
+ The tz database is in the public domain. Its LICENSE file says:
+ .
  Unless specified below, all files in the tz code and data (including
  this LICENSE file) are in the public domain.

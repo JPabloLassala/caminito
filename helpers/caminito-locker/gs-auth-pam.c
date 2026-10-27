@@ -6,7 +6,7 @@
  * Copyright (c) 1993-2003 Jamie Zawinski <jwz@jwz.org>
  * Copyright (C) 2012-2021 MATE Developers
  * SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
  *
  * Ported to caminito-locker (131, ADR 0007) from mate-screensaver 60b2db3's
  * src/gs-auth-pam.c. The conversation is unchanged. The thread is waited on in a
