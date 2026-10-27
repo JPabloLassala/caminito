@@ -1,8 +1,9 @@
 //! The clipboard and primary selection between X and Wayland clients, with the same focus
 //! gate as cosmic-comp (11): an X client reaches a selection only while one of Xwayland's
 //! surfaces has the keyboard, and a Wayland selection is pushed into X lazily, as one of them
-//! next takes the keyboard, so X clients in the background can't read it. An X client's selection is set on the seat as the compositor's
-//! own, which Wayland clients read through `X11Wm`.
+//! next takes the keyboard, so X clients in the background can't read it. An X client's
+//! selection is set on the seat as the compositor's own, which Wayland clients read through
+//! `X11Wm`.
 
 use std::os::fd::OwnedFd;
 
