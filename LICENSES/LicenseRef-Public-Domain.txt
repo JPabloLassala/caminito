@@ -1,0 +1,5 @@
+The files under this identifier are in the public domain. For the tz database's
+files (tests/zoneinfo), the tz project's LICENSE says:
+
+Unless specified below, all files in the tz code and data (including
+this LICENSE file) are in the public domain.

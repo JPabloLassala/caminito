@@ -9,6 +9,7 @@ How Caminito's code is written. Reviews check a diff against this file, [CONTEXT
 - `[workspace.lints]` in [Cargo.toml](Cargo.toml) adds `clippy::undocumented_unsafe_blocks`. Every crate opts in with `lints.workspace = true`.
 - `caminito-policy`, `caminito-layout`, `caminito-version`, caminito-about, caminito-displays's library, caminito-wallpaper's library and dialog, caminito-behaviour, caminito-bluetooth, caminito-network and caminito-notifications's library are `#![forbid(unsafe_code)]`. caminito-notifications's binary calls libcanberra, as `caminito` does.
 - `cargo deny check` against [deny.toml](deny.toml) for licences and advisories.
+- `reuse lint`: every file has a licence and a copyright, from [REUSE.toml](REUSE.toml) or its own SPDX header, and each licence's text is in [LICENSES/](LICENSES/) (ADR 0051).
 
 ## Crates and modules
 
@@ -62,7 +63,7 @@ The layout is ticket 15's ([.scratch/issues/15-crate-and-module-architecture.md]
 - Comments say *why*, or name the constraint the code respects. They don't narrate *what* the code does.
 - Refer to a ticket by its number in parentheses, e.g. `(14)`, and to an ADR by its number. If a ticket's decision was changed on purpose, the comment says so.
 - Use CONTEXT.md's terms and avoid the ones it lists under *Avoid*. For example: compositor, never "Wayland window manager"; carried patch, never "fork".
-- Copy or adapt reference code only from a project whose licence allows GPL-3.0-or-later (niri, anvil, Marco, mate-screensaver), keep its notice, and cite the source file and line. From cosmic-comp, which is GPL-3.0-only, take behaviour only, never code (ADR 0051).
+- Copy or adapt reference code only from a project whose licence allows GPL-3.0-or-later (niri, anvil, Marco, mate-screensaver), keep its notice as SPDX lines at the file's top (its original copyright, then Caminito's, and the licence), and cite the source file and line. From cosmic-comp, which is GPL-3.0-only, take behaviour only, never code (ADR 0051).
 
 ## Tests
 

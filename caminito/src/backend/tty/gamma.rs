@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: Ivan Molodetskikh and the niri contributors
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Each CRTC's gamma table, which Night Light writes (ADR 0023).
 //!
 //! Adapted from niri's `src/backend/tty.rs` (`GammaProps`, `set_gamma`, `restore_gamma`):

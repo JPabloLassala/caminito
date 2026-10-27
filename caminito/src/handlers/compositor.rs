@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2017 Victor Berger and Victoria Brekenfeld
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND MIT
+
 //! `wl_compositor` and `wl_subcompositor`, which the seat's surface focus needs, and
 //! `wl_shm` for clients' buffers. A commit of a dmabuf waits until the GPU is done
 //! writing it (57), and one with a commit-timing timestamp until that time (93).

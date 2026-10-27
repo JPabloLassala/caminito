@@ -2,13 +2,46 @@ Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: caminito
 Upstream-Contact: jpablo <jpablolassala@gmail.com>
 Source: https://github.com/JPabloLassala/caminito
-Comment: Built locally, from the checkout's committed HEAD. The files taken from
- mate-screensaver and the vendored themes keep their own notices, which this file
- doesn't list: one fit for the archive waits for a public repository.
+Comment: Built locally, from the checkout's committed HEAD. The stanzas
+ follow REUSE.toml and the SPDX headers of the files from third parties
+ (ADR 0051), which `reuse lint` checks.
 
 Files: *
 Copyright: 2025-2026 Juan Pablo Lassala
 License: GPL-3.0-or-later
+
+Files: caminito/src/backend/tty.rs
+       caminito/src/handlers/compositor.rs
+Copyright: 2017 Victor Berger and Victoria Brekenfeld
+           2025-2026 Juan Pablo Lassala
+License: GPL-3.0-or-later and Expat
+Comment: Adapted from Smithay's anvil, at Smithay commit 928d4a9.
+
+Files: caminito/src/backend/tty/gamma.rs
+Copyright: Ivan Molodetskikh and the niri contributors
+           2025-2026 Juan Pablo Lassala
+License: GPL-3.0-or-later
+Comment: Adapted from niri's src/backend/tty.rs.
+
+Files: caminito-policy/src/edges.rs
+Copyright: 2005-2006 Elijah Newren
+           2025-2026 Juan Pablo Lassala
+License: GPL-2+
+Comment: Ported from Marco's src/core/edge-resistance.c.
+
+Files: helpers/caminito-locker/caminito-locker.c
+       helpers/caminito-locker/gs-*
+       helpers/caminito-locker/lock-dialog-default.ui
+Copyright: 1993-2003 Jamie Zawinski <jwz@jwz.org>
+           2003 Bill Nottingham <notting@redhat.com>
+           2004-2006 William Jon McCann <mccann@jhu.edu>
+           2006 Ray Strode <rstrode@redhat.com>
+           2008 Red Hat, Inc.
+           2019 Paul Wolneykien <manowar@altlinux.org>
+           2012-2021 MATE Developers
+           2025-2026 Juan Pablo Lassala
+License: GPL-2+
+Comment: Ported from mate-screensaver 60b2db3. Each file's header names its own holders.
 
 Files: data/remap-templates/macos-pc.remaps
 Copyright: RedBearAK, the author of Toshy (https://github.com/RedBearAK/toshy)
@@ -16,6 +49,181 @@ Copyright: RedBearAK, the author of Toshy (https://github.com/RedBearAK/toshy)
 License: GPL-3
 Comment: The macOS Remap template, converted from Toshy's config by
  tools/toshy-to-remaps (CMN-190). Toshy's config is based on Kinto's.
+
+Files: caminito/resources/caminito-intellihide-v1.xml
+Copyright: 2026 Juan Pablo Lassala
+License: Expat
+
+Files: caminito/resources/appmenu.xml
+Copyright: 2017 David Edmundson
+License: LGPL-2.1+
+
+Files: caminito/resources/gtk-shell.xml
+Copyright: The GTK developers
+License: LGPL-2+
+
+Files: caminito/resources/xfce-foreign-toplevel-management-private-v1.xml
+Copyright: 2024 Brian Tarricone <brian@tarricone.org>
+License: Expat
+
+Files: helpers/caminito-dock-applet/protocols/xdg-activation-v1.xml
+Copyright: 2020 Aleix Pol Gonzalez <aleixpol@kde.org>
+           2020 Carlos Garnacho <carlosg@gnome.org>
+License: Expat
+
+Files: caminito-vscode/menu/table.json
+Copyright: Microsoft Corporation
+License: Expat
+Comment: VS Code's menu labels and commands.
+
+Files: .claude/skills/*
+Copyright: 2026 Matt Pocock
+           2026 Juan Pablo Lassala
+License: Expat
+
+Files: .claude/skills/ship/*
+Copyright: 2025-2026 Juan Pablo Lassala
+License: GPL-3.0-or-later
+
+Files: tests/themes/Menta/*
+       tests/goldens/frames/Menta/*
+       tests/themes/BlackMATE/*
+       tests/goldens/frames/BlackMATE/*
+Copyright: Wolfgang Ulbrich
+           MATE Developers
+License: LGPL-2.1+
+
+Files: tests/themes/HighContrast/*
+       tests/goldens/frames/HighContrast/*
+Copyright: 2002 Havoc Pennington
+           MATE Developers
+License: LGPL-2.1+
+
+Files: tests/themes/TraditionalOk/*
+       tests/goldens/frames/TraditionalOk/*
+Copyright: 2005-2007 Daniel Borgmann, Andrea Cimitan
+           Wolfgang Ulbrich
+License: LGPL-2.1+
+
+Files: tests/themes/ClearlooksRe/*
+       tests/goldens/frames/ClearlooksRe/*
+Copyright: 2005-2007 Daniel Borgmann, Andrea Cimitan
+           2010 Perberos
+License: GPL-2+
+
+Files: tests/themes/Atlanta/*
+       tests/goldens/frames/Atlanta/*
+Copyright: 2002 Havoc Pennington
+License: GPL-2+
+
+Files: tests/themes/eOS/*
+       tests/goldens/frames/eOS/*
+Copyright: Canonical Ltd.
+License: GPL-2+
+
+Files: tests/themes/Arc/*
+       tests/goldens/frames/Arc/*
+Copyright: horst3180
+           The arc-theme contributors (https://github.com/jnsh/arc-theme)
+License: GPL-3
+
+Files: tests/themes/Mint-Y/*
+       tests/goldens/frames/Mint-Y/*
+Copyright: Linux Mint
+License: GPL-3.0-or-later
+
+Files: tests/themes/Yaru/*
+       tests/goldens/frames/Yaru/*
+Copyright: 2021-2022 Martin Wimpress
+License: GPL-3
+
+Files: tests/fonts/NotoSans-Bold.ttf
+       tests/fonts/OFL.txt
+Copyright: 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+License: OFL-1.1
+
+Files: tests/schemas/org.mate.*.gschema.xml
+       tests/schemas/marco-master/*
+Copyright: MATE Developers
+License: GPL-2+
+
+Files: tests/schemas/org.mate.peripherals-keyboard-xkb.gschema.xml
+Copyright: MATE Developers
+License: LGPL-2+
+
+Files: tests/zoneinfo/*
+Copyright: none: the tz database is in the public domain
+License: public-domain
+
+Files: packaging/debian/caja/*
+       packaging/debian/marco/*
+       packaging/debian/mate-control-center/*
+       packaging/debian/mate-panel/*
+       packaging/debian/mate-power-manager/*
+       packaging/debian/mate-utils/*
+Copyright: 2011-2014 Stefano Karapetsas <stefano@karapetsas.com>
+           2014-2023 Mike Gabriel <sunweaver@debian.org>
+           2025-2026 Juan Pablo Lassala
+License: GPL-2+
+Comment: Taken from Debian's packaging of each.
+
+Files: packaging/debian/mate-session-manager/*
+Copyright: 2011-2014 Stefano Karapetsas <stefano@karapetsas.com>
+           2014-2015 Martin Wimpress <code@flexion.org>
+           2014-2023 Mike Gabriel <sunweaver@debian.org>
+           2025-2026 Juan Pablo Lassala
+License: GPL-2+
+
+Files: packaging/debian/mate-settings-daemon/*
+Copyright: 2011-2014 Stefano Karapetsas <stefano@karapetsas.com>
+           2014-2024 Mike Gabriel <sunweaver@debian.org>
+           2025-2026 Juan Pablo Lassala
+License: GPL-2+
+
+Files: packaging/debian/vala-panel-appmenu/*
+Copyright: 2015-2016 Konstantin Pugin <ria.freelander@gmail.com>
+           2017 Martin Wimpress <martin.wimpress@ubuntu.com>
+           2017-2025 Mike Gabriel <mike.gabriel@das-netzwerkteam.de>
+           2025-2026 Juan Pablo Lassala
+License: LGPL-3+
+
+Files: packaging/debian/appmenu-gtk-module/*
+Copyright: 2011-2013 Canonical Ltd.
+           2017-2024 Mike Gabriel <mike.gabriel@das-netzwerkteam.de>
+           2025-2026 Juan Pablo Lassala
+License: LGPL-3
+
+Files: packaging/arch/appmenu-gtk-module-caminito/*
+       packaging/arch/caja-caminito/*
+       packaging/arch/mate-control-center-caminito/*
+       packaging/arch/mate-panel-caminito/*
+       packaging/arch/mate-power-manager-caminito/*
+       packaging/arch/mate-session-manager-caminito/*
+       packaging/arch/mate-settings-daemon-caminito/*
+       packaging/arch/mate-utils-caminito/*
+       packaging/arch/vala-panel-appmenu-mate-caminito/*
+Copyright: Arch Linux contributors
+           2025-2026 Juan Pablo Lassala
+License: 0BSD
+Comment: Taken from Arch's and the AUR's PKGBUILDs.
+
+Files: packaging/fedora/caja/*
+       packaging/fedora/marco/*
+       packaging/fedora/mate-control-center/*
+       packaging/fedora/mate-panel/*
+       packaging/fedora/mate-power-manager/*
+       packaging/fedora/mate-session-manager/*
+       packaging/fedora/mate-settings-daemon/*
+       packaging/fedora/mate-utils/*
+Copyright: Fedora Project contributors
+           2025-2026 Juan Pablo Lassala
+License: Expat
+Comment: Taken from Fedora's specs.
+
+Files: packaging/fedora/*/*.patch
+Copyright: MATE Developers
+           Fedora Project contributors
+License: GPL-2+
 
 License: GPL-3.0-or-later
  This program is free software: you can redistribute it and/or modify
@@ -43,3 +251,165 @@ License: GPL-3
  .
  On Debian systems, the complete text of the GNU General Public License
  version 3 can be found in `/usr/share/common-licenses/GPL-3'.
+
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 2 can be found in `/usr/share/common-licenses/GPL-2'.
+
+License: LGPL-2+
+ This library is free software; you can redistribute it and/or modify
+ it under the terms of the GNU Library General Public License as
+ published by the Free Software Foundation; either version 2 of the
+ License, or (at your option) any later version.
+ .
+ On Debian systems, the complete text of the GNU Library General Public
+ License version 2 can be found in `/usr/share/common-licenses/LGPL-2'.
+
+License: LGPL-2.1+
+ This library is free software; you can redistribute it and/or modify
+ it under the terms of the GNU Lesser General Public License as
+ published by the Free Software Foundation; either version 2.1 of the
+ License, or (at your option) any later version.
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public
+ License version 2.1 can be found in `/usr/share/common-licenses/LGPL-2.1'.
+
+License: LGPL-3
+ This library is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Lesser General Public License as
+ published by the Free Software Foundation, version 3.
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public
+ License version 3 can be found in `/usr/share/common-licenses/LGPL-3'.
+
+License: LGPL-3+
+ This library is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Lesser General Public License as
+ published by the Free Software Foundation, either version 3 of the
+ License, or (at your option) any later version.
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public
+ License version 3 can be found in `/usr/share/common-licenses/LGPL-3'.
+
+License: Expat
+ Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+ associated documentation files (the "Software"), to deal in the Software without restriction, including
+ without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+ following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in all copies or substantial
+ portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+ LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+ EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+ USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+License: 0BSD
+ Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+License: OFL-1.1
+ This Font Software is licensed under the SIL Open Font License, Version 1.1.
+ This license is copied below, and is also available with a FAQ at:
+ http://scripts.sil.org/OFL
+ .
+ .
+ -----------------------------------------------------------
+ SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+ -----------------------------------------------------------
+ .
+ PREAMBLE
+ The goals of the Open Font License (OFL) are to stimulate worldwide
+ development of collaborative font projects, to support the font creation
+ efforts of academic and linguistic communities, and to provide a free and
+ open framework in which fonts may be shared and improved in partnership
+ with others.
+ .
+ The OFL allows the licensed fonts to be used, studied, modified and
+ redistributed freely as long as they are not sold by themselves. The
+ fonts, including any derivative works, can be bundled, embedded,
+ redistributed and/or sold with any software provided that any reserved
+ names are not used by derivative works. The fonts and derivatives,
+ however, cannot be released under any other type of license. The
+ requirement for fonts to remain under this license does not apply
+ to any document created using the fonts or their derivatives.
+ .
+ DEFINITIONS
+ "Font Software" refers to the set of files released by the Copyright
+ Holder(s) under this license and clearly marked as such. This may
+ include source files, build scripts and documentation.
+ .
+ "Reserved Font Name" refers to any names specified as such after the
+ copyright statement(s).
+ .
+ "Original Version" refers to the collection of Font Software components as
+ distributed by the Copyright Holder(s).
+ .
+ "Modified Version" refers to any derivative made by adding to, deleting,
+ or substituting -- in part or in whole -- any of the components of the
+ Original Version, by changing formats or by porting the Font Software to a
+ new environment.
+ .
+ "Author" refers to any designer, engineer, programmer, technical
+ writer or other person who contributed to the Font Software.
+ .
+ PERMISSION & CONDITIONS
+ Permission is hereby granted, free of charge, to any person obtaining
+ a copy of the Font Software, to use, study, copy, merge, embed, modify,
+ redistribute, and sell modified and unmodified copies of the Font
+ Software, subject to the following conditions:
+ .
+ 1) Neither the Font Software nor any of its individual components,
+ in Original or Modified Versions, may be sold by itself.
+ .
+ 2) Original or Modified Versions of the Font Software may be bundled,
+ redistributed and/or sold with any software, provided that each copy
+ contains the above copyright notice and this license. These can be
+ included either as stand-alone text files, human-readable headers or
+ in the appropriate machine-readable metadata fields within text or
+ binary files as long as those fields can be easily viewed by the user.
+ .
+ 3) No Modified Version of the Font Software may use the Reserved Font
+ Name(s) unless explicit written permission is granted by the corresponding
+ Copyright Holder. This restriction only applies to the primary font name as
+ presented to the users.
+ .
+ 4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+ Software shall not be used to promote, endorse or advertise any
+ Modified Version, except to acknowledge the contribution(s) of the
+ Copyright Holder(s) and the Author(s) or with their explicit written
+ permission.
+ .
+ 5) The Font Software, modified or unmodified, in part or in whole,
+ must be distributed entirely under this license, and must not be
+ distributed under any other license. The requirement for fonts to
+ remain under this license does not apply to any document created
+ using the Font Software.
+ .
+ TERMINATION
+ This license becomes null and void if any of the above conditions are
+ not met.
+ .
+ DISCLAIMER
+ THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+ OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+ COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+ OTHER DEALINGS IN THE FONT SOFTWARE.
+
+License: public-domain
+ Unless specified below, all files in the tz code and data (including
+ this LICENSE file) are in the public domain.

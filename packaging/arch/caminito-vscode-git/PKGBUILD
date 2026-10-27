@@ -10,7 +10,8 @@ pkgrel=1
 pkgdesc="Caminito's global menu for VS Code, VSCodium, Code - OSS and Cursor"
 arch=(any)
 url='https://github.com/JPabloLassala/caminito'
-license=(GPL-3.0-or-later)
+# The bundle has its MIT dependencies in it (ADR 0051).
+license=(GPL-3.0-or-later MIT)
 # The extension runs in the editor's own Node and links nothing. The link script, which the
 # hooks and the install script run, is sh with readlink and awk.
 depends=(bash coreutils gawk)
@@ -59,6 +60,9 @@ package() {
   local extension="$pkgdir/usr/share/caminito-vscode/global-menu"
   install -Dm644 caminito-vscode/package.json -t "$extension"
   install -Dm644 caminito-vscode/dist/extension.js -t "$extension/dist"
+  # The notices of the dependencies the bundle has in it, which their MIT licence requires.
+  install -Dm644 caminito-vscode/dist/THIRD-PARTY-NOTICES.txt \
+    -t "$pkgdir/usr/share/licenses/$pkgname"
 
   # The link script is both distributions' (193). It goes where the hooks name it.
   local script=caminito-vscode/link/caminito-vscode-link

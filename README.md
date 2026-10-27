@@ -588,3 +588,7 @@ Some checks need a real desktop and are run by hand before a milestone closes. T
 ## License
 
 GPL-3.0-or-later. See [COPYING](COPYING).
+
+The files from third parties keep their own licences and copyright. [REUSE.toml](REUSE.toml) and
+each such file's SPDX header give them, in the [REUSE](https://reuse.software) layout, and
+[LICENSES/](LICENSES/) has each licence's text.
