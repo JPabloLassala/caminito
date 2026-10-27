@@ -117,11 +117,8 @@ optdepends=("appmenu-gtk-module-caminito: the menus of MATE's own apps in the pa
 checkdepends=(dbus pixman wayland python-dbusmock)
 provides=("$_pkgname")
 conflicts=("$_pkgname")
-# The local checkout's committed HEAD, so uncommitted work is never packaged. makepkg
-# sources this from the PKGBUILD's directory, and namcap rejects naming that directory
-# by its makepkg variable.
-# This becomes the GitHub URL if the package is ever published (16).
-source=("$_pkgname::git+file://$(git rev-parse --show-toplevel)")
+# The GitHub repo, so the AUR repo, which has only this directory, builds too (ADR 0052).
+source=("$_pkgname::git+https://github.com/JPabloLassala/caminito.git")
 sha256sums=('SKIP')
 # The release build has no debug symbols to split out.
 options=(!debug)

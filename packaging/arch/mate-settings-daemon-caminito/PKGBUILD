@@ -13,7 +13,7 @@ _pkgname=mate-settings-daemon
 # Caminito, which keeps the saved layouts itself (0005, ADR 0014).
 pkgver=1.29.1
 pkgrel=8
-pkgdesc="The MATE Settings daemon, with Caminito's carried patches"
+pkgdesc="The MATE Settings daemon, with Caminito's patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-settings-daemon'
 license=(GPL-2.0-or-later)
@@ -68,23 +68,22 @@ conflicts=("$_pkgname")
 # 0012 turns the background plugin off under Caminito: caminito-wallpaperd draws the wallpaper
 # (210, ADR 0031). 0002 has no effect from then on, and can go, as the ADR has it; 0006 fixes
 # the plugin on any compositor, so it stays.
-# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
-# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
-_patches="file://$(realpath -m "$startdir/../../patches/mate-settings-daemon")"
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030), and
+# tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
 source=(
   "git+https://github.com/mate-desktop/mate-settings-daemon.git#tag=v$pkgver"
-  "$_patches/0001-xsettings-Mirror-to-the-GNOME-settings-only-under-Ca.patch"
-  "$_patches/0002-background-Draw-under-Caja-s-desktop-under-Caminito.patch"
-  "$_patches/0003-typing-break-Do-not-start-under-Caminito.patch"
-  "$_patches/0005-wlrandr-Do-not-start-under-Caminito.patch"
-  "$_patches/0006-background-Do-not-rebuild-the-windows-from-inside-a-.patch"
-  "$_patches/0007-plugin-info-Start-an-X11Only-plugin-under-Caminito-w.patch"
-  "$_patches/0008-osd-window-Show-on-the-overlay-layer-under-Caminito.patch"
-  "$_patches/0009-input-helper-Take-a-touchpad-to-be-present-under-Cam.patch"
-  "$_patches/0010-media-keys-Grab-the-keys-through-Caminito.patch"
-  "$_patches/0011-keybindings-Grab-the-shortcuts-through-Caminito.patch"
-  "$_patches/0012-background-Do-not-start-under-Caminito.patch"
-  "$_patches/arch/0004-Revert-xrandr-Handle-hotplug_mode_update-for-VM-gues.patch"
+  "0001-xsettings-Mirror-to-the-GNOME-settings-only-under-Ca.patch"
+  "0002-background-Draw-under-Caja-s-desktop-under-Caminito.patch"
+  "0003-typing-break-Do-not-start-under-Caminito.patch"
+  "0005-wlrandr-Do-not-start-under-Caminito.patch"
+  "0006-background-Do-not-rebuild-the-windows-from-inside-a-.patch"
+  "0007-plugin-info-Start-an-X11Only-plugin-under-Caminito-w.patch"
+  "0008-osd-window-Show-on-the-overlay-layer-under-Caminito.patch"
+  "0009-input-helper-Take-a-touchpad-to-be-present-under-Cam.patch"
+  "0010-media-keys-Grab-the-keys-through-Caminito.patch"
+  "0011-keybindings-Grab-the-shortcuts-through-Caminito.patch"
+  "0012-background-Do-not-start-under-Caminito.patch"
+  "0004-Revert-xrandr-Handle-hotplug_mode_update-for-VM-gues.patch"
 )
 b2sums=(
   ce41a546278c85e775bef0efb9da014d822570f93c19532d36ae864453bbb611e36eeea7b6cda68950722e0b50856bafc9884cd6aa2cd5cdf26f1bac6970ff9b

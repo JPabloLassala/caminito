@@ -24,9 +24,8 @@ checkdepends=(dbus)
 # items (145). The applet isn't needed, only kept from being older.
 conflicts=('vala-panel-appmenu-mate-caminito<25.04-5')
 install=caminito-vscode-git.install
-# The local checkout's committed HEAD, as caminito-git's is, so uncommitted work is never
-# packaged. This becomes the GitHub URL if the package is ever published (16).
-source=("$_pkgname::git+file://$(git rev-parse --show-toplevel)")
+# The GitHub repo, as caminito-git's is (ADR 0052).
+source=("$_pkgname::git+https://github.com/JPabloLassala/caminito.git")
 sha256sums=('SKIP')
 
 pkgver() {

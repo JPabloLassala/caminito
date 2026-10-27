@@ -27,7 +27,7 @@ _basever=1.28.7
 _stocktag=v1.28.7
 pkgver=1.28.7.r111.g58ac6c1
 pkgrel=15
-pkgdesc="The MATE Panel, with Caminito's carried patches"
+pkgdesc="The MATE Panel, with Caminito's patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
 license=('GPL-2.0-or-later AND LGPL-2.0-or-later')
@@ -74,28 +74,27 @@ conflicts=("${_pkgname}" 'mate-panel-gtk3')
 # space and asks Caminito, through its private caminito_intellihide_manager_v1, to hide it while a
 # window overlaps it (CMN-224, ADR 0047). It is gated on the global, which only Caminito offers:
 # without it the option is not shown and the panel is an ordinary one.
-# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
-# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
-_patches="file://$(realpath -m "$startdir/../../patches/mate-panel")"
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030), and
+# tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
 source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         "${_pkgname}-stock::git+https://github.com/mate-desktop/mate-panel.git#tag=${_stocktag}"
         git+https://github.com/mate-desktop/mate-submodules.git
-        "$_patches/0001-wayland-tasklist-Tell-the-compositor-where-each-butt.patch"
-        "$_patches/0002-action-button-Shut-down-through-the-session-manager-.patch"
-        "$_patches/0003-wayland-tasklist-Show-the-active-workspace-s-windows.patch"
-        "$_patches/0004-multimonitor-Put-Caminito-s-primary-output-first-on-.patch"
-        "$_patches/0005-wayland-workspace-Show-a-workspace-s-new-name-when-i.patch"
-        "$_patches/0006-workspace-switcher-Set-the-workspace-count-and-names.patch"
-        "$_patches/0007-workspace-switcher-Lay-the-workspaces-out-by-the-com.patch"
-        "$_patches/0008-showdesktop-Show-Caminito-s-desktop-on-Wayland.patch"
-        "$_patches/0009-main-Export-the-main-menu-and-the-run-dialog-on-D-Bu.patch"
-        "$_patches/0010-panel-Let-an-object-held-by-a-pixel-position-move-le.patch"
-        "$_patches/0011-properties-Choose-the-panel-s-display-under-Caminito.patch"
-        "$_patches/0012-wayland-workspace-Show-the-workspaces-of-the-panel-s.patch"
-        "$_patches/0013-wayland-workspace-Press-the-button-of-the-group-s-ac.patch"
-        "$_patches/0014-wayland-workspace-Take-the-scroll-wheel-over-the-but.patch"
-        "$_patches/0015-toplevel-Float-a-panel-off-its-edge-under-Caminito.patch"
-        "$_patches/0016-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch")
+        "0001-wayland-tasklist-Tell-the-compositor-where-each-butt.patch"
+        "0002-action-button-Shut-down-through-the-session-manager-.patch"
+        "0003-wayland-tasklist-Show-the-active-workspace-s-windows.patch"
+        "0004-multimonitor-Put-Caminito-s-primary-output-first-on-.patch"
+        "0005-wayland-workspace-Show-a-workspace-s-new-name-when-i.patch"
+        "0006-workspace-switcher-Set-the-workspace-count-and-names.patch"
+        "0007-workspace-switcher-Lay-the-workspaces-out-by-the-com.patch"
+        "0008-showdesktop-Show-Caminito-s-desktop-on-Wayland.patch"
+        "0009-main-Export-the-main-menu-and-the-run-dialog-on-D-Bu.patch"
+        "0010-panel-Let-an-object-held-by-a-pixel-position-move-le.patch"
+        "0011-properties-Choose-the-panel-s-display-under-Caminito.patch"
+        "0012-wayland-workspace-Show-the-workspaces-of-the-panel-s.patch"
+        "0013-wayland-workspace-Press-the-button-of-the-group-s-ac.patch"
+        "0014-wayland-workspace-Take-the-scroll-wheel-over-the-but.patch"
+        "0015-toplevel-Float-a-panel-off-its-edge-under-Caminito.patch"
+        "0016-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch")
 sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '030f76e59b0aa2880167968770a319e14bb91e38d77873f8ceab9718873da5ce'
             'SKIP'

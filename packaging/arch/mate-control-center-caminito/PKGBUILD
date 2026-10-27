@@ -13,7 +13,7 @@ pkgname=mate-control-center-caminito
 _pkgname=mate-control-center
 pkgver=1.29.1
 pkgrel=7
-pkgdesc="The Control Center for MATE, with Caminito's carried patches"
+pkgdesc="The Control Center for MATE, with Caminito's patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-control-center'
 license=(GPL-2.0-or-later)
@@ -77,20 +77,19 @@ conflicts=("$_pkgname")
 # MATE_WM_NAME alone too: Appearance leaves out its Background tab, since msd's background
 # plugin, which draws what it sets, doesn't start in a Session, and --show-page=background, as
 # caja's "Change Desktop Background" asks, opens the Wallpaper dialog (ADR 0031, 219).
-# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
-# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
-_patches="file://$(realpath -m "$startdir/../../patches/mate-control-center")"
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030), and
+# tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
 source=(
   "git+https://github.com/mate-desktop/mate-control-center.git#tag=v$pkgver"
-  "$_patches/0001-wm-common-Know-Caminito-from-the-environment-off-X11.patch"
-  "$_patches/0002-windows-Open-under-Caminito.patch"
-  "$_patches/0003-keybindings-Do-not-crash-on-a-display-that-isn-t-X11.patch"
-  "$_patches/0004-mouse-keyboard-Run-on-XWayland-under-Caminito.patch"
-  "$_patches/0005-mouse-Show-the-touchpad-page-under-Caminito.patch"
-  "$_patches/0006-system-info-Name-Caminito-in-the-Windowing-System-row.patch"
-  "$_patches/0007-keybindings-Title-the-dialog-as-its-launcher-under-C.patch"
-  "$_patches/0008-keybindings-Capture-a-mouse-button-under-Caminito.patch"
-  "$_patches/0009-appearance-Leave-out-the-Background-tab-under-Camini.patch"
+  "0001-wm-common-Know-Caminito-from-the-environment-off-X11.patch"
+  "0002-windows-Open-under-Caminito.patch"
+  "0003-keybindings-Do-not-crash-on-a-display-that-isn-t-X11.patch"
+  "0004-mouse-keyboard-Run-on-XWayland-under-Caminito.patch"
+  "0005-mouse-Show-the-touchpad-page-under-Caminito.patch"
+  "0006-system-info-Name-Caminito-in-the-Windowing-System-row.patch"
+  "0007-keybindings-Title-the-dialog-as-its-launcher-under-C.patch"
+  "0008-keybindings-Capture-a-mouse-button-under-Caminito.patch"
+  "0009-appearance-Leave-out-the-Background-tab-under-Camini.patch"
 )
 b2sums=(
   5125854bee37563c54b9e22b23dc2b6670cc7453e2669b547c577394ea2250959fa76c0c7fe5df656a4b237a201835762ed7be4d49643ae99febe74ca9d7065a

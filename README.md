@@ -87,7 +87,7 @@ tools/bootstrap              # or: tools/bootstrap --noconfirm --nocheck
 ```
 
 To install only the compositor as a package, build `caminito-git`'s PKGBUILD. It packages the
-checkout's committed `HEAD`, not uncommitted work:
+GitHub repo's default branch, not the checkout, as its AUR package does:
 
 ```sh
 cd packaging/arch/caminito-git
@@ -135,15 +135,10 @@ Some MATE components need carried patches to work in the session
 `<pkgname>-caminito` package under [packaging/arch/](packaging/arch/), made from Arch's own
 PKGBUILD, that replaces the stock package. Its patches do nothing unless Caminito is running, or
 are correct on any compositor, or only let the baseline build against Arch's libraries, so X11
-MATE stays as it was. Build them before `caminito-git`, which depends on them:
-
-```sh
-for package in mate-session-manager-caminito mate-panel-caminito mate-settings-daemon-caminito \
-  mate-control-center-caminito caja-caminito mate-utils-caminito mate-power-manager-caminito \
-  caminito-git; do
-  (cd packaging/arch/$package && makepkg -si)
-done
-```
+MATE stays as it was. Build them before `caminito-git`, which depends on them. A patched package
+builds through `tools/bootstrap`, not a plain `makepkg`: its PKGBUILD lists its patches by bare
+filename, as its AUR package has them, and `tools/bootstrap` copies them beside it first
+([ADR 0052](docs/adr/0052-the-aur-packages-are-published-from-the-monorepo.md)).
 
 `mate-panel-caminito` is built from mate-panel's master, where the applet library has a new
 soname (`libmate-panel-applet-4.so.2`). Arch's applets in other packages, such as `mate-applets`,
@@ -198,13 +193,17 @@ directory for each component under upstream's name, as `mate-panel` for `mate-pa
 `vala-panel-appmenu` for `vala-panel-appmenu-mate-caminito`. They are the only copy, for every
 distribution ([ADR 0030](docs/adr/0030-carried-patches-are-kept-once-for-every-distribution.md)).
 A build patch that only Arch needs, such as msd's revert, is in the component's `arch/`, and
-applies after the rest. The PKGBUILDs take the patches as `file://` sources. makepkg copies each
-into `SRCDEST`, by default beside the PKGBUILD, where git ignores it, and never copies it again
-while that copy is there. So remove the copies whenever a patch changes, or makepkg and
-`updpkgsums` check the old ones:
+applies after the rest. The PKGBUILDs list the patches by bare filename, as each AUR package
+has them beside its PKGBUILD. `tools/bootstrap` removes the old copies beside each PKGBUILD and
+copies the series and the component's `arch/` there before `makepkg`, where git ignores them
+([ADR 0052](docs/adr/0052-the-aur-packages-are-published-from-the-monorepo.md)). To run
+`makepkg` or `updpkgsums` without it, copy them yourself:
 
 ```sh
-rm /path/to/caminito/packaging/arch/<pkgname>-caminito/*.patch
+cd /path/to/caminito/packaging/arch/<pkgname>
+rm -f ./*.patch
+cp ../../patches/<component>/*.patch .
+cp ../../patches/<component>/arch/*.patch .   # if the component has an arch/
 ```
 
 For one machine with Fedora Asahi Remix 45, the same components, and marco 1.29.1, have
@@ -252,11 +251,12 @@ no tag. To move a component to a new baseline, rebase its series:
 4. If the component has a build patch in `arch/`, apply it on top (`git am`), and export it
    again into `arch/` if it needed a change. It goes once Arch's libraries don't need it.
 
-5. Remove makepkg's copies, then update the PKGBUILD's source, `pkgver` and checksums
-   (`updpkgsums`). Commit the patches and the PKGBUILD together, one commit for each move.
+5. Copy the new patches beside the PKGBUILD, as above, then update its source, `pkgver` and
+   checksums (`updpkgsums`). Commit the patches and the PKGBUILD together, one commit for each
+   move.
 
 A change to the patches alone, on the same baseline, increases `pkgrel` instead, and needs the
-copies removed too.
+new copies too.
 
 ## Running
 

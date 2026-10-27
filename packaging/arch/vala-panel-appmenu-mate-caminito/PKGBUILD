@@ -14,7 +14,7 @@ _pkgname=vala-panel-appmenu
 # libwnck backend beside Caminito's, as the AUR's has it alone.
 pkgver=25.04
 pkgrel=7
-pkgdesc="Global Menu plugin for mate-panel, with Caminito's carried patches"
+pkgdesc="Global Menu plugin for mate-panel, with Caminito's patches"
 url="https://gitlab.com/vala-panel-project/vala-panel-appmenu"
 arch=('x86_64')
 license=('LGPL-3.0-or-later')
@@ -52,15 +52,14 @@ conflicts=("${_pkgname}-mate" "${_pkgname}-locale" 'appmenu-glib-translator')
 # and has no items until the app answers, so a switch of window showed the application's name
 # alone and then its menus. The applet now keeps the menu on screen until the next one has
 # items, or has none, or 300 ms have passed, and shows the name and the menus in one go.
-# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
-# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
-_patches="file://$(realpath -m "$startdir/../../patches/vala-panel-appmenu")"
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030), and
+# tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
 source=("${_pkgname}::git+${url}.git#tag=${pkgver}"
-        "$_patches/0001-applet-Add-a-Caminito-backend.patch"
-        "$_patches/0002-applet-Let-the-application-s-name-be-turned-off-unde.patch"
-        "$_patches/0003-translator-Keep-a-menu-open-while-Firefox-makes-its-.patch"
-        "$_patches/0004-applet-Draw-every-press-of-a-chord-s-shortcut.patch"
-        "$_patches/0005-applet-Show-a-window-s-menu-once-it-has-come-over-th.patch")
+        "0001-applet-Add-a-Caminito-backend.patch"
+        "0002-applet-Let-the-application-s-name-be-turned-off-unde.patch"
+        "0003-translator-Keep-a-menu-open-while-Firefox-makes-its-.patch"
+        "0004-applet-Draw-every-press-of-a-chord-s-shortcut.patch"
+        "0005-applet-Show-a-window-s-menu-once-it-has-come-over-th.patch")
 sha256sums=('843b24f98f02feb8cbfdda26630018ae95f8ac4959de9deb88cf1a13506f845f'
             'f3c5266093696fe12172e39a035c60ec24f01b72f525990847dc04fa344492ed'
             'e2c3146a9c86064b5aee9d57be2a57355a5e9916533e2bca344693357ad6c902'
