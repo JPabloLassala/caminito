@@ -195,9 +195,9 @@ distribution ([ADR 0030](docs/adr/0030-carried-patches-are-kept-once-for-every-d
 A build patch that only Arch needs, such as msd's revert, is in the component's `arch/`, and
 applies after the rest. The PKGBUILDs list the patches by bare filename, as each AUR package
 has them beside its PKGBUILD. `tools/bootstrap` removes the old copies beside each PKGBUILD and
-copies the series and the component's `arch/` there before `makepkg`, where git ignores them
+copies the series and the component's `arch/` there, where git ignores them, before `makepkg`
 ([ADR 0052](docs/adr/0052-the-aur-packages-are-published-from-the-monorepo.md)). To run
-`makepkg` or `updpkgsums` without it, copy them yourself:
+`makepkg` or `updpkgsums` without `tools/bootstrap`, copy them yourself:
 
 ```sh
 cd /path/to/caminito/packaging/arch/<pkgname>

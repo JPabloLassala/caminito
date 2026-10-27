@@ -14,7 +14,7 @@ _pkgname=vala-panel-appmenu
 # libwnck backend beside Caminito's, as the AUR's has it alone.
 pkgver=25.04
 pkgrel=7
-pkgdesc="Global Menu plugin for mate-panel, with Caminito's patches"
+pkgdesc="vala-panel-appmenu's Global Menu applet for mate-panel, with Caminito's patches"
 url="https://gitlab.com/vala-panel-project/vala-panel-appmenu"
 arch=('x86_64')
 license=('LGPL-3.0-or-later')
