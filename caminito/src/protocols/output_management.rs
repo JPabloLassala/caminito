@@ -8,8 +8,8 @@
 //! [`OutputManagementState::refresh`], and answers configurations through
 //! [`OutputManagementHandler`].
 //!
-//! Written from the protocol's XML. niri's and cosmic-comp's implementations are GPL-3, so
-//! they weren't used (03).
+//! Written from the protocol's XML: nothing was copied from niri's or cosmic-comp's
+//! implementations (03). cosmic-comp's code can't be used, as it is GPL-3.0-only (ADR 0051).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
