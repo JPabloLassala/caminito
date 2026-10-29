@@ -194,6 +194,7 @@ dbus-run-session -- cargo test --frozen --release
 %{_libdir}/mate-panel/libcaminito-thermal-applet.so
 %{_datadir}/caminito/
 %{_datadir}/applications/caminito-bluetooth.desktop
+%{_datadir}/applications/caminito-network.desktop
 %{_datadir}/glib-2.0/schemas/90_caminito.gschema.override
 %{_datadir}/glib-2.0/schemas/90_caminito-power-applet.gschema.override
 %{_datadir}/glib-2.0/schemas/org.mate.Caminito.gschema.xml

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Network
+Comment=Tell of network connections that come up, drop or fail
+TryExec=caminito-network
+Exec=caminito-network
+Icon=network-wireless
+Terminal=false
+NoDisplay=true
+OnlyShowIn=MATE;

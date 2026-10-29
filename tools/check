@@ -103,6 +103,7 @@ xvfb-run -a cargo test -p caminito-network --test single_instance -- --ignored
 # directories (255), not a Session's own.
 step "caminito-bluetooth's and caminito-network's entries"
 for entry in share/applications/caminito-bluetooth.desktop \
+  share/applications/caminito-network.desktop \
   xdg/autostart/caminito-bluetooth.desktop xdg/autostart/caminito-network.desktop; do
   installed=$(find target/meson-destdir -path "*/$entry")
   if [ -z "$installed" ]; then
