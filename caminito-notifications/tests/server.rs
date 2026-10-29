@@ -31,7 +31,8 @@ const API_PATH: &str = "/org/mate/Caminito/Notifications";
 /// millisecond or two, so this is many times what one needs.
 const QUIET: Duration = Duration::from_millis(100);
 
-/// Caminito's name and interface, which the daemon asks to bring an app forward.
+/// Caminito's name and interface, which the daemon asks to bring an app forward, and whose
+/// properties turn Do Not Disturb on.
 const CAMINITO: &str = "org.mate.Caminito";
 const CAMINITO_PATH: &str = "/org/mate/Caminito";
 const CAMINITO_INTERFACE: &str = r#"
@@ -40,6 +41,8 @@ const CAMINITO_INTERFACE: &str = r#"
     <method name="ActivateApplication">
       <arg type="s" name="app" direction="in"/>
     </method>
+    <property name="PointerOutputFullscreen" type="b" access="read"/>
+    <property name="Screencasting" type="b" access="read"/>
   </interface>
 </node>
 "#;
@@ -151,9 +154,10 @@ impl Clock for FakeClock {
 }
 
 /// Caminito on the bus, as much of it as the daemon calls: the apps it was asked to bring
-/// forward, in order.
+/// forward, in order, and its properties, by name, which are false until they're set.
 struct FakeCaminito {
     activated: Rc<RefCell<Vec<String>>>,
+    properties: Rc<RefCell<HashMap<String, bool>>>,
     connection: gio::DBusConnection,
     registration: Option<gio::RegistrationId>,
 }
@@ -164,6 +168,7 @@ impl FakeCaminito {
         let node = gio::DBusNodeInfo::for_xml(CAMINITO_INTERFACE).unwrap();
         let interface = node.lookup_interface(CAMINITO).unwrap();
         let activated: Rc<RefCell<Vec<String>>> = Rc::default();
+        let properties: Rc<RefCell<HashMap<String, bool>>> = Rc::default();
         let registration = connection
             .register_object(CAMINITO_PATH, &interface)
             .method_call({
@@ -172,6 +177,13 @@ impl FakeCaminito {
                     let app = parameters.child_value(0).str().unwrap_or("").to_owned();
                     activated.borrow_mut().push(app);
                     invocation.return_value(None);
+                }
+            })
+            .property({
+                let properties = properties.clone();
+                move |_, _, _, _, name| {
+                    let value = properties.borrow().get(name).copied();
+                    value.unwrap_or(false).to_variant()
                 }
             })
             .build()
@@ -190,6 +202,7 @@ impl FakeCaminito {
         reply.expect("the fake owns Caminito's name");
         FakeCaminito {
             activated,
+            properties,
             connection,
             registration: Some(registration),
         }
@@ -197,6 +210,29 @@ impl FakeCaminito {
 
     fn activated(&self) -> Vec<String> {
         self.activated.borrow().clone()
+    }
+
+    /// Sets the property `name` to `value`, and signals it.
+    fn set(&self, name: &str, value: bool) {
+        self.properties.borrow_mut().insert(name.to_owned(), value);
+        let changed = VariantDict::new(None);
+        changed.insert_value(name, &value.to_variant());
+        let invalidated: Vec<String> = Vec::new();
+        // Built of its parts, as a tuple's would box the dictionary in a variant.
+        let arguments = Variant::tuple_from_iter([
+            CAMINITO.to_variant(),
+            changed.end(),
+            invalidated.to_variant(),
+        ]);
+        self.connection
+            .emit_signal(
+                None,
+                CAMINITO_PATH,
+                "org.freedesktop.DBus.Properties",
+                "PropertiesChanged",
+                Some(&arguments),
+            )
+            .expect("the fake signals its property");
     }
 }
 
@@ -2554,5 +2590,214 @@ fn do_not_disturb_ends_when_its_time_comes_though_nobody_asks() {
             daemon.api_signals(),
             [signal("DoNotDisturbChanged", "(false, 0, '')")]
         );
+    });
+}
+
+/// `day` January 1970 at `hour`:`minute`, in UTC, the fake clock's zone.
+fn january(day: u64, hour: u64, minute: u64) -> u64 {
+    (day - 1) * 24 * HOUR + hour * HOUR + minute * 60
+}
+
+impl Daemon<'_> {
+    /// Gives Do Not Disturb its daily schedule, 22:00 to 07:00.
+    fn schedule_nightly(&self) {
+        self.settings
+            .set_uint("do-not-disturb-from", 22 * 60)
+            .unwrap();
+        self.settings.set_uint("do-not-disturb-to", 7 * 60).unwrap();
+        self.settings
+            .set_boolean("do-not-disturb-schedule", true)
+            .unwrap();
+    }
+
+    /// Waits for Do Not Disturb as the private API gives it to be `state`.
+    fn wait_for_do_not_disturb(&self, state: (bool, u64, &str)) {
+        let state = (state.0, state.1, state.2.to_owned());
+        self.bus
+            .wait_until(&format!("Do Not Disturb to be {state:?}"), || {
+                self.do_not_disturb() == state
+            });
+    }
+}
+
+#[test]
+fn the_schedule_turns_do_not_disturb_on_and_off_across_midnight() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.schedule_nightly();
+        let clock = &daemon.home.clock.0;
+        let morning = january(13, 7, 0);
+
+        clock.set(january(12, 21, 59));
+        assert_eq!(daemon.do_not_disturb(), (false, 0, String::new()));
+        clock.set(january(12, 22, 0));
+        assert_eq!(
+            daemon.do_not_disturb(),
+            (true, morning, "schedule".to_owned())
+        );
+        clock.set(january(13, 6, 59));
+        assert!(daemon.do_not_disturb().0);
+        daemon.notify(notify("Quiet"));
+        assert!(daemon.bubbles.ids().is_empty());
+        clock.set(morning);
+        assert_eq!(daemon.do_not_disturb(), (false, 0, String::new()));
+        let changes: Vec<_> = daemon
+            .api_signals()
+            .into_iter()
+            .filter(|(name, _)| name == "DoNotDisturbChanged")
+            .collect();
+        assert_eq!(
+            changes,
+            [
+                signal("DoNotDisturbChanged", "(true, 1062000, 'schedule')"),
+                signal("DoNotDisturbChanged", "(false, 0, '')"),
+            ]
+        );
+    });
+}
+
+#[test]
+fn turning_the_schedule_on_during_it_is_signalled_without_a_call() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.home.clock.0.set(january(12, 23, 0));
+
+        daemon.schedule_nightly();
+
+        daemon.wait_for_api_signals(1);
+        assert_eq!(
+            daemon.api_signals(),
+            [signal("DoNotDisturbChanged", "(true, 1062000, 'schedule')")]
+        );
+    });
+}
+
+#[test]
+fn turning_it_off_during_the_schedule_holds_it_off_until_the_schedules_next_start() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.schedule_nightly();
+        let clock = &daemon.home.clock.0;
+        clock.set(january(12, 23, 0));
+        assert!(daemon.do_not_disturb().0);
+
+        daemon.set_do_not_disturb("off");
+
+        assert_eq!(daemon.do_not_disturb(), (false, 0, String::new()));
+        clock.set(january(13, 3, 0));
+        assert!(!daemon.do_not_disturb().0);
+        clock.set(january(13, 21, 59));
+        assert!(!daemon.do_not_disturb().0);
+        clock.set(january(13, 22, 0));
+        assert_eq!(
+            daemon.do_not_disturb(),
+            (true, january(14, 7, 0), "schedule".to_owned())
+        );
+    });
+}
+
+#[test]
+fn the_user_turning_it_on_during_the_schedule_is_the_reason_until_their_end() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.schedule_nightly();
+        let clock = &daemon.home.clock.0;
+        clock.set(january(12, 23, 0));
+
+        daemon.set_do_not_disturb("one-hour");
+
+        assert_eq!(
+            daemon.do_not_disturb(),
+            (true, january(13, 0, 0), "manual".to_owned())
+        );
+        clock.set(january(13, 0, 0));
+        assert_eq!(
+            daemon.do_not_disturb(),
+            (true, january(13, 7, 0), "schedule".to_owned())
+        );
+    });
+}
+
+#[test]
+fn a_fullscreen_window_turns_do_not_disturb_on_while_its_setting_is_on() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let caminito = FakeCaminito::start(bus);
+
+        caminito.set("PointerOutputFullscreen", true);
+        daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
+        daemon.notify(notify("Quiet"));
+        assert!(daemon.bubbles.ids().is_empty());
+
+        daemon
+            .settings
+            .set_boolean("do-not-disturb-while-fullscreen", false)
+            .unwrap();
+        daemon.wait_for_do_not_disturb((false, 0, ""));
+        daemon
+            .settings
+            .set_boolean("do-not-disturb-while-fullscreen", true)
+            .unwrap();
+        daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
+        caminito.set("PointerOutputFullscreen", false);
+        daemon.wait_for_do_not_disturb((false, 0, ""));
+    });
+}
+
+#[test]
+fn a_screencast_turns_do_not_disturb_on_while_its_setting_is_on() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon
+            .settings
+            .set_boolean("do-not-disturb-while-screencasting", false)
+            .unwrap();
+        let caminito = FakeCaminito::start(bus);
+
+        caminito.set("Screencasting", true);
+        daemon.bus.run_for(QUIET);
+        assert!(!daemon.do_not_disturb().0);
+
+        daemon
+            .settings
+            .set_boolean("do-not-disturb-while-screencasting", true)
+            .unwrap();
+        daemon.wait_for_do_not_disturb((true, 0, "screencast"));
+        // Caminito leaving the bus ends it.
+        drop(caminito);
+        daemon.wait_for_do_not_disturb((false, 0, ""));
+    });
+}
+
+#[test]
+fn a_caminito_already_fullscreen_as_the_daemon_starts_turns_it_on() {
+    bus::run(|bus| {
+        let caminito = FakeCaminito::start(bus);
+        caminito.set("PointerOutputFullscreen", true);
+
+        let daemon = start(bus);
+
+        daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
+    });
+}
+
+#[test]
+fn turning_it_off_during_a_fullscreen_window_holds_it_off_until_the_window_leaves() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let caminito = FakeCaminito::start(bus);
+        caminito.set("PointerOutputFullscreen", true);
+        daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
+
+        daemon.api("ToggleDoNotDisturb", ().to_variant());
+
+        assert!(!daemon.do_not_disturb().0);
+        caminito.set("Screencasting", true);
+        daemon.wait_for_do_not_disturb((true, 0, "screencast"));
+        caminito.set("Screencasting", false);
+        caminito.set("PointerOutputFullscreen", false);
+        daemon.wait_for_do_not_disturb((false, 0, ""));
+        caminito.set("PointerOutputFullscreen", true);
+        daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
     });
 }

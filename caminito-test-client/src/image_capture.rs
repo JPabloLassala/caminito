@@ -183,6 +183,12 @@ impl Client {
         id
     }
 
+    /// Destroys the session, as a client does once it has its screenshot or ends its
+    /// screencast.
+    pub fn stop_capture(&mut self, id: SessionId) {
+        self.state.image_capture.sessions[id.0].proxy.destroy();
+    }
+
     /// Asks for a frame copied into a new buffer of the size the session last asked for.
     pub fn request_capture_frame(&mut self, id: SessionId) {
         let constraints = self.state.capture_session(id).constraints.last();

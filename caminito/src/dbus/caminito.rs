@@ -2,8 +2,9 @@
 //! caminito-displays ask of Caminito that no protocol carries. So far, the primary output (81)
 //! and saving the layout (83), both ADR 0014's, showing the desktop (94), the accelerator
 //! grabs (98), the window a window screenshot is of (104), the global menu (110), the
-//! menu claim (115), Night Light (137) and its pause (140), the sun's position (215), and
-//! bringing an app forward for caminito-notifications (ADR 0054).
+//! menu claim (115), Night Light (137) and its pause (140), the sun's position (215),
+//! bringing an app forward for caminito-notifications (ADR 0054), and what that daemon turns
+//! Do Not Disturb on for, a fullscreen window under the pointer and a screencast (CMN-264).
 
 use std::collections::HashMap;
 
@@ -75,6 +76,10 @@ pub(crate) enum Request {
     ResumeNightLight(oneshot::Sender<()>),
     /// Reads `Sun`.
     Sun(oneshot::Sender<night_light::PublishedSun>),
+    /// Reads `PointerOutputFullscreen`.
+    PointerOutputFullscreen(oneshot::Sender<bool>),
+    /// Reads `Screencasting`.
+    Screencasting(oneshot::Sender<bool>),
 }
 
 /// A property Caminito signals itself, when it changes without a caller writing it, in the
@@ -96,17 +101,24 @@ enum Property {
     /// The focus is another window's, or the focused window said where its menus are
     /// (110).
     GlobalMenu,
+    /// The pointer moved to another output, or a window there became or left fullscreen,
+    /// showed or hid (CMN-264).
+    PointerOutputFullscreen,
+    /// A capture session opened, or the last one closed (CMN-264).
+    Screencasting,
 }
 
 impl Property {
     /// Each property, in the enum's order, which `Heard` indexes by.
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 8] = [
         Self::PrimaryOutput,
         Self::ShowingDesktop,
         Self::NightLight,
         Self::Sun,
         Self::GlobalMenuOffered,
         Self::GlobalMenu,
+        Self::PointerOutputFullscreen,
+        Self::Screencasting,
     ];
     /// That `ALL` is in the enum's order, checked as `Heard` is first made, so that each
     /// property's value is at its own index.
@@ -128,6 +140,10 @@ impl Property {
             Self::Sun => Value::Sun(caminito.night_light.published_sun()),
             Self::GlobalMenuOffered => Value::GlobalMenuOffered(caminito.global_menu_offered),
             Self::GlobalMenu => Value::GlobalMenu(caminito.global_menu()),
+            Self::PointerOutputFullscreen => {
+                Value::PointerOutputFullscreen(caminito.pointer_output_fullscreen())
+            }
+            Self::Screencasting => Value::Screencasting(caminito.is_screencasting()),
         }
     }
 }
@@ -141,6 +157,8 @@ enum Value {
     Sun(night_light::PublishedSun),
     GlobalMenuOffered(bool),
     GlobalMenu(GlobalMenu),
+    PointerOutputFullscreen(bool),
+    Screencasting(bool),
 }
 
 /// The properties as `org.mate.Caminito`'s callers last heard them: a value for each, by
@@ -414,6 +432,23 @@ impl CaminitoInterface {
         ]))
     }
 
+    /// Whether the output under the pointer has a fullscreen window: one that shows there,
+    /// on its active workspace (CMN-264). caminito-notifications turns Do Not Disturb on
+    /// while it's true, and Caminito decides nothing about Do Not Disturb (ADR 0051). It's
+    /// false while the pointer is on no output.
+    #[zbus(property)]
+    async fn pointer_output_fullscreen(&self) -> zbus::fdo::Result<bool> {
+        super::ask(&self.requests, Request::PointerOutputFullscreen).await
+    }
+
+    /// Whether a screencast is running: while any ext-image-copy-capture session is open,
+    /// a screenshot's included, which isn't told from a screencast's (CMN-264, ADR 0051).
+    /// caminito-notifications turns Do Not Disturb on while it's true.
+    #[zbus(property)]
+    async fn screencasting(&self) -> zbus::fdo::Result<bool> {
+        super::ask(&self.requests, Request::Screencasting).await
+    }
+
     /// Turns Night Light on if it's off, and off if it's on, by writing
     /// `night-light-enabled`. It's what a shortcut the user binds to
     /// `caminito-displays --toggle-night-light` calls.
@@ -557,6 +592,12 @@ impl Caminito {
             Request::Sun(reply) => {
                 let _ = reply.send(self.night_light.published_sun());
             }
+            Request::PointerOutputFullscreen(reply) => {
+                let _ = reply.send(self.pointer_output_fullscreen());
+            }
+            Request::Screencasting(reply) => {
+                let _ = reply.send(self.is_screencasting());
+            }
         }
     }
 
@@ -610,6 +651,24 @@ impl Caminito {
             .executor()
             .spawn(signal, "accelerator activated")
             .detach();
+    }
+
+    /// Whether a fullscreen window shows on the output under the pointer.
+    fn pointer_output_fullscreen(&self) -> bool {
+        let Some(output) = self.pointer_output() else {
+            return false;
+        };
+        let policy = &self.policy;
+        policy.active_stacking().into_iter().any(|id| {
+            policy.is_showing(id)
+                && policy.is_fullscreen(id)
+                && policy.output_showing(id) == Some(output)
+        })
+    }
+
+    /// Whether any capture session is open.
+    fn is_screencasting(&self) -> bool {
+        !self.captures.is_empty()
     }
 
     /// The primary output's name as the property has it.
@@ -669,6 +728,10 @@ impl Caminito {
                     }
                     Property::NightLight => interface.night_light_changed(emitter).await,
                     Property::Sun => interface.sun_changed(emitter).await,
+                    Property::PointerOutputFullscreen => {
+                        interface.pointer_output_fullscreen_changed(emitter).await
+                    }
+                    Property::Screencasting => interface.screencasting_changed(emitter).await,
                 }
             };
             if let Err(err) = signalled.await {

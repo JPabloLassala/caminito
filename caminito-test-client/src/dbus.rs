@@ -50,6 +50,14 @@ pub trait Caminito {
     #[zbus(property)]
     fn primary_output(&self) -> zbus::Result<String>;
 
+    /// Whether the output under the pointer has a fullscreen window (CMN-264).
+    #[zbus(property)]
+    fn pointer_output_fullscreen(&self) -> zbus::Result<bool>;
+
+    /// Whether a screencast is running: an ext-image-copy-capture session is open (CMN-264).
+    #[zbus(property)]
+    fn screencasting(&self) -> zbus::Result<bool>;
+
     /// Chooses the primary output, by the name of an enabled output.
     #[zbus(property)]
     fn set_primary_output(&self, name: &str) -> zbus::Result<()>;
