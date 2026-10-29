@@ -257,7 +257,7 @@ A named list of app ids that share their Key remaps, such as Terminals or Browse
 _Avoid_: app group, class list (Toshy's), group alone (that's Marco's `switch-group`)
 
 **Remap template**:
-A named, saved set of Key remaps, those for all applications and each Remap group's. Caminito comes with some, such as the macOS one, and the user saves their own; loading one replaces the Key remaps in use.
+A named, saved set of Key remaps, those for all applications and each Remap group's. Caminito comes with some, such as the macOS ones for a PC keyboard and for a Mac keyboard, and the user saves their own; loading one replaces the Key remaps in use.
 _Avoid_: preset, profile (suggests switching sets as you work), keymap (that's XKB's)
 
 **Capture**:

@@ -96,11 +96,12 @@ install_data(
 )
 
 # The Remap templates that come with Caminito (CMN-189), which caminito-behaviour's Key remaps
-# page lists and can't change or delete. macos-pc.remaps is converted from Toshy's config by
-# tools/toshy-to-remaps, and is GPL-3, as Toshy is (CMN-190).
+# page lists and can't change or delete. macos-pc.remaps and macos-mac.remaps are converted from
+# Toshy's config by tools/toshy-to-remaps, and are GPL-3, as Toshy is (CMN-190).
 install_data(
   'data/remap-templates/no-remaps.remaps',
   'data/remap-templates/macos-pc.remaps',
+  'data/remap-templates/macos-mac.remaps',
   install_dir: get_option('datadir') / 'caminito' / 'remap-templates',
 )
 
