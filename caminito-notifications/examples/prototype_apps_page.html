@@ -825,7 +825,11 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     const t = e.target.closest("button"); if (!t) return;
     if (t.dataset.dismiss) history = history.filter(h => h.id !== +t.dataset.dismiss);
     else if (t.dataset.clearApp) history = history.filter(h => h.i !== +t.dataset.clearApp);
-    else if (t.hasAttribute("data-clear-all")) history = [];
+    else if (t.hasAttribute("data-clear-all")) {
+      // Clearing everything closes the center.
+      history = []; expanded.clear();
+      $("desk-center").hidden = true; $("desk-bell").setAttribute("aria-expanded", "false");
+    }
     else if (t.dataset.more) { const i = +t.dataset.more; expanded.has(i) ? expanded.delete(i) : expanded.add(i); }
     renderDesk();
   });
