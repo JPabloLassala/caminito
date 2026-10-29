@@ -1,0 +1,571 @@
+<title>Notifications Apps Page</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cantarell:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a short brief, then a GTK-like settings window with the variant switcher, then the state readout. */
+:root {
+  --bg: #eef0f3;
+  --fg: #1f2329;
+  --muted: #5d6573;
+  --window: #fafafb;
+  --chrome: #e4e7ec;
+  --line: #d3d8e0;
+  --field: #ffffff;
+  --accent: #3367d1;
+  --accent-fg: #ffffff;
+  --own: #8a5a00;
+  --own-bg: #fbecc8;
+  --off: #a8aeb8;
+  --font-ui: "Cantarell", "Noto Sans", "DejaVu Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "DejaVu Sans Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17191d; --fg: #e8eaee; --muted: #9aa2b0; --window: #24272c; --chrome: #1d2024;
+    --line: #363a42; --field: #2d3036; --accent: #5b8cf0; --accent-fg: #0d1526;
+    --own: #f1c66a; --own-bg: #3d3220; --off: #5d636d; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17191d; --fg: #e8eaee; --muted: #9aa2b0; --window: #24272c; --chrome: #1d2024;
+  --line: #363a42; --field: #2d3036; --accent: #5b8cf0; --accent-fg: #0d1526;
+  --own: #f1c66a; --own-bg: #3d3220; --off: #5d636d; color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--fg); }
+body { font-family: var(--font-ui); font-size: 15px; line-height: 1.5; }
+.page {
+  max-width: 1040px; margin: 0 auto; display: grid; gap: 28px;
+  padding-block: 32px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1 { font-size: 28px; line-height: 1.2; margin: 0; text-wrap: balance; }
+h2 { font-size: 17px; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.brief { display: grid; gap: 10px; }
+code { font-family: var(--font-mono); font-size: 13px; }
+
+/* Variant switcher */
+.switcher { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--field); }
+.seg button {
+  font: inherit; border: 0; background: transparent; color: var(--fg); padding: 7px 14px; cursor: pointer;
+  border-right: 1px solid var(--line);
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
+.hint { color: var(--muted); font-size: 13px; }
+.blurb { color: var(--muted); font-size: 14px; }
+
+/* The window */
+.window { border: 1px solid var(--line); border-radius: 10px; background: var(--window); overflow: hidden; box-shadow: 0 8px 28px rgb(0 0 0 / .12); }
+.titlebar { display: flex; align-items: center; justify-content: center; position: relative; padding: 8px 12px; background: var(--chrome); border-bottom: 1px solid var(--line); font-weight: 700; font-size: 14px; }
+.titlebar .close { position: absolute; right: 12px; width: 14px; height: 14px; border-radius: 50%; background: var(--line); }
+.tabs { display: flex; gap: 4px; padding: 0 12px; background: var(--chrome); border-bottom: 1px solid var(--line); }
+.tabs span { padding: 8px 14px; color: var(--muted); border-bottom: 2px solid transparent; }
+.tabs span.on { color: var(--fg); border-bottom-color: var(--accent); }
+.apps-page { padding: 18px; min-height: 420px; display: grid; gap: 10px; align-content: start; }
+
+.search {
+  width: 100%; box-sizing: border-box; font: inherit; color: var(--fg); background: var(--field);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px 7px 32px;
+  background-image: radial-gradient(circle at 15px 50%, transparent 5px, var(--muted) 5.5px, var(--muted) 6.5px, transparent 7px);
+}
+input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, [role="option"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.icon { width: 24px; height: 24px; border-radius: 6px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; flex: none; }
+.icon.big { width: 48px; height: 48px; border-radius: 12px; font-size: 20px; }
+.name-default { font-weight: 700; }
+.own-tag { font-size: 12px; padding: 1px 7px; border-radius: 10px; color: var(--own); background: var(--own-bg); }
+.dim { color: var(--muted); }
+
+select { font: inherit; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+label.check { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+label.check.disabled { color: var(--off); cursor: default; }
+input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); margin: 0; }
+button.reset { font: inherit; font-size: 14px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; justify-self: start; }
+button.reset.icon-only { padding: 3px 8px; }
+
+/* A: sidebar */
+.sidebar { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 18px; }
+.side-list { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.list { border: 1px solid var(--line); border-radius: 6px; background: var(--field); overflow: hidden; }
+.list [role="option"] { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }
+.list [role="option"] .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list [role="option"][aria-selected="true"] { background: var(--accent); color: var(--accent-fg); }
+.list [role="option"][aria-selected="true"] .own-tag { background: rgb(255 255 255 / .25); color: inherit; }
+.detail { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.detail-head { display: flex; gap: 12px; align-items: center; }
+.detail-head h3 { margin: 0; font-size: 20px; }
+.controls { display: grid; gap: 8px; }
+.delivery-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+/* B: table */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 720px; }
+th { text-align: left; font-size: 13px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th.c, td.c { text-align: center; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td.app { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+
+/* C: expanders */
+.exp { border-bottom: 1px solid var(--line); }
+.exp summary { display: flex; align-items: center; gap: 10px; padding: 9px 4px; cursor: pointer; list-style: none; }
+.exp summary::-webkit-details-marker { display: none; }
+.exp summary::before { content: "▸"; color: var(--muted); width: 12px; transition: transform .15s; }
+.exp[open] summary::before { transform: rotate(90deg); }
+.exp summary .n { flex: none; }
+.exp summary .sum { flex: 1; min-width: 0; text-align: right; color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp .controls { padding: 4px 4px 14px 50px; }
+
+/* State and questions */
+.state { font-family: var(--font-mono); font-size: 13px; background: var(--window); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; margin: 0; }
+.questions { display: grid; gap: 14px; }
+.questions ol { margin: 0; padding-left: 22px; display: grid; gap: 10px; max-width: 75ch; }
+.questions li strong { display: block; }
+
+/* Try it: a mock desktop */
+.try { display: grid; gap: 12px; }
+.try-controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.try-controls .field { display: flex; gap: 8px; align-items: center; }
+button.send { font: inherit; font-weight: 700; color: var(--accent-fg); background: var(--accent); border: 0; border-radius: 6px; padding: 7px 16px; cursor: pointer; }
+button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.desktop {
+  --desk: #2d4a5e; --desk-2: #1d3242; --bubble: rgb(36 39 44 / .94); --bubble-fg: #eef0f3; --bubble-muted: #aab2bf;
+  position: relative; height: 380px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line);
+  background: linear-gradient(160deg, var(--desk), var(--desk-2)); color: var(--bubble-fg);
+}
+.panel { display: flex; align-items: center; justify-content: flex-end; gap: 14px; height: 30px; padding: 0 12px; background: rgb(0 0 0 / .45); font-size: 13px; }
+.panel .bell { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.panel .bell .dot { width: 7px; height: 7px; border-radius: 50%; background: #f0b44c; }
+.panel .bell.dnd { text-decoration: line-through; opacity: .75; }
+.panel .sound { opacity: 0; transition: opacity .2s; color: #f0b44c; }
+.panel .sound.on { opacity: 1; }
+.bubbles { position: absolute; top: 40px; right: 10px; width: min(340px, calc(100% - 20px)); display: grid; gap: 8px; }
+.bubble { position: relative; background: var(--bubble); color: var(--bubble-fg); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 18px rgb(0 0 0 / .35); display: grid; gap: 4px; animation: pop .18s ease-out; }
+.bubble .top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--bubble-muted); }
+.bubble .top .icon { width: 18px; height: 18px; border-radius: 4px; font-size: 10px; }
+.bubble .body-row { display: flex; gap: 10px; }
+.bubble .text { flex: 1; min-width: 0; }
+.bubble .summary { font-weight: 700; }
+.bubble .body { font-size: 14px; color: var(--bubble-muted); }
+.bubble .image { width: 44px; height: 44px; border-radius: 8px; flex: none; }
+.bubble .lead { position: relative; width: 40px; height: 40px; flex: none; margin-top: 2px; }
+.bubble .lead .main { width: 40px; height: 40px; border-radius: 10px; font-size: 18px; }
+.bubble .lead .badge { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; font-size: 9px; box-shadow: 0 0 0 2px var(--bubble); }
+.bubble .actions { display: flex; gap: 6px; margin-top: 4px; }
+.bubble .actions span { font-size: 13px; padding: 3px 10px; border-radius: 6px; background: rgb(255 255 255 / .1); }
+.bubble .x { position: absolute; top: 6px; right: 8px; border: 0; background: transparent; color: var(--bubble-muted); font-size: 16px; cursor: pointer; opacity: 0; }
+.bubble:hover .x, .bubble .x:focus-visible { opacity: 1; }
+.bubble.critical { box-shadow: 0 0 0 2px #e0654f, 0 6px 18px rgb(0 0 0 / .35); }
+.bubble .timer { height: 2px; background: rgb(255 255 255 / .25); border-radius: 1px; transform-origin: left; }
+.queued { position: absolute; top: 40px; left: 12px; font-size: 12px; color: var(--bubble-muted); }
+.dock { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; padding: 8px 12px; border-radius: 14px; background: rgb(0 0 0 / .4); }
+.dock .item { position: relative; }
+.dock .icon { width: 32px; height: 32px; border-radius: 8px; font-size: 14px; }
+.dock .count { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #e0654f; color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.log { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.log li { display: flex; gap: 10px; align-items: baseline; }
+.log .chip { flex: none; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--chrome); border: 1px solid var(--line); }
+.log .chip.bubble-shown { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+@keyframes pop { from { transform: translateY(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+@media (max-width: 640px) {
+  .desktop { height: 420px; }
+  .dock { gap: 6px; padding: 6px 8px; }
+  .dock .icon { width: 26px; height: 26px; }
+  .sidebar { grid-template-columns: 1fr; }
+  .exp .controls { padding-left: 24px; }
+  .exp summary .sum { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .exp summary::before, .panel .sound { transition: none; } .bubble { animation: none; } }
+</style>
+
+<main class="page">
+  <header class="brief">
+    <div class="eyebrow">Caminito · Notifications epic · CMN-262 prototype</div>
+    <h1>The Apps page of the Notifications settings</h1>
+    <p>Three layouts for the page where each app gets its own notification settings. Pick a layout, change a setting, search, or set an app back to the default: the state below the window follows every change. Nothing here touches real settings.</p>
+  </header>
+
+  <section class="switcher" aria-label="Layout">
+    <div class="seg" role="group" aria-label="Variant">
+      <button type="button" id="v-a" data-v="0">A · Sidebar</button>
+      <button type="button" id="v-b" data-v="1">B · Table</button>
+      <button type="button" id="v-c" data-v="2">C · Expanders</button>
+    </div>
+    <span class="hint">← and → switch layouts when no field has focus</span>
+    <p class="blurb" id="blurb"></p>
+  </section>
+
+  <div class="window">
+    <div class="titlebar">Notifications<span class="close" aria-hidden="true"></span></div>
+    <div class="tabs"><span>General</span><span class="on">Apps</span></div>
+    <div class="apps-page" id="host"></div>
+  </div>
+
+  <section class="try" aria-label="Send a test notification">
+    <h2>Send a test notification</h2>
+    <p class="dim">It follows the settings above as they are now. Bubbles stay 7 seconds (critical ones until closed), hovering pauses them, at most 3 show at once and the rest wait.</p>
+    <div class="try-controls">
+      <label class="field" for="try-app">From <select id="try-app"></select></label>
+      <label class="field" for="try-site" id="try-site-field" hidden>Tab <select id="try-site"><option value="claude" selected>claude.ai</option><option value="github">github.com</option><option value="">None (Firefox itself)</option></select></label>
+      <label class="field" for="try-urgency">Urgency <select id="try-urgency"><option value="normal">Normal</option><option value="critical">Critical</option></select></label>
+      <label class="check" for="try-dnd"><input type="checkbox" id="try-dnd">Do Not Disturb</label>
+      <label class="check" for="try-crit"><input type="checkbox" id="try-crit" checked>Critical notifications break through</label>
+      <label class="check" for="try-sound"><input type="checkbox" id="try-sound">Play sounds out loud</label>
+      <button type="button" class="send" id="try-send">Send notification</button>
+      <button type="button" class="plain" id="try-clear">Clear all</button>
+    </div>
+    <div class="desktop" id="desktop">
+      <div class="panel"><span class="sound" id="desk-sound" aria-hidden="true">♪ sound</span><span class="bell" id="desk-bell">🔔<span class="dot" id="desk-dot" hidden></span><span id="desk-count"></span></span><span>14:30</span></div>
+      <div class="queued" id="desk-queued" hidden></div>
+      <div class="bubbles" id="desk-bubbles" aria-live="polite"></div>
+      <div class="dock" id="desk-dock"></div>
+    </div>
+    <ul class="log" id="try-log" aria-live="polite"></ul>
+  </section>
+
+  <section class="brief" aria-label="State">
+    <h2>What the settings hold now</h2>
+    <pre class="state" id="state"></pre>
+  </section>
+
+  <section class="questions">
+    <h2>Questions the spec leaves open</h2>
+    <ol>
+      <li><strong>The Default entry has only four of the six settings.</strong>The global schema, <code>org.mate.Caminito.notifications</code>, has no key for a default Badge or a default "Break through Do Not Disturb", though CMN-262 says every entry has six. Here those two are greyed out on Default. Either the schema gets two more keys, or Default shows four.</li>
+      <li><strong>What following the default means.</strong>Here an app switches to its own settings as a whole: the first change copies all six, and "Use the default" puts them all back. The alternative is following the default one setting at a time, which means telling which keys of the per-app schema the user has set.</li>
+      <li><strong>Which settings mean anything under each Delivery.</strong>A guess: with "History only" just Badge stays editable, and with "Off" nothing does. Sound under "History only" is the one to argue about.</li>
+    </ol>
+  </section>
+</main>
+
+<script>
+(() => {
+  const DELIVERIES = [["bubble", "Bubble and history"], ["history", "History only"], ["off", "Off"]];
+  const FLAGS = [
+    ["Play a sound", "Sound", "sound"],
+    ["Show previews in bubbles", "Previews", "previews"],
+    ["Show the app's icon in bubbles", "Icon", "icon"],
+    ["Show a badge on its Dock item", "Badge", "badge"],
+    ["Break through Do Not Disturb", "Breaks DND", "dnd"],
+  ];
+  const NOT_IN_DEFAULT = [3, 4];
+  const VARIANTS = [
+    ["sidebar", "Apps on the left, the chosen one's settings on the right."],
+    ["table", "One row per app and one column per setting, everything visible at once."],
+    ["expanders", "One line per app saying what it gets, opening onto its settings."],
+  ];
+
+  // Example apps; Slack starts with settings of its own.
+  const apps = [
+    { id: "default", name: "Default", color: "#6b7280", letter: "★", own: { delivery: "bubble", flags: [true, true, true, true, false] } },
+    { id: "caminito-accessx", name: "Accessibility keys", color: "#2f6fd6", letter: "A", own: null },
+    { id: "firefox", name: "Firefox", color: "#e66000", letter: "F", own: null },
+    { id: "caminito-network", name: "Network", color: "#4b7f52", letter: "N", own: null },
+    { id: "org.signal.Signal", name: "Signal", color: "#3a76f0", letter: "S", own: null },
+    { id: "slack", name: "Slack", color: "#6b3a7a", letter: "S", own: { delivery: "history", flags: [false, true, true, true, false] } },
+    { id: "org.mozilla.Thunderbird", name: "Thunderbird", color: "#1f5fa8", letter: "T", own: null },
+    { id: "code", name: "Visual Studio Code", color: "#1f7ac2", letter: "V", own: null },
+  ];
+
+  const effective = i => apps[i].own || apps[0].own;
+  const applies = (delivery, k) => delivery === "bubble" ? true : delivery === "history" ? k === 3 : false;
+  const label = d => DELIVERIES.find(x => x[0] === d)[1];
+  const summary = p => {
+    const parts = [label(p.delivery)];
+    FLAGS.forEach(([, , word], k) => {
+      const usual = k !== 4;
+      if (applies(p.delivery, k) && p.flags[k] !== usual) parts.push(p.flags[k] ? word : "no " + word);
+    });
+    return parts.join(" · ");
+  };
+  const status = i => i === 0 ? "What an app without its own settings gets. The General page has the same four."
+    : apps[i].own ? "Its own settings" : "Follows the default";
+
+  let variant = 0, query = "", selected = 0;
+  const host = document.getElementById("host");
+  const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const icon = (app, big) => `<span class="icon${big ? " big" : ""}" style="background:${app.color}" aria-hidden="true">${app.letter}</span>`;
+  const nameHtml = (app, i) => `<span class="n${i === 0 ? " name-default" : ""}">${esc(app.name)}</span>`;
+  const matches = i => i === 0 || apps[i].name.toLowerCase().includes(query.toLowerCase());
+
+  function setPref(i, change) {
+    const p = effective(i);
+    apps[i].own = { delivery: p.delivery, flags: p.flags.slice() };
+    change(apps[i].own);
+    render();
+  }
+
+  function deliverySelect(i, id) {
+    const p = effective(i);
+    return `<select id="${id}" data-i="${i}" data-kind="delivery" aria-label="Delivery for ${esc(apps[i].name)}">` +
+      DELIVERIES.map(([nick, text]) => `<option value="${nick}"${nick === p.delivery ? " selected" : ""}>${text}</option>`).join("") +
+      `</select>`;
+  }
+  function checkbox(i, k, withLabel, id) {
+    const p = effective(i);
+    const fixed = i === 0 && NOT_IN_DEFAULT.includes(k);
+    const disabled = !applies(p.delivery, k) || fixed;
+    const title = fixed ? "No default key for this in org.mate.Caminito.notifications" : FLAGS[k][0];
+    const box = `<input type="checkbox" id="${id}" data-i="${i}" data-k="${k}"${p.flags[k] ? " checked" : ""}${disabled ? " disabled" : ""} title="${esc(title)}" aria-label="${esc(FLAGS[k][0])} for ${esc(apps[i].name)}">`;
+    return withLabel ? `<label class="check${disabled ? " disabled" : ""}" title="${esc(title)}">${box}${FLAGS[k][0]}</label>` : box;
+  }
+  function resetButton(i, iconOnly, id) {
+    if (i === 0 || !apps[i].own) return iconOnly ? "" : "";
+    return iconOnly
+      ? `<button type="button" class="reset icon-only" id="${id}" data-reset="${i}" title="Use the default" aria-label="Use the default for ${esc(apps[i].name)}">↺</button>`
+      : `<button type="button" class="reset" id="${id}" data-reset="${i}">Use the default</button>`;
+  }
+  function column(i, prefix) {
+    return `<div class="controls">
+      <div class="delivery-row"><span>Delivery</span>${deliverySelect(i, prefix + "-d")}</div>
+      ${FLAGS.map((_, k) => checkbox(i, k, true, `${prefix}-f${k}`)).join("")}
+      ${resetButton(i, false, prefix + "-r")}
+    </div>`;
+  }
+
+  function sidebar() {
+    const rows = apps.map((app, i) => matches(i) ? `<div role="option" tabindex="${i === selected ? 0 : -1}" data-select="${i}" aria-selected="${i === selected}">${icon(app)}${nameHtml(app, i)}${i !== 0 && app.own ? '<span class="own-tag">Own</span>' : ""}</div>` : "").join("");
+    const app = apps[selected];
+    return `<div class="sidebar">
+      <div class="side-list">
+        <input class="search" id="search" type="search" placeholder="Search apps" value="${esc(query)}" aria-label="Search apps">
+        <div class="list" role="listbox" aria-label="Notifying apps">${rows}</div>
+      </div>
+      <div class="detail">
+        <div class="detail-head">${icon(app, true)}<div><h3>${esc(app.name)}</h3><div class="dim">${status(selected)}</div></div></div>
+        ${column(selected, "a")}
+      </div>
+    </div>`;
+  }
+
+  function table() {
+    const head = `<tr><th>App</th><th>Delivery</th>${FLAGS.map(f => `<th class="c" title="${esc(f[0])}">${f[1]}</th>`).join("")}<th></th></tr>`;
+    const rows = apps.map((app, i) => matches(i) ? `<tr>
+      <td class="app">${icon(app)}${nameHtml(app, i)}</td>
+      <td>${deliverySelect(i, `b${i}-d`)}</td>
+      ${FLAGS.map((_, k) => `<td class="c">${checkbox(i, k, false, `b${i}-f${k}`)}</td>`).join("")}
+      <td>${resetButton(i, true, `b${i}-r`)}</td>
+    </tr>` : "").join("");
+    return `<input class="search" id="search" type="search" placeholder="Search apps" value="${esc(query)}" aria-label="Search apps">
+      <div class="table-wrap"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  const openExp = new Set();
+  function expanders() {
+    const items = apps.map((app, i) => {
+      if (!matches(i)) return "";
+      const text = i !== 0 && !app.own ? "Default: " + summary(effective(i)) : summary(effective(i));
+      return `<details class="exp" data-exp="${i}"${openExp.has(i) ? " open" : ""}>
+        <summary>${icon(app)}${nameHtml(app, i)}<span class="sum">${esc(text)}</span></summary>
+        ${column(i, "c" + i)}
+      </details>`;
+    }).join("");
+    return `<input class="search" id="search" type="search" placeholder="Search apps" value="${esc(query)}" aria-label="Search apps"><div>${items}</div>`;
+  }
+
+  function stateText() {
+    const line = (id, p) => id.padEnd(26) + p.delivery.padEnd(9) + FLAGS.map((f, k) => (p.flags[k] ? "" : "-") + f[2]).join(" ");
+    const out = [], followers = [];
+    apps.forEach(app => app.own ? out.push(line(app.id, app.own)) : followers.push(app.id));
+    out.push(`follow the default (${followers.length}): ${followers.join(", ")}`);
+    return out.join("\n");
+  }
+
+  function render() {
+    const focused = document.activeElement && document.activeElement.id;
+    const caret = focused === "search" ? document.activeElement.selectionStart : null;
+    host.innerHTML = [sidebar, table, expanders][variant]();
+    document.getElementById("state").textContent = stateText();
+    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.v === variant)));
+    document.getElementById("blurb").textContent = VARIANTS[variant][1];
+    if (focused) {
+      const el = document.getElementById(focused);
+      if (el) { el.focus(); if (caret !== null) el.setSelectionRange(caret, caret); }
+    }
+  }
+
+  host.addEventListener("change", e => {
+    const t = e.target, i = +t.dataset.i;
+    if (t.dataset.kind === "delivery") setPref(i, p => { p.delivery = t.value; });
+    else if (t.dataset.k !== undefined) setPref(i, p => { p.flags[+t.dataset.k] = t.checked; });
+  });
+  host.addEventListener("input", e => { if (e.target.id === "search") { query = e.target.value; render(); } });
+  host.addEventListener("click", e => {
+    const reset = e.target.closest("[data-reset]");
+    if (reset) { apps[+reset.dataset.reset].own = null; render(); return; }
+    const row = e.target.closest("[data-select]");
+    if (row) { selected = +row.dataset.select; render(); const el = host.querySelector(`[data-select="${selected}"]`); el && el.focus(); }
+  });
+  host.addEventListener("keydown", e => {
+    const row = e.target.closest && e.target.closest("[data-select]");
+    if (!row || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+    e.preventDefault();
+    const shown = apps.map((_, i) => i).filter(matches);
+    const at = shown.indexOf(selected) + (e.key === "ArrowDown" ? 1 : -1);
+    if (at >= 0 && at < shown.length) { selected = shown[at]; render(); host.querySelector(`[data-select="${selected}"]`).focus(); }
+  });
+  host.addEventListener("toggle", e => {
+    const i = +e.target.dataset.exp;
+    if (Number.isNaN(i)) return;
+    e.target.open ? openExp.add(i) : openExp.delete(i);
+  }, true);
+
+  function show(v) {
+    variant = (v + VARIANTS.length) % VARIANTS.length;
+    try { history.replaceState(null, "", "#" + VARIANTS[variant][0]); } catch (_) { location.hash = VARIANTS[variant][0]; }
+    render();
+  }
+  document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => show(+b.dataset.v)));
+  document.addEventListener("keydown", e => {
+    const t = e.target;
+    if (t.matches && t.matches("input, select, textarea, [contenteditable]")) return;
+    if (e.key === "ArrowLeft") show(variant - 1);
+    if (e.key === "ArrowRight") show(variant + 1);
+  });
+  const fromHash = () => {
+    const at = VARIANTS.findIndex(v => "#" + v[0] === location.hash);
+    if (at >= 0 && at !== variant) { variant = at; render(); }
+  };
+  window.addEventListener("hashchange", fromHash);
+  const start = VARIANTS.findIndex(v => "#" + v[0] === location.hash);
+  variant = start >= 0 ? start : 0;
+  render();
+
+  // Try it: what a notification gets under the settings above.
+  const SAMPLES = {
+    "caminito-accessx": ["Sticky keys on", "Shift was pressed five times.", null, ["Turn off"]],
+    "firefox": ["Download finished", "caminito-0.4.tar.zst (12 MB)", null, ["Open", "Show in folder"]],
+    "caminito-network": ["Connected to Casa-5G", "Wi-Fi, strong signal", null, []],
+    "org.signal.Signal": ["Ana", "¿Venís a cenar el jueves?", "#d9822b", ["Reply"]],
+    "slack": ["#camino-dev", "Mira the build is green again", "#6b3a7a", ["Reply"]],
+    "org.mozilla.Thunderbird": ["Linear", "CMN-262 was moved to In Progress", null, ["Mark as read"]],
+    "code": ["Build finished", "cargo build: 0 errors, 2 warnings", null, ["Show output"]],
+  };
+  // Web notifications Firefox passes on for a tab: the site's icon leads, Firefox's is the badge.
+  const SITES = {
+    claude: { origin: "claude.ai", color: "#c96442", letter: "C", summary: "Claude", body: "Your answer is ready.", actions: [] },
+    github: { origin: "github.com", color: "#2b3137", letter: "G", summary: "JPabloLassala/camino", body: "CI passed on master", actions: ["View"] },
+  };
+  const TIMEOUT = 7000, MAX = 3;
+  const counts = {};
+  let historySize = 0, logLines = [], queue = [], visible = [];
+  const $ = id => document.getElementById(id);
+  $("try-app").innerHTML = apps.slice(1).map((app, n) => `<option value="${n + 1}">${esc(app.name)}</option>`).join("");
+
+  function beep() {
+    if (!$("try-sound").checked) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.frequency.value = 880; gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      osc.connect(gain).connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.35);
+    } catch (_) { /* no audio here */ }
+  }
+  function flashSound() {
+    const s = $("desk-sound"); s.classList.add("on"); setTimeout(() => s.classList.remove("on"), 1200); beep();
+  }
+
+  function renderDesk() {
+    $("desk-dot").hidden = historySize === 0;
+    $("desk-count").textContent = historySize ? String(historySize) : "";
+    $("desk-bell").classList.toggle("dnd", $("try-dnd").checked);
+    $("desk-dock").innerHTML = apps.slice(1).map((app, n) => {
+      const i = n + 1, c = counts[app.id] || 0;
+      const badge = c && effective(i).flags[3] ? `<span class="count">${c}</span>` : "";
+      return `<span class="item" title="${esc(app.name)}">${icon(app)}${badge}</span>`;
+    }).join("");
+    const q = $("desk-queued"); q.hidden = queue.length === 0; q.textContent = `${queue.length} waiting`;
+    $("try-log").innerHTML = logLines.slice(0, 6).map(([chip, cls, text]) => `<li><span class="chip ${cls}">${chip}</span><span>${esc(text)}</span></li>`).join("");
+  }
+  function log(chip, cls, text) { logLines.unshift([chip, cls, text]); renderDesk(); }
+
+  function showBubble(n) {
+    if (visible.length >= MAX) { queue.push(n); renderDesk(); return; }
+    const app = apps[n.i], p = n.prefs;
+    const site = n.site ? SITES[n.site] : null;
+    const [summary, body, image, actions] = site ? [site.summary, site.body, null, site.actions] : SAMPLES[app.id];
+    // The site's icon is the notification's image, so Previews hides it; the badge is the app icon.
+    let lead = "", top = `${p.flags[2] ? icon(app) : ""}<span>${esc(app.name)}</span>`;
+    if (site) {
+      const appIcon = cls => `<span class="icon ${cls}" style="background:${app.color}" aria-hidden="true">${app.letter}</span>`;
+      const main = p.flags[1] ? `<span class="icon main" style="background:${site.color}" aria-hidden="true">${site.letter}</span>`
+        : p.flags[2] ? appIcon("main") : "";
+      const badge = p.flags[1] && p.flags[2] ? appIcon("badge") : "";
+      lead = main ? `<span class="lead">${main}${badge}</span>` : "";
+      top = `<span>${p.flags[1] ? esc(site.origin) + " · " : ""}${esc(app.name)}</span>`;
+    }
+    const el = document.createElement("div");
+    el.className = "bubble" + (n.critical ? " critical" : "");
+    el.innerHTML = `<div class="top">${top}</div>
+      <div class="body-row">${lead}<div class="text">${p.flags[1]
+        ? `<div class="summary">${esc(summary)}</div><div class="body">${esc(body)}</div>`
+        : `<div class="summary">Notification</div>`}</div>
+        ${p.flags[1] && image ? `<span class="image" style="background:${image}" aria-hidden="true"></span>` : ""}</div>
+      ${actions.length ? `<div class="actions">${actions.map(a => `<span>${esc(a)}</span>`).join("")}</div>` : ""}
+      ${n.critical ? "" : '<div class="timer"></div>'}
+      <button type="button" class="x" aria-label="Close">×</button>`;
+    const box = $("desk-bubbles");
+    box.prepend(el);
+    visible.push(el);
+    let left = TIMEOUT, started = Date.now(), timer = null;
+    const bar = el.querySelector(".timer");
+    const close = () => {
+      clearTimeout(timer); el.remove(); visible = visible.filter(v => v !== el);
+      if (queue.length) showBubble(queue.shift());
+      renderDesk();
+    };
+    const run = () => {
+      if (n.critical) return;
+      started = Date.now(); timer = setTimeout(close, left);
+      if (bar) { bar.style.transition = `transform ${left}ms linear`; requestAnimationFrame(() => { bar.style.transform = "scaleX(0)"; }); }
+    };
+    el.addEventListener("mouseenter", () => {
+      if (n.critical) return;
+      clearTimeout(timer); left -= Date.now() - started;
+      if (bar) { const now = getComputedStyle(bar).transform; bar.style.transition = "none"; bar.style.transform = now; }
+    });
+    el.addEventListener("mouseleave", run);
+    el.querySelector(".x").addEventListener("click", close);
+    if (bar) bar.style.transform = "scaleX(1)";
+    run();
+    if (p.flags[0]) flashSound();
+    renderDesk();
+  }
+
+  $("try-send").addEventListener("click", () => {
+    const i = +$("try-app").value, app = apps[i], prefs = effective(i);
+    const critical = $("try-urgency").value === "critical", dnd = $("try-dnd").checked;
+    if (prefs.delivery === "off") { log("Off", "", `${app.name}: nothing shown and not kept.`); return; }
+    historySize += 1; counts[app.id] = (counts[app.id] || 0) + 1;
+    const badge = prefs.flags[3] ? " Its Dock item shows the count." : " Badge off, so no count on its Dock item.";
+    if (prefs.delivery === "history") { log("History only", "", `${app.name}: no bubble, added to the Notification center.${badge}`); return; }
+    const why = critical && $("try-crit").checked ? "critical" : prefs.flags[0 + 4] ? "the app breaks through" : null;
+    if (dnd && !why) { log("Do Not Disturb", "", `${app.name}: no bubble and no sound, added to the Notification center.${badge}`); return; }
+    const notes = [];
+    if (dnd) notes.push(`broke through Do Not Disturb (${why})`);
+    notes.push(prefs.flags[0] ? "with sound" : "silent");
+    if (!prefs.flags[1]) notes.push("previews off");
+    if (!prefs.flags[2]) notes.push("no app icon");
+    const site = app.id === "firefox" ? $("try-site").value : "";
+    if (site) notes.unshift(`from the ${SITES[site].origin} tab`);
+    log("Bubble", "bubble-shown", `${app.name}: ${notes.join(", ")}.${badge}`);
+    showBubble({ i, prefs, critical, site });
+  });
+  $("try-clear").addEventListener("click", () => {
+    historySize = 0; Object.keys(counts).forEach(k => delete counts[k]);
+    queue = []; visible.forEach(el => el.remove()); visible = []; logLines = [];
+    renderDesk();
+  });
+  $("try-dnd").addEventListener("change", renderDesk);
+  $("try-app").addEventListener("change", () => { $("try-site-field").hidden = apps[+$("try-app").value].id !== "firefox"; });
+  host.addEventListener("change", renderDesk);
+  host.addEventListener("click", e => { if (e.target.closest("[data-reset]")) renderDesk(); });
+  renderDesk();
+})();
+</script>
