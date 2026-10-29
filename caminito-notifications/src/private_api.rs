@@ -1,7 +1,8 @@
 //! The daemon's private API (ADR 0051), `org.mate.Caminito.Notifications` at
 //! `/org/mate/Caminito/Notifications`, on the name the program owns as a single-instance
-//! application. Its clients are the Notifications applet and the Dock applet, which ship in
-//! the same package, so it's unversioned. It opens the settings window (CMN-261) and serves
+//! application. Its clients are the Notifications applet and the Dock applet, and Caminito
+//! for Super+N and Do Not Disturb's shortcut, which all ship in the same package, so it's
+//! unversioned. It opens the settings window (CMN-261) and serves
 //! the Notification history (CMN-259) and Do Not Disturb (CMN-263), whose calls the server
 //! answers, and passes a request for the Notification center on to the applet, which owns no
 //! name to be called at.

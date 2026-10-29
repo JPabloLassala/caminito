@@ -30,7 +30,7 @@ const DAY_TURNS: i32 = 4;
 impl Until {
     /// The duration whose nick is `nick`: `one-hour`, `four-hours`, `tomorrow-morning` or
     /// `until-turned-off`.
-    pub(crate) fn of_nick(nick: &str) -> Option<Until> {
+    fn of_nick(nick: &str) -> Option<Until> {
         match nick {
             "one-hour" => Some(Until::OneHour),
             "four-hours" => Some(Until::FourHours),
@@ -87,6 +87,18 @@ pub(crate) enum DoNotDisturb {
 }
 
 impl DoNotDisturb {
+    /// What `SetDoNotDisturb`'s `nick` sets at `now` in `zone`: `off`, or on for one of the
+    /// [`Until`] durations. `None` for a nick that's neither.
+    pub(crate) fn of_nick(nick: &str, now: u64, zone: &glib::TimeZone) -> Option<DoNotDisturb> {
+        if nick == "off" {
+            return Some(DoNotDisturb::Off);
+        }
+        let until = Until::of_nick(nick)?;
+        Some(DoNotDisturb::On {
+            end: until.end(now, zone),
+        })
+    }
+
     /// What `path` holds at `now`: off if it's missing, can't be read, or has ended.
     pub(crate) fn load(path: &Path, now: u64) -> DoNotDisturb {
         let text = match std::fs::read_to_string(path) {

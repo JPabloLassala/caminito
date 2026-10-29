@@ -1828,10 +1828,44 @@ fn do_not_disturb_survives_a_restart_of_the_daemon() {
         assert!(daemon.bubbles.ids().is_empty());
         drop(daemon);
 
-        // One that ended while no daemon ran is off.
+        // One that ended while no daemon ran is off, and one until turned off stays on.
         home.clock.0.set(NOW + HOUR);
-        let daemon = start_in(bus, home);
+        let daemon = start_in(bus, home.clone());
         assert_eq!(daemon.do_not_disturb(), (false, 0, String::new()));
+        daemon.set_do_not_disturb("until-turned-off");
+        drop(daemon);
+        home.clock.0.set(NOW + 100 * HOUR);
+        let daemon = start_in(bus, home);
+        assert_eq!(daemon.do_not_disturb(), (true, 0, "manual".to_owned()));
+    });
+}
+
+#[test]
+fn a_notification_waiting_for_a_bubble_gets_none_once_do_not_disturb_is_on() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon
+            .apps
+            .app("Phone")
+            .set_boolean("breaks-through", true)
+            .unwrap();
+        let first = daemon.notify(notify("One"));
+        let second = daemon.notify(notify("Two"));
+        let third = daemon.notify(notify("Three"));
+        daemon.notify(notify("Waits"));
+        let call = daemon.notify(Notify {
+            app_name: "Phone",
+            ..notify("Ana is calling")
+        });
+        assert_eq!(daemon.bubbles.ids(), [first, second, third]);
+
+        daemon.set_do_not_disturb("one-hour");
+        daemon.close(first);
+        daemon.close(second);
+
+        // The call breaks through, and Waits, which doesn't, keeps only its entry.
+        assert_eq!(daemon.bubbles.ids(), [third, call]);
+        assert_eq!(daemon.summaries(), ["Ana is calling", "Waits", "Three"]);
     });
 }
 

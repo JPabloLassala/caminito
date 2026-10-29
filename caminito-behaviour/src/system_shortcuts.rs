@@ -2,8 +2,8 @@
 //! any remap, so a rule whose combination is one never applies, and a target that is one
 //! runs it (ADR 0038). They're read as Caminito reads its bindings (148): Marco's
 //! `global-keybindings` and `window-keybindings`, and `org.mate.Caminito`'s Overview keys
-//! (241, CMN-185) and Notifications keys (CMN-263). The accelerators other programs grab, as mate-panel's Alt+F1, aren't in
-//! any key the page can read, and aren't marked.
+//! (241, CMN-185) and Notifications keys (CMN-263). The accelerators other programs grab,
+//! as mate-panel's Alt+F1, aren't in any key the page can read, and aren't marked.
 
 use gio::prelude::*;
 

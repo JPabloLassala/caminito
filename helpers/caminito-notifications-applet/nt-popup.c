@@ -222,7 +222,7 @@ on_duration (GtkButton *button, gpointer data)
 }
 
 /* The Do Not Disturb row: its name, and when it ends below it while it's on, beside the
-   switch; and below them, the durations, which show while it's off. */
+   switch; and below them, the durations, which turn it on or change its end. */
 static GtkWidget *
 do_not_disturb_row (NtPopup *popup)
 {
@@ -443,7 +443,6 @@ nt_popup_set_do_not_disturb (NtPopup *popup, gboolean on, guint64 end, gint64 no
   popup->updating = FALSE;
   gtk_label_set_text (GTK_LABEL (popup->until), until);
   gtk_widget_set_visible (popup->until, on);
-  gtk_widget_set_visible (popup->durations, !on);
   fit_list (popup);
 }
 

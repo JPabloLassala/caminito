@@ -9,12 +9,12 @@
 #                      durations "1 hour", "4 hours" and "Tomorrow morning" under it
 #   03-on-for-an-hour  "1 hour" clicked: the bell struck through
 #   04-center-on       the center again: the switch on, "Until HH:MM" an hour from now, and
-#                      no durations
+#                      the durations, to change the end with
 #   05-middle-off      middle-click on the applet: the bell again
 #   06-middle-on       middle-click again: struck through, on until turned off
 #   07-center-until    the center: "Until turned off"
-#   08-open-center     the center closed, then OpenCenter called as Caminito does for
-#                      Super+N: the center opens
+#   08-center-closed   left-click closes it
+#   09-open-center     OpenCenter called as Caminito does for Super+N: the center opens
 #
 # and writes report.txt: whether the panel lived through each state, the calls the mock took,
 # and the panel's log's warnings.

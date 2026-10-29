@@ -4,7 +4,7 @@
  * icon and name, its age, a close button, its summary, body and image, and its action
  * buttons; "No notifications" when it's empty; and "Clear all" at the bottom. On top is the
  * Do Not Disturb row (CMN-263): its switch, which turns it on until turned off, "Until 14:30"
- * while it's on, and while it's off the durations to turn it on for. Grouping by app
+ * while it's on, and the durations to turn it on for or change its end to. Grouping by app
  * (CMN-265) comes later. It draws NtEntries and calls back for what the user does, so that it
  * knows nothing of D-Bus.
  */

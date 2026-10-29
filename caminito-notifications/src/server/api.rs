@@ -13,7 +13,7 @@ use gio::glib::{self, Variant};
 use gio::prelude::*;
 
 use super::{Reason, State, close, close_all, invoke, reply};
-use crate::do_not_disturb::{DoNotDisturb, Until};
+use crate::do_not_disturb::DoNotDisturb;
 use crate::history::ENTRY_TYPE;
 
 const INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
@@ -115,13 +115,8 @@ pub(super) fn handle(
         "SetDoNotDisturb" => {
             let nick = text(0);
             let mut guard = state.borrow_mut();
-            let to = if nick == "off" {
-                DoNotDisturb::Off
-            } else if let Some(until) = Until::of_nick(&nick) {
-                DoNotDisturb::On {
-                    end: until.end(guard.clock.now(), &guard.clock.zone()),
-                }
-            } else {
+            let (now, zone) = (guard.clock.now(), guard.clock.zone());
+            let Some(to) = DoNotDisturb::of_nick(&nick, now, &zone) else {
                 drop(guard);
                 return refuse(format!("Do Not Disturb has no duration {nick}"));
             };

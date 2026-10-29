@@ -55,9 +55,9 @@ xt click 12 12 1; sleep 0.5
 xt click 12 12 2; shot 05-middle-off; alive "middle-click, off"
 xt click 12 12 2; shot 06-middle-on; alive "middle-click, on"
 xt click 12 12 1; shot 07-center-until 420 240; alive "the center, until turned off"
-xt click 12 12 1; sleep 0.5
+xt click 12 12 1; shot 08-center-closed 420 240; alive "the center, closed"
 api --method org.mate.Caminito.Notifications.OpenCenter
-shot 08-open-center 420 240; alive "OpenCenter"
+shot 09-open-center 420 240; alive "OpenCenter"
 
 echo "the mock's calls:"
 gdbus call --session --dest org.mate.Caminito.Notifications \

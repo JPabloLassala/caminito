@@ -413,7 +413,8 @@ test_the_do_not_disturb_row_shows_its_state (Fixture *fixture, gconstpointer dat
   nt_popup_set_do_not_disturb (fixture->popup, TRUE, NOW + 60 * 60, NOW);
   g_assert_true (gtk_switch_get_active (GTK_SWITCH (do_not_disturb_switch (fixture))));
   g_assert_true (shows (fixture, "Until 23:13"));
-  g_assert_false (shows (fixture, "1 hour"));
+  /* The durations stay, to change the end with. */
+  g_assert_true (shows (fixture, "1 hour"));
 
   nt_popup_set_do_not_disturb (fixture->popup, TRUE, 0, NOW);
   g_assert_true (shows (fixture, "Until turned off"));

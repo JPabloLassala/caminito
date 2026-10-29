@@ -572,9 +572,7 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         return id;
     }
     guard.settle_do_not_disturb();
-    let breaks_through =
-        app.breaks_through || (notification.critical && guard.settings.critical_breaks_through());
-    if guard.do_not_disturb.is_on() && !breaks_through {
+    if guard.do_not_disturb.is_on() && !guard.breaks_through(&notification) {
         return id;
     }
     // A replacement isn't a new notification, so it has no sound.
@@ -861,11 +859,36 @@ impl State {
         }
     }
 
+    /// Whether `notification` gets its bubble and its sound while Do Not Disturb is on: its
+    /// app's own setting says so, or it's critical and the setting for those does.
+    fn breaks_through(&self, notification: &Notification) -> bool {
+        self.settings.effective(&notification.app).breaks_through
+            || (notification.critical && self.settings.critical_breaks_through())
+    }
+
     /// Sets Do Not Disturb to `to`. If that's a change, the file is written, the clients hear
-    /// of it, and its end is waited for again.
+    /// of it, and its end is waited for again. Coming on, it takes the waiting notifications
+    /// that don't break through out of the queue, as if they had come while it was on: they
+    /// keep their entries.
     fn set_do_not_disturb(&mut self, to: DoNotDisturb) {
         if to == self.do_not_disturb {
             return;
+        }
+        if to.is_on() {
+            let quieted: Vec<u32> = self
+                .queued
+                .iter()
+                .copied()
+                .filter(|id| {
+                    self.notifications
+                        .get(id)
+                        .is_some_and(|entry| !self.breaks_through(&entry.notification))
+                })
+                .collect();
+            self.queued.retain(|id| !quieted.contains(id));
+            for id in quieted {
+                self.notifications.remove(&id);
+            }
         }
         self.do_not_disturb = to;
         to.save(&self.do_not_disturb_file);

@@ -49,8 +49,9 @@ configure_file(
   install_dir: get_option('datadir') / 'mate-panel' / 'applets',
 )
 
-# The bell's last fallbacks, struck through for Do Not Disturb too, in hicolor, which every icon theme falls back to: MATE's themes
-# have no bell, and Adwaita's has the name of MATE's speech bubble.
+# The bell's last fallbacks, plain and struck through for Do Not Disturb, in hicolor, which
+# every icon theme falls back to: MATE's themes have no bell, and Adwaita's has the name of
+# MATE's speech bubble.
 install_data(
   'caminito-bell-symbolic.svg',
   'caminito-bell-disabled-symbolic.svg',

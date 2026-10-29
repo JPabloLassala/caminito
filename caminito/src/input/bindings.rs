@@ -2,9 +2,8 @@
 //! `org.mate.Marco.window-keybindings` as Marco reads them (148), and with a mouse button
 //! where Marco reads none (184, ADR 0028). The Overview's, which Marco has no action
 //! for, is `org.mate.Caminito`'s (241), as are the Notification center's and Do Not
-//! Disturb's (CMN-263). The accelerators other
-//! programs grab are `accelerators`' (98), and the modifier a click on a window is held
-//! with is `button_modifier`'s (162).
+//! Disturb's (CMN-263). The accelerators other programs grab are `accelerators`' (98), and
+//! the modifier a click on a window is held with is `button_modifier`'s (162).
 
 pub(crate) mod accelerators;
 pub(crate) mod button_modifier;

@@ -5,6 +5,7 @@ the center, on: the panel lives
 middle-click, off: the panel lives
 middle-click, on: the panel lives
 the center, until turned off: the panel lives
+the center, closed: the panel lives
 OpenCenter: the panel lives
 the mock's calls:
 (['SetDoNotDisturb one-hour', 'ToggleDoNotDisturb', 'ToggleDoNotDisturb', 'OpenCenter'],)
