@@ -239,6 +239,17 @@ pub struct Header {
     pub critical: bool,
 }
 
+/// What's left of a bubble's timeout, which the line along its bottom edge shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimeLeft {
+    /// The whole timeout, which is the line at full width.
+    pub timeout: Duration,
+    /// What's left of it as the bubble is told.
+    pub left: Duration,
+    /// Whether it runs, or waits while the pointer is on the bubble or a reply is typed in it.
+    pub running: bool,
+}
+
 /// What draws the bubbles. The server decides when each opens, changes and closes, and the
 /// bubbles tell it what the user does through the [`Events`] each is shown with. A bubble's
 /// `id` is its notification's, and a grouped bubble's is that of the notification that made
@@ -254,6 +265,9 @@ pub trait Bubbles {
     fn update(&self, id: u32, bubble: &Bubble);
     /// Takes the bubble `id` away.
     fn close(&self, id: u32);
+    /// Shows what's left of the timeout of the bubble `id`, from now on, or that it has none.
+    /// The server's timer closes the bubble; this only draws it.
+    fn time_left(&self, id: u32, time_left: Option<TimeLeft>);
 }
 
 /// What plays the sounds.
@@ -466,6 +480,8 @@ struct Shown {
     critical: bool,
     /// Whether it's a grouped bubble, which its app's next notifications join.
     grouped: bool,
+    /// Its whole timeout, from its last start, if it has one.
+    timeout: Option<Duration>,
     /// What's left of its timeout, while its timer doesn't run.
     remaining: Option<Duration>,
     /// Its timer, while it runs, and when it ends.
@@ -1116,6 +1132,7 @@ fn hover(state: &Rc<RefCell<State>>, key: u32, hovered: bool) {
     } else {
         guard.start_timer(index);
     }
+    guard.tell_time_left(index);
 }
 
 fn emit(connection: &gio::DBusConnection, signal: &str, arguments: impl ToVariant) {
@@ -1144,6 +1161,7 @@ impl Shown {
             app,
             critical,
             grouped,
+            timeout: None,
             remaining: None,
             timer: None,
             hovered: false,
@@ -1335,8 +1353,29 @@ impl State {
     fn restart_timer(&mut self, index: usize, timeout: Option<Duration>) {
         let shown = &mut self.shown[index];
         shown.stop_timer();
+        shown.timeout = timeout;
         shown.remaining = timeout;
         self.start_timer(index);
+        self.tell_time_left(index);
+    }
+
+    /// Tells the bubble at `index` of `shown` what's left of its timeout, and whether it runs.
+    /// The bubbles only draw it, so this holds the state while they're told.
+    fn tell_time_left(&self, index: usize) {
+        let shown = &self.shown[index];
+        let time_left = shown.timeout.map(|timeout| match shown.timer {
+            Some((_, end)) => TimeLeft {
+                timeout,
+                left: end.saturating_duration_since(Instant::now()),
+                running: true,
+            },
+            None => TimeLeft {
+                timeout,
+                left: shown.remaining.unwrap_or_default(),
+                running: false,
+            },
+        });
+        self.bubbles.time_left(shown.key, time_left);
     }
 
     /// Runs what's left of the timeout of the bubble at `index` of `shown`, unless the pointer

@@ -14,7 +14,7 @@ use std::time::Duration;
 use caminito_notifications::private_api::PrivateApi;
 use caminito_notifications::server::{
     Action, Bubble, Bubbles, Clock, Config, Events, Header, HeaderEvents, Icon, Image, Server,
-    Sound, Sounds,
+    Sound, Sounds, TimeLeft,
 };
 use caminito_notifications::settings::Settings;
 use gio::glib::{self, Variant, VariantDict};
@@ -67,6 +67,8 @@ struct FakeBubbles {
     header_events: RefCell<Option<HeaderEvents>>,
     /// How many times each bubble was shown, updated or closed, in order.
     calls: RefCell<Vec<String>>,
+    /// What each bubble was last told of its timeout.
+    time_left: RefCell<HashMap<u32, Option<TimeLeft>>>,
 }
 
 impl Bubbles for FakeBubbles {
@@ -103,6 +105,10 @@ impl Bubbles for FakeBubbles {
         self.events.borrow_mut().remove(&id);
         self.calls.borrow_mut().push(format!("close {id}"));
     }
+
+    fn time_left(&self, id: u32, time_left: Option<TimeLeft>) {
+        self.time_left.borrow_mut().insert(id, time_left);
+    }
 }
 
 impl FakeBubbles {
@@ -114,6 +120,14 @@ impl FakeBubbles {
         let shown = self.shown.borrow();
         let found = shown.iter().find(|shown| shown.0 == id);
         found.unwrap_or_else(|| panic!("{id} is shown")).1.clone()
+    }
+
+    /// What the bubble `id` was last told of its timeout.
+    fn time_left(&self, id: u32) -> Option<TimeLeft> {
+        let told = self.time_left.borrow();
+        *told
+            .get(&id)
+            .unwrap_or_else(|| panic!("{id} was told its time left"))
     }
 
     /// What the user does to the bubble `id`.
@@ -881,6 +895,122 @@ fn hovering_a_bubble_pauses_its_timeout() {
             daemon.signals(),
             [signal("NotificationClosed", &format!("({id}, {EXPIRED})"))]
         );
+    });
+}
+
+// The line of a bubble's time left (CMN-286): what the bubble is told of its timeout.
+
+/// Asserts that `told` is a timeout of `timeout` ms, `running` or not, with between `least` and
+/// `timeout` ms of it left.
+fn assert_time_left(told: Option<TimeLeft>, timeout: u64, least: u64, running: bool) {
+    let told = told.expect("the bubble has a timeout");
+    assert_eq!(told.timeout, Duration::from_millis(timeout));
+    assert_eq!(told.running, running);
+    assert!(
+        (Duration::from_millis(least)..=Duration::from_millis(timeout)).contains(&told.left),
+        "{:?} left of {timeout} ms, expected at least {least} ms",
+        told.left
+    );
+}
+
+#[test]
+fn an_opening_bubble_is_told_its_whole_timeout_running() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let id = daemon.notify(Notify {
+            timeout: 1000,
+            ..notify("Timed")
+        });
+        assert_time_left(daemon.bubbles.time_left(id), 1000, 900, true);
+    });
+}
+
+#[test]
+fn a_hovered_bubble_is_told_its_time_left_waits_and_then_runs_on_from_there() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let id = daemon.notify(Notify {
+            timeout: 1000,
+            ..notify("Hovered")
+        });
+        bus.run_for(Duration::from_millis(200));
+
+        daemon.bubbles.events(id).hovered(true);
+        let paused = daemon.bubbles.time_left(id);
+        assert_time_left(paused, 1000, 500, false);
+        let left = paused.unwrap().left;
+        assert!(
+            left <= Duration::from_millis(800),
+            "{left:?} left after 200 ms"
+        );
+
+        // The time it waits doesn't count.
+        bus.run_for(Duration::from_millis(300));
+        daemon.bubbles.events(id).hovered(false);
+        let running = daemon.bubbles.time_left(id).unwrap();
+        assert!(running.running);
+        assert!(running.left <= left && running.left + Duration::from_millis(50) >= left);
+    });
+}
+
+#[test]
+fn a_bubble_is_told_its_whole_timeout_again_when_it_restarts() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let timed = |summary| Notify {
+            timeout: 1000,
+            ..notify(summary)
+        };
+        let replaced = daemon.notify(Notify {
+            app_name: "Other",
+            ..timed("Replaced")
+        });
+        daemon.notify(timed("1"));
+        daemon.notify(timed("2"));
+        let grouped = daemon.notify(timed("3"));
+        bus.run_for(Duration::from_millis(400));
+        // So that what they're told next is from their restart.
+        daemon.bubbles.time_left.borrow_mut().clear();
+
+        daemon.notify(Notify {
+            app_name: "Other",
+            replaces: replaced,
+            ..timed("Replacement")
+        });
+        daemon.notify(timed("4"));
+        assert_time_left(daemon.bubbles.time_left(replaced), 1000, 900, true);
+        assert_time_left(daemon.bubbles.time_left(grouped), 1000, 900, true);
+    });
+}
+
+#[test]
+fn a_bubble_that_never_times_out_is_told_it_has_no_time_left() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let critical = daemon.notify(Notify {
+            timeout: 1000,
+            ..notify("Battery low").hint("urgency", 2u8)
+        });
+        let forever = daemon.notify(Notify {
+            app_name: "Forever",
+            timeout: 0,
+            ..notify("Forever")
+        });
+        let replaced = daemon.notify(Notify {
+            app_name: "Replaced",
+            timeout: 1000,
+            ..notify("Timed")
+        });
+        daemon.notify(Notify {
+            app_name: "Replaced",
+            replaces: replaced,
+            timeout: 0,
+            ..notify("Forever now")
+        });
+
+        assert_eq!(daemon.bubbles.time_left(critical), None);
+        assert_eq!(daemon.bubbles.time_left(forever), None);
+        assert_eq!(daemon.bubbles.time_left(replaced), None);
     });
 }
 

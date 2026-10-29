@@ -1,0 +1,11 @@
+
+
+
+
+A connection to the bus can't be made
+daemon warnings:
+MESA-EGL: warning: DRI3 error: Could not get DRI3 device
+MESA-EGL: warning: Ensure your X server supports DRI3 to get accelerated rendering
+(caminito-notifications:624713): caminito-notifications-WARNING **: 16:32:50.892: there's no layer shell, so the bubbles are plain windows
+(caminito-notifications:624713): Gtk-CRITICAL **: 16:32:51.407: Unable to register the application: GDBus.Error:org.freedesktop.DBus.Error.NameHasNoOwner: Could not activate remote peer 'org.a11y.atspi.Registry': unit failed
+(caminito-notifications:624713): Gtk-CRITICAL **: 16:32:56.520: Unable to register the application: GDBus.Error:org.freedesktop.DBus.Error.NameHasNoOwner: Could not activate remote peer 'org.a11y.atspi.Registry': unit failed
