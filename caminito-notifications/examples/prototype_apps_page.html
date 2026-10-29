@@ -249,7 +249,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 
   <section class="try" aria-label="Send a test notification">
     <h2>Send a test notification</h2>
-    <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's first two notifications get bubbles of their own, the third merges them into one grouped bubble, and later ones join it. "+N more" opens the group inside the bubble. With Group off, every notification gets its own bubble. Critical notifications group only with their app's critical ones, in a bubble that never times out. Bubbles stack as far down as there's room; a notification that doesn't fit gets no bubble and counts in "N more notifications" above them, and a critical one takes the place of the oldest ordinary bubble instead. With two or more bubbles, a ✕ above them clears them all. Only hovering pauses a bubble's timer. The bell opens the Notification center; while it's open no bubbles show, and new notifications appear straight in it.</p>
+    <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's first two notifications get bubbles of their own, the third merges them into one grouped bubble, and later ones join it. "+N more" opens the group inside the bubble. With Group off, every notification gets its own bubble. Critical notifications group only with their app's critical ones, in a bubble that never times out. Bubbles stack as far down as there's room; a notification that doesn't fit gets no bubble and counts in "N more notifications" above them, and a critical one takes the place of the oldest ordinary bubble instead. Whenever there's a bubble, a ✕ above them clears them all. Only hovering pauses a bubble's timer. The bell opens the Notification center; while it's open no bubbles show, and new notifications appear straight in it.</p>
     <h3 class="sub">Grouped bubble design</h3>
     <p class="dim">Three Signal messages in a row, as one grouped bubble. Pick one; the desktop below uses it.</p>
     <div class="designs" id="designs" role="radiogroup" aria-label="Grouped bubble design"></div>
@@ -632,7 +632,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   const fits = () => { const box = $("desk-bubbles"); return box.scrollHeight <= box.clientHeight + 1; };
   function renderHead() {
     const head = $("desk-bhead"); if (!head) return;
-    head.hidden = visible.length < 2;
+    head.hidden = visible.length === 0;
     if (head.hidden) { head.innerHTML = ""; return; }
     const crit = truncated.some(t => t.critical);
     head.innerHTML = (truncated.length ? `<button type="button" class="legend${crit ? " crit" : ""}" data-legend>${crit ? "! " : ""}${truncated.length} more notification${truncated.length > 1 ? "s" : ""}</button>` : "")
