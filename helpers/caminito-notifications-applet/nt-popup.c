@@ -11,14 +11,73 @@
 /* The popup's width, and the tallest the list grows before it scrolls. */
 #define WIDTH        380
 #define LIST_HEIGHT  480
-#define APP_ICON_SIZE 16
+#define APP_ICON_SIZE 18
 #define IMAGE_SIZE   48
 /* The body's lines before it's cut short. */
 #define BODY_LINES   4
 /* A group's latest entries, which show until it's opened. */
-#define GROUP_SHOWN  3
+#define GROUP_SHOWN  2
 /* The object data holding the app's key of a group's buttons. */
 #define APP_KEY      "nt-app"
+/* The space around the popup's content, and inside a card. */
+#define PADDING      10
+#define CARD_PADDING 8
+
+/* A group, or an entry standing alone, is a card: rows of the list drawn as one rounded
+   box, the first and the last rounding its corners. The small buttons are pills. Menta's
+   family draws buttons and rows with a border-image and a gradient, which take no radius
+   (CMN-210). */
+static const char css[] =
+  "#history { background-color: transparent; }"
+  "#history row.nt-card { background-color: alpha(currentColor, 0.06); background-image: none;"
+  "  border-image: none; box-shadow: none; border-radius: 0; padding: 0;"
+  "  margin: 0 " G_STRINGIFY (PADDING) "px; }"
+  "#history row.nt-card:hover { background-color: alpha(currentColor, 0.09); }"
+  "#history row.nt-first { margin-top: 8px; border-top-left-radius: 10px;"
+  "  border-top-right-radius: 10px; }"
+  "#history row.nt-last { border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }"
+  ".nt-summary { font-size: 14px; font-weight: bold; }"
+  ".nt-small { font-size: 12px; }"
+  "separator.nt-divider { background-color: alpha(currentColor, 0.15); background-image: none;"
+  "  min-height: 1px; }"
+  "button.nt-pill { border-image: none; background-image: none; box-shadow: none;"
+  "  text-shadow: none; border: none; border-radius: 6px; min-height: 0; padding: 2px 8px;"
+  "  background-color: alpha(currentColor, 0.1); }"
+  "button.nt-pill:hover { background-color: alpha(currentColor, 0.16); }"
+  "button.nt-pill label { font-size: 12px; }"
+  "button.nt-x { min-width: 20px; min-height: 20px; padding: 0; -gtk-icon-style: symbolic; }";
+
+static void
+add_css (void)
+{
+  static gboolean added;
+  g_autoptr (GtkCssProvider) provider = NULL;
+
+  if (added)
+    return;
+  added = TRUE;
+  provider = gtk_css_provider_new ();
+  gtk_css_provider_load_from_data (provider, css, -1, NULL);
+  gtk_style_context_add_provider_for_screen (gdk_screen_get_default (),
+                                             GTK_STYLE_PROVIDER (provider),
+                                             GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+}
+
+static void
+add_class (GtkWidget *widget, const char *name)
+{
+  gtk_style_context_add_class (gtk_widget_get_style_context (widget), name);
+}
+
+/* A small rounded button. */
+static GtkWidget *
+pill_button (const char *label)
+{
+  GtkWidget *button = gtk_button_new_with_label (label);
+
+  add_class (button, "nt-pill");
+  return button;
+}
 
 /* An age shown, which the minute's tick brings up to date. */
 typedef struct
@@ -161,7 +220,7 @@ dim_label (const char *text)
 {
   GtkWidget *label = gtk_label_new (text);
 
-  gtk_style_context_add_class (gtk_widget_get_style_context (label), "dim-label");
+  add_class (label, "dim-label");
   gtk_label_set_xalign (GTK_LABEL (label), 0);
   return label;
 }
@@ -292,7 +351,8 @@ on_duration (GtkButton *button, gpointer data)
 }
 
 /* The Do Not Disturb row: its name, and when it ends below it while it's on, beside the
-   switch; and below them, the durations, which turn it on or change its end. */
+   switch, and "Clear all" at the end; and below them, the durations, which turn it on or
+   change its end. */
 static GtkWidget *
 do_not_disturb_row (NtPopup *popup)
 {
@@ -310,25 +370,34 @@ do_not_disturb_row (NtPopup *popup)
   GtkWidget *text = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
   GtkWidget *name = gtk_label_new ("Do Not Disturb");
 
-  g_object_set (row, "margin", 8, NULL);
+  g_object_set (row, "margin-start", PADDING, "margin-end", PADDING, "margin-top", PADDING,
+                NULL);
   gtk_label_set_xalign (GTK_LABEL (name), 0);
   gtk_box_pack_start (GTK_BOX (text), name, FALSE, FALSE, 0);
   popup->until = dim_label ("");
+  add_class (popup->until, "nt-small");
   gtk_widget_set_no_show_all (popup->until, TRUE);
   gtk_box_pack_start (GTK_BOX (text), popup->until, FALSE, FALSE, 0);
-  gtk_box_pack_start (GTK_BOX (top), text, TRUE, TRUE, 0);
+  gtk_widget_set_valign (text, GTK_ALIGN_CENTER);
+  gtk_box_pack_start (GTK_BOX (top), text, FALSE, FALSE, 0);
   popup->do_not_disturb = gtk_switch_new ();
   gtk_widget_set_name (popup->do_not_disturb, "do-not-disturb");
   gtk_widget_set_valign (popup->do_not_disturb, GTK_ALIGN_CENTER);
   g_signal_connect (popup->do_not_disturb, "notify::active",
                     G_CALLBACK (on_do_not_disturb_switched), popup);
-  gtk_box_pack_end (GTK_BOX (top), popup->do_not_disturb, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (top), popup->do_not_disturb, FALSE, FALSE, 0);
+  /* Shown while there's something to clear. */
+  popup->clear_all = pill_button ("Clear all");
+  gtk_widget_set_valign (popup->clear_all, GTK_ALIGN_CENTER);
+  gtk_widget_set_no_show_all (popup->clear_all, TRUE);
+  g_signal_connect (popup->clear_all, "clicked", G_CALLBACK (on_clear_all), popup);
+  gtk_box_pack_end (GTK_BOX (top), popup->clear_all, FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (row), top, FALSE, FALSE, 0);
 
   popup->durations = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
   for (guint i = 0; i < G_N_ELEMENTS (durations); i++)
     {
-      GtkWidget *button = gtk_button_new_with_label (durations[i].label);
+      GtkWidget *button = pill_button (durations[i].label);
 
       g_object_set_data (G_OBJECT (button), "nt-until", (gpointer) durations[i].until);
       g_signal_connect (button, "clicked", G_CALLBACK (on_duration), popup);
@@ -402,49 +471,80 @@ image_of (const NtEntry *entry)
   return image;
 }
 
-/* An entry's row: its app's icon, then its app's name, its age and the close button over
-   the summary, body and actions, then its image. In a group, whose header has the app, its
-   age and the close button alone are over the rest. */
+/* A row of a card holding content: the first rounds the card's top, the last its bottom. */
 static GtkWidget *
-entry_row (NtPopup *popup, const NtEntry *entry, gboolean in_group, gint64 now)
+card_row (GtkWidget *content, gboolean first, gboolean last)
 {
   GtkWidget *row = gtk_list_box_row_new ();
+
+  add_class (row, "nt-card");
+  if (first)
+    add_class (row, "nt-first");
+  if (last)
+    add_class (row, "nt-last");
+  g_object_set (content, "margin-start", CARD_PADDING, "margin-end", CARD_PADDING,
+                "margin-top", first ? CARD_PADDING : 3, "margin-bottom", last ? CARD_PADDING : 3,
+                NULL);
+  gtk_container_add (GTK_CONTAINER (row), content);
+  gtk_widget_show_all (row);
+  return row;
+}
+
+/* A card's head: the app's icon and name. */
+static GtkWidget *
+app_head (const NtEntry *entry)
+{
+  GtkWidget *head = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
+  GtkWidget *name = dim_label (entry->app_name);
+
+  gtk_label_set_ellipsize (GTK_LABEL (name), PANGO_ELLIPSIZE_END);
+  gtk_widget_set_hexpand (name, TRUE);
+  gtk_box_pack_start (GTK_BOX (head), app_icon (entry), FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (head), name, TRUE, TRUE, 0);
+  return head;
+}
+
+/* An entry's row: its summary, body and age, its actions and its reply field, then its
+   image and the close button. An entry standing alone is a card of its own, with its app's
+   head over the rest; in a group, a line parts it from the entry above when divided. */
+static GtkWidget *
+entry_row (NtPopup *popup, const NtEntry *entry, gboolean in_group, gboolean divided,
+           gboolean last, gint64 now)
+{
+  GtkWidget *content = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
   GtkWidget *outer = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
-  GtkWidget *text = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
-  GtkWidget *top = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
-  GtkWidget *age, *dismiss, *summary;
+  GtkWidget *text = gtk_box_new (GTK_ORIENTATION_VERTICAL, 1);
+  GtkWidget *age, *dismiss, *summary, *row;
   g_autofree char *age_text = nt_state_age (entry->time, now);
-  g_autoptr (PangoAttrList) bold = pango_attr_list_new ();
 
-  /* Every row is activatable: without a default action, a click brings the app forward. */
-  g_object_set_data (G_OBJECT (row), "nt-id", GUINT_TO_POINTER (entry->id));
-  g_object_set (outer, "margin", 8, NULL);
+  if (divided)
+    {
+      GtkWidget *divider = gtk_separator_new (GTK_ORIENTATION_HORIZONTAL);
 
+      add_class (divider, "nt-divider");
+      gtk_box_pack_start (GTK_BOX (content), divider, FALSE, FALSE, 0);
+    }
   if (!in_group)
-    gtk_box_pack_start (GTK_BOX (top), dim_label (entry->app_name), FALSE, FALSE, 0);
-  age = dim_label (age_text);
-  gtk_box_pack_start (GTK_BOX (top), age, TRUE, TRUE, 0);
-  g_array_append_val (popup->ages, ((Age) { age, entry->time }));
-  dismiss = gtk_button_new_from_icon_name ("window-close-symbolic", GTK_ICON_SIZE_MENU);
-  gtk_widget_set_name (dismiss, "dismiss");
-  gtk_widget_set_tooltip_text (dismiss, "Dismiss");
-  gtk_button_set_relief (GTK_BUTTON (dismiss), GTK_RELIEF_NONE);
-  gtk_widget_set_valign (dismiss, GTK_ALIGN_CENTER);
-  g_object_set_data (G_OBJECT (dismiss), "nt-id", GUINT_TO_POINTER (entry->id));
-  g_signal_connect (dismiss, "clicked", G_CALLBACK (on_dismiss), popup);
-  gtk_box_pack_end (GTK_BOX (top), dismiss, FALSE, FALSE, 0);
-  gtk_box_pack_start (GTK_BOX (text), top, FALSE, FALSE, 0);
+    gtk_box_pack_start (GTK_BOX (content), app_head (entry), FALSE, FALSE, 0);
 
   summary = gtk_label_new (entry->summary);
   gtk_widget_set_name (summary, "summary");
-  pango_attr_list_insert (bold, pango_attr_weight_new (PANGO_WEIGHT_BOLD));
-  gtk_label_set_attributes (GTK_LABEL (summary), bold);
+  add_class (summary, "nt-summary");
   gtk_label_set_xalign (GTK_LABEL (summary), 0);
   gtk_label_set_line_wrap (GTK_LABEL (summary), TRUE);
   gtk_label_set_max_width_chars (GTK_LABEL (summary), 1);
   gtk_box_pack_start (GTK_BOX (text), summary, FALSE, FALSE, 0);
   if (*entry->body != '\0')
-    gtk_box_pack_start (GTK_BOX (text), body_label (entry->body), FALSE, FALSE, 0);
+    {
+      GtkWidget *body = body_label (entry->body);
+
+      add_class (body, "dim-label");
+      gtk_box_pack_start (GTK_BOX (text), body, FALSE, FALSE, 0);
+    }
+  age = dim_label (age_text);
+  add_class (age, "nt-small");
+  gtk_box_pack_start (GTK_BOX (text), age, FALSE, FALSE, 0);
+  g_array_append_val (popup->ages, ((Age) { age, entry->time }));
 
   if (entry->actions->len > 0)
     {
@@ -480,72 +580,64 @@ entry_row (NtPopup *popup, const NtEntry *entry, gboolean in_group, gint64 now)
       gtk_box_pack_start (GTK_BOX (text), field, FALSE, FALSE, 0);
     }
 
-  if (!in_group)
-    {
-      GtkWidget *icon = app_icon (entry);
+  dismiss = gtk_button_new_from_icon_name ("window-close-symbolic", GTK_ICON_SIZE_MENU);
+  gtk_widget_set_name (dismiss, "dismiss");
+  add_class (dismiss, "nt-x");
+  gtk_widget_set_tooltip_text (dismiss, "Dismiss");
+  gtk_button_set_relief (GTK_BUTTON (dismiss), GTK_RELIEF_NONE);
+  gtk_widget_set_valign (dismiss, GTK_ALIGN_START);
+  g_object_set_data (G_OBJECT (dismiss), "nt-id", GUINT_TO_POINTER (entry->id));
+  g_signal_connect (dismiss, "clicked", G_CALLBACK (on_dismiss), popup);
 
-      gtk_widget_set_valign (icon, GTK_ALIGN_START);
-      gtk_box_pack_start (GTK_BOX (outer), icon, FALSE, FALSE, 0);
-    }
   gtk_box_pack_start (GTK_BOX (outer), text, TRUE, TRUE, 0);
   gtk_box_pack_start (GTK_BOX (outer), image_of (entry), FALSE, FALSE, 0);
-  gtk_container_add (GTK_CONTAINER (row), outer);
-  gtk_widget_show_all (row);
+  gtk_box_pack_start (GTK_BOX (outer), dismiss, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (content), outer, FALSE, FALSE, 0);
+  row = card_row (content, !in_group, last);
+  /* Every row is activatable: without a default action, a click brings the app forward. */
+  g_object_set_data (G_OBJECT (row), "nt-id", GUINT_TO_POINTER (entry->id));
   return row;
 }
 
-/* A group's header: its app's icon and name, its count, and its clear button. */
+/* A group's header, its card's head: its app's icon and name, its count, and its clear
+   button. */
 static GtkWidget *
 group_row (NtPopup *popup, const NtGroup *group)
 {
   const NtEntry *newest = g_ptr_array_index (group->entries, 0);
-  GtkWidget *row = gtk_list_box_row_new ();
-  GtkWidget *box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
-  GtkWidget *name = gtk_label_new (newest->app_name);
+  GtkWidget *head = app_head (newest);
   g_autofree char *name_text = g_strdup_printf ("group %s", group->app);
   g_autofree char *count = g_strdup_printf ("%u", group->entries->len);
-  g_autoptr (PangoAttrList) bold = pango_attr_list_new ();
-  GtkWidget *clear;
+  GtkWidget *clear, *row;
 
-  gtk_widget_set_name (row, name_text);
-  gtk_list_box_row_set_activatable (GTK_LIST_BOX_ROW (row), FALSE);
-  g_object_set (box, "margin-start", 8, "margin-end", 8, "margin-top", 6, NULL);
-  gtk_box_pack_start (GTK_BOX (box), app_icon (newest), FALSE, FALSE, 0);
-  pango_attr_list_insert (bold, pango_attr_weight_new (PANGO_WEIGHT_BOLD));
-  gtk_label_set_attributes (GTK_LABEL (name), bold);
-  gtk_label_set_ellipsize (GTK_LABEL (name), PANGO_ELLIPSIZE_END);
-  gtk_box_pack_start (GTK_BOX (box), name, FALSE, FALSE, 0);
-  gtk_box_pack_start (GTK_BOX (box), dim_label (count), TRUE, TRUE, 0);
-  clear = gtk_button_new_with_label ("Clear");
+  gtk_box_pack_start (GTK_BOX (head), dim_label (count), FALSE, FALSE, 0);
+  clear = pill_button ("Clear");
   gtk_widget_set_name (clear, "clear");
   gtk_widget_set_tooltip_text (clear, "Clear this app's notifications");
-  gtk_button_set_relief (GTK_BUTTON (clear), GTK_RELIEF_NONE);
+  gtk_widget_set_valign (clear, GTK_ALIGN_CENTER);
   g_object_set_data_full (G_OBJECT (clear), APP_KEY, g_strdup (group->app), g_free);
   g_signal_connect (clear, "clicked", G_CALLBACK (on_clear_app), popup);
-  gtk_box_pack_end (GTK_BOX (box), clear, FALSE, FALSE, 0);
-  gtk_container_add (GTK_CONTAINER (row), box);
-  gtk_widget_show_all (row);
+  gtk_box_pack_end (GTK_BOX (head), clear, FALSE, FALSE, 0);
+  row = card_row (head, TRUE, FALSE);
+  gtk_widget_set_name (row, name_text);
+  gtk_list_box_row_set_activatable (GTK_LIST_BOX_ROW (row), FALSE);
   return row;
 }
 
-/* The row under a group with more than GROUP_SHOWN entries: "N more", which opens it, or
-   "Show less", which closes it again. */
+/* The row closing a group with more than GROUP_SHOWN entries, across its card: "N more",
+   which opens it, or "Show less", which closes it again. */
 static GtkWidget *
 more_row (NtPopup *popup, const NtGroup *group, gboolean opened)
 {
-  GtkWidget *row = gtk_list_box_row_new ();
   g_autofree char *label = opened ? g_strdup ("Show less")
                                   : g_strdup_printf ("%u more", group->entries->len - GROUP_SHOWN);
-  GtkWidget *more = gtk_button_new_with_label (label);
+  GtkWidget *more = pill_button (label);
+  GtkWidget *row;
 
-  gtk_list_box_row_set_activatable (GTK_LIST_BOX_ROW (row), FALSE);
-  gtk_button_set_relief (GTK_BUTTON (more), GTK_RELIEF_NONE);
-  gtk_widget_set_halign (more, GTK_ALIGN_START);
-  g_object_set (more, "margin-start", 8, "margin-bottom", 4, NULL);
   g_object_set_data_full (G_OBJECT (more), APP_KEY, g_strdup (group->app), g_free);
   g_signal_connect (more, "clicked", G_CALLBACK (on_more), popup);
-  gtk_container_add (GTK_CONTAINER (row), more);
-  gtk_widget_show_all (row);
+  row = card_row (more, FALSE, TRUE);
+  gtk_list_box_row_set_activatable (GTK_LIST_BOX_ROW (row), FALSE);
   return row;
 }
 
@@ -582,21 +674,22 @@ rebuild (NtPopup *popup)
       const NtGroup *group = g_ptr_array_index (groups, i);
       gboolean open = g_hash_table_contains (popup->opened, group->app);
       guint shown = open ? group->entries->len : MIN (group->entries->len, GROUP_SHOWN);
+      gboolean more = group->entries->len > GROUP_SHOWN;
 
       if (!group->grouped)
         {
           gtk_container_add (GTK_CONTAINER (popup->list),
                              entry_row (popup, g_ptr_array_index (group->entries, 0), FALSE,
-                                        popup->now));
+                                        FALSE, TRUE, popup->now));
           continue;
         }
       g_hash_table_add (grouped, (gpointer) group->app);
       gtk_container_add (GTK_CONTAINER (popup->list), group_row (popup, group));
       for (guint j = 0; j < shown; j++)
         gtk_container_add (GTK_CONTAINER (popup->list),
-                           entry_row (popup, g_ptr_array_index (group->entries, j), TRUE,
-                                      popup->now));
-      if (group->entries->len > GROUP_SHOWN)
+                           entry_row (popup, g_ptr_array_index (group->entries, j), TRUE, j > 0,
+                                      !more && j == shown - 1, popup->now));
+      if (more)
         gtk_container_add (GTK_CONTAINER (popup->list), more_row (popup, group, open));
     }
   /* A group that's gone is closed when it comes back. */
@@ -606,7 +699,7 @@ rebuild (NtPopup *popup)
       g_hash_table_iter_remove (&opened);
   gtk_stack_set_visible_child_name (GTK_STACK (popup->stack),
                                     popup->entries->len > 0 ? "list" : "empty");
-  gtk_widget_set_sensitive (popup->clear_all, popup->entries->len > 0);
+  gtk_widget_set_visible (popup->clear_all, popup->entries->len > 0);
   fit_list (popup);
 }
 
@@ -646,8 +739,8 @@ nt_popup_new (CaminitoAppletPopup *applet_popup, const NtPopupActions *actions, 
   GtkWidget *window = caminito_applet_popup_get_window (applet_popup);
   GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
   GtkWidget *empty = dim_label ("No notifications");
-  GtkWidget *bottom = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
 
+  add_css ();
   popup->applet_popup = applet_popup;
   popup->actions = *actions;
   popup->data = data;
@@ -657,12 +750,11 @@ nt_popup_new (CaminitoAppletPopup *applet_popup, const NtPopupActions *actions, 
   popup->opened = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   gtk_widget_set_size_request (box, WIDTH, -1);
   gtk_box_pack_start (GTK_BOX (box), do_not_disturb_row (popup), FALSE, FALSE, 0);
-  gtk_box_pack_start (GTK_BOX (box), gtk_separator_new (GTK_ORIENTATION_HORIZONTAL), FALSE,
-                      FALSE, 0);
 
   popup->scrolled = gtk_scrolled_window_new (NULL, NULL);
   popup->list = gtk_list_box_new ();
   gtk_widget_set_name (popup->list, "history");
+  gtk_widget_set_margin_bottom (popup->list, PADDING);
   gtk_list_box_set_selection_mode (GTK_LIST_BOX (popup->list), GTK_SELECTION_NONE);
   g_signal_connect (popup->list, "row-activated", G_CALLBACK (on_row_activated), popup);
   gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (popup->scrolled), GTK_POLICY_NEVER,
@@ -678,15 +770,6 @@ nt_popup_new (CaminitoAppletPopup *applet_popup, const NtPopupActions *actions, 
   gtk_stack_add_named (GTK_STACK (popup->stack), empty, "empty");
   gtk_stack_add_named (GTK_STACK (popup->stack), popup->scrolled, "list");
   gtk_box_pack_start (GTK_BOX (box), popup->stack, TRUE, TRUE, 0);
-
-  gtk_box_pack_start (GTK_BOX (box), gtk_separator_new (GTK_ORIENTATION_HORIZONTAL), FALSE,
-                      FALSE, 0);
-  popup->clear_all = gtk_button_new_with_label ("Clear all");
-  gtk_widget_set_sensitive (popup->clear_all, FALSE);
-  g_signal_connect (popup->clear_all, "clicked", G_CALLBACK (on_clear_all), popup);
-  g_object_set (bottom, "margin", 6, NULL);
-  gtk_box_pack_end (GTK_BOX (bottom), popup->clear_all, FALSE, FALSE, 0);
-  gtk_box_pack_start (GTK_BOX (box), bottom, FALSE, FALSE, 0);
 
   gtk_container_add (GTK_CONTAINER (window), box);
   gtk_widget_show_all (box);

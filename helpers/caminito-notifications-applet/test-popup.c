@@ -320,7 +320,7 @@ test_an_empty_history_says_so (Fixture *fixture, gconstpointer data G_GNUC_UNUSE
   g_ptr_array_set_size (fixture->entries, 0);
   update (fixture);
   g_assert_true (shows (fixture, NO_ENTRIES));
-  g_assert_false (gtk_widget_get_sensitive (clear_all_button (fixture)));
+  g_assert_false (widget_shows (fixture, clear_all_button (fixture)));
 }
 
 static void
@@ -341,7 +341,7 @@ test_the_entries_show_newest_first (Fixture *fixture, gconstpointer data G_GNUC_
   g_assert_nonnull (label_under (lunch, "Archive"));
   g_assert_nonnull (label_under (row_of (fixture, "Invoice"), "3 h ago"));
   g_assert_null (label_under (row_of (fixture, "Invoice"), "Reply"));
-  g_assert_true (gtk_widget_get_sensitive (clear_all_button (fixture)));
+  g_assert_true (widget_shows (fixture, clear_all_button (fixture)));
 }
 
 static void
@@ -499,10 +499,10 @@ test_a_group_shows_its_latest_few_and_n_more_opens_it (Fixture *fixture,
     g_ptr_array_add (fixture->entries, entry (10 - i, all[i], "", 60 * (i + 1), FALSE, NULL));
   update (fixture);
   latest = summaries (fixture);
-  g_assert_cmpstr (latest, ==, "One;Two;Three");
-  g_assert_true (shows (fixture, "2 more"));
+  g_assert_cmpstr (latest, ==, "One;Two");
+  g_assert_true (shows (fixture, "3 more"));
 
-  gtk_button_clicked (GTK_BUTTON (ancestor (label_under (window_of (fixture), "2 more"),
+  gtk_button_clicked (GTK_BUTTON (ancestor (label_under (window_of (fixture), "3 more"),
                                             GTK_TYPE_BUTTON)));
   opened = summaries (fixture);
   g_assert_cmpstr (opened, ==, "One;Two;Three;Four;Five");

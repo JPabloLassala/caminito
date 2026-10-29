@@ -1,14 +1,16 @@
 /*
  * The Notification center (CMN-260): the Notifications applet's popup, in the shared popup
- * window. On top is the Do Not Disturb row (CMN-263): its switch, which turns it on until
- * turned off, "Until 14:30" while it's on, and the durations to turn it on for or change its
- * end to. Then the Notification history grouped by app (CMN-265), newest group first: each
- * group with its app's icon and name, its count and a clear button, collapsed to its latest
- * few with "N more" to open it. An entry of an app whose grouping is off stands alone among
- * the groups, with its app's icon and name. Each entry has its age, a close button, its
- * summary, body and image, and its action buttons, and its reply field (CMN-266). "No
- * notifications" when it's empty, and "Clear all" at the bottom. It draws NtEntries and calls
- * back for what the user does, so that it knows nothing of D-Bus.
+ * window, laid out as the prototype of CMN-262 and CMN-265 has it. On top is the Do Not
+ * Disturb row (CMN-263): its switch, which turns it on until turned off, "Until 14:30" while
+ * it's on, "Clear all" at its end while there's anything to clear, and below them the
+ * durations to turn it on for or change its end to. Then the Notification history grouped by
+ * app (CMN-265), newest group first, each group a card: its app's icon and name, its count
+ * and a clear button, over its latest few with "N more" across the bottom to open it. An
+ * entry of an app whose grouping is off is a card of its own among the groups, with its
+ * app's icon and name. Each entry has its summary, body and age, its action buttons and its
+ * reply field (CMN-266), its image, and a close button. "No notifications" when it's empty.
+ * It draws NtEntries and calls back for what the user does, so that it knows nothing of
+ * D-Bus.
  */
 
 #pragma once
