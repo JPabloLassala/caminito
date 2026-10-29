@@ -1,0 +1,163 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+# Contributor: Alexander Epaneshnikov <alex19ep@archlinux.org>
+# Contributor: Brad Fanella <cesura@archlinux.org>
+# Contributor: Martin Wimpress <code@flexion.org>
+
+# Arch's mate-applets PKGBUILD with the smallest diff (16), so a change there shows what to
+# carry over. The differences: the name, provides and conflicts, and mate-panel-caminito in
+# place of mate-panel (ADR 0011). It has no carried patch: Arch builds the applets into the
+# panel's process, against the 1.28 applet library, and there TrashApplet's class is smaller
+# than master's MatePanelApplet, so GLib refuses it and the panel aborts (CMN-282). Built
+# against mate-panel-caminito's, every applet links libmate-panel-applet-4.so.2.
+
+pkgname=mate-applets-caminito
+_pkgname=mate-applets
+pkgver=1.28.1
+pkgrel=1
+pkgdesc="Applets for MATE panel, built for Caminito's mate-panel"
+arch=(x86_64)
+url='https://github.com/mate-desktop/mate-applets'
+license=(GPL-2.0-or-later)
+depends=(
+  at-spi2-core
+  cairo
+  cpupower
+  dbus-glib
+  dconf
+  gdk-pixbuf2
+  glib2
+  glibc
+  gtk3
+  hicolor-icon-theme
+  libgtop
+  libmateweather
+  libnl
+  libnotify
+  libwnck3
+  libx11
+  libxml2
+  mate-desktop
+  # By its real name: stock mate-panel has only the .so.1 the applets aren't linked to.
+  mate-panel-caminito
+  pango
+  polkit
+  upower
+)
+makedepends=(
+  git
+  glib2-devel
+  mate-common
+  yelp-tools
+)
+groups=(mate-extra)
+# The stock name at the same version, so version constraints on it still hold. No replaces:
+# pacman never swaps stock and patched on its own (ADR 0011).
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}")
+# Arch's patches are its build patches, kept in packaging/patches/mate-applets/arch/ (ADR 0030),
+# and tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
+source=(
+  "git+https://github.com/mate-desktop/mate-applets.git#tag=v$pkgver"
+  mate-applets-default-icon.patch
+  mate-applets-command-settings-bind.patch
+  mate-applets-ngettext-replace.patch
+  mate-applets-icon-names.patch
+  mate-applets-gettext-domain.patch
+  mate-applets-about-dialog.patch
+  mate-applets-gi18n-lib.patch
+  mate-applets-netspeed-details-window.patch
+  mate-applets-stickynotes-properties-reopen.patch
+  mate-applets-stickynotes-fix-hide.patch
+  mate-applets-empty-trash-icon.patch
+)
+b2sums=(
+  d7a0e451f38d3112168789160622e941636d097be72f0ed5ee6544b0f238d1f15738ddeb3389e88b9b7f434675211222ebecbfd96f7a2012c7b8d063d5ae1c81
+  9e0f30515f837c2d2b1ca6a5c87c7cd5f335a125b997dcb5a35eb2d6878b85f8ca099d57bbfd21d30f397cf1aa9d61c04d08c0a71b2bfd0e0b36700d24b17abb
+  ec0b4ae94ed06dfa653c1065bdf19365a44b10b01d2972a828d6da310873472dc65bd4f9fe823a0e596955c87b4f2a71c8ec2bff47e5fc8f5176e2cd5ef3f5fe
+  fbe7d29391e78496361c7056972ffb3df1b4d74400b750e65e3ddde50912812e5883c45e27f82e10d10755dff9b1669621961bac569a8380e74ae62a1f8e13d2
+  1c31de1bc7cd48912c2209c1091c33276c66894d3fca7ecb9e4c5595760f2ddeb2e1deabbfdb61eaf868a968f672d524b3f4479372085b156b44a697b99430fc
+  8af53fe5a31cf562d73656ff5da585c5b7a7a888dbfb400af3300c489107fb38e653690fe1308ff78042ada33102724918660e191134f4abc5d525deacb0fb68
+  19b7b4890be28d66e74f6aa4a9ee157e7e2378ca688170dcf4f783d9d529098d69502e6810feccd6740f38d19e985ccbfc29f70fe3ec106fc616c614fb947260
+  ae890c20203dd4a7f03e9d6d9c522778c3faa3a6404295c03f99042f15c25c6a920d0139abc1de27caa72ba4754df755d05eb641037a75938dbed0dac9b2490d
+  49b7bce268ab8e2db78ace18cfb9debbc03ffa88e542c8182f5fa8571c765c72348dbba1c369aacdb7a70ac50047000d3987b7ea0b08a3e5a78c78fcd34f8962
+  ff177ab64029f423895ee29de38659bd21e4f0d2f8de27a3b949c16ee8ea29548fbfd62ccdf822c05beba7af33d803bf92cf7034791f0fbc1933904cfaf65a87
+  1b3f56e95fb5731e176ba4f85fe094d19ab3694ee40a7380c056488eb838150bbe4677bfdeacac3b43e669174d368c5c6f3b99f7edddd439c5c7df74153b2c6c
+  38bbe327014048b885724c417d4f628568848a6ae14bea68ffdb1e756227d28e9557cc66da900d71f7adf14c4cca90daa12ba51f8fbb830eab15f3af3a9b2c15
+)
+
+prepare() {
+  cd $_pkgname
+
+  # Geyes in-process: follow the mouse properly no matter where the applet is
+  # https://github.com/mate-desktop/mate-applets/pull/675
+  git cherry-pick -n e8e8d00cff2ade8e034681b2a3c8f5dd83fbb331
+
+  # Set gettext domain for GtkBuilder
+  # https://github.com/mate-desktop/mate-applets/pull/707
+  git cherry-pick -n b9c7f05dca400eac0177f3e28d1c49895098841c
+
+  # battstat: Fix reopening preferences after closing the window
+  # https://github.com/mate-desktop/mate-applets/pull/713
+  git cherry-pick -n d22877daff84a004fb555274afcff9e1675fa220
+
+  # Don't set default icon if build as in-process
+  # https://github.com/mate-desktop/mate-applets/pull/712
+  git apply -3 ../mate-applets-default-icon.patch
+
+  # command: Fix settings binding initialization
+  # https://github.com/mate-desktop/mate-applets/pull/705
+  git apply -3 ../mate-applets-command-settings-bind.patch
+
+  # Replace ngettext() with dngettext()
+  # https://github.com/mate-desktop/mate-applets/pull/706
+  git apply -3 ../mate-applets-ngettext-replace.patch
+
+  # Use standard icon names
+  # https://github.com/mate-desktop/mate-applets/pull/708
+  git apply -3 ../mate-applets-icon-names.patch
+
+  # Set gettext domain for the template XMLs
+  # https://github.com/mate-desktop/mate-applets/pull/709
+  git apply -3 ../mate-applets-gettext-domain.patch
+
+  # Don't use gtk_show_about_dialog
+  # https://github.com/mate-desktop/mate-applets/pull/710
+  git apply -3 ../mate-applets-about-dialog.patch
+
+  # Fix translations in in-process mode
+  # https://github.com/mate-desktop/mate-applets/pull/711
+  git apply -3 ../mate-applets-gi18n-lib.patch
+
+  # netspeed: Set window icon and title explicitly
+  # https://github.com/mate-desktop/mate-applets/pull/714
+  git apply -3 ../mate-applets-netspeed-details-window.patch
+
+  # stickynotes: Fix reopening note properties after closing the window
+  # https://github.com/mate-desktop/mate-applets/pull/715
+  git apply -3 ../mate-applets-stickynotes-properties-reopen.patch
+
+  # stickynotes: Fix click-hide behavior
+  # https://github.com/mate-desktop/mate-applets/pull/716
+  git apply -3 ../mate-applets-stickynotes-fix-hide.patch
+
+  # Use 'edit-clear-all' icon for Empty Trash
+  # https://github.com/mate-desktop/mate-applets/pull/717
+  git apply -3 ../mate-applets-empty-trash-icon.patch
+
+  autoreconf -fiv
+}
+
+build() {
+  cd $_pkgname
+  ./configure \
+    --prefix=/usr \
+    --sysconfdir=/etc \
+    --localstatedir=/var \
+    --enable-in-process
+  make
+}
+
+package() {
+  cd $_pkgname
+  make DESTDIR="$pkgdir" install
+}

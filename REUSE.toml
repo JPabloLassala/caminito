@@ -235,6 +235,7 @@ SPDX-License-Identifier = "LGPL-3.0-only"
 path = [
   "packaging/arch/appmenu-gtk-module-caminito/**",
   "packaging/arch/caja-caminito/**",
+  "packaging/arch/mate-applets-caminito/**",
   "packaging/arch/mate-control-center-caminito/**",
   "packaging/arch/mate-panel-caminito/**",
   "packaging/arch/mate-power-manager-caminito/**",
@@ -278,3 +279,10 @@ path = "packaging/patches/**"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025-2026 Juan Pablo Lassala"
 SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Arch's build patches to mate-applets (ADR 0030) are fixes from upstream's pull requests.
+[[annotations]]
+path = "packaging/patches/mate-applets/arch/*.patch"
+precedence = "closest"
+SPDX-FileCopyrightText = ["MATE Developers", "Arch Linux contributors"]
+SPDX-License-Identifier = "GPL-2.0-or-later"

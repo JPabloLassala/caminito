@@ -1,0 +1,24 @@
+From c2b8b12da73206221762d1367acdc0cd002259d1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ball=C3=B3=20Gy=C3=B6rgy?= <ballogyor@gmail.com>
+Date: Tue, 20 Oct 2026 16:53:30 +0200
+Subject: [PATCH] netspeed: Set window icon and title explicitly
+
+This is needed for in-process build when the application name and window
+icon cannot be set globally.
+---
+ netspeed/data/netspeed-details.ui | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/netspeed/data/netspeed-details.ui b/netspeed/data/netspeed-details.ui
+index 06b6562af..0dba80513 100644
+--- a/netspeed/data/netspeed-details.ui
++++ b/netspeed/data/netspeed-details.ui
+@@ -16,6 +16,8 @@
+     <property name="can-focus">False</property>
+     <property name="border-width">12</property>
+     <property name="type-hint">dialog</property>
++    <property name="title" translatable="yes">MATE Netspeed</property>
++    <property name="icon-name">mate-netspeed-applet</property>
+     <signal name="response" handler="on_dialog_response" swapped="no"/>
+     <child internal-child="vbox">
+       <object class="GtkBox">

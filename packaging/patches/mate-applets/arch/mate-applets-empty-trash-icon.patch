@@ -1,0 +1,24 @@
+From 05ff67c83d311bb26e801758c7f539faa7f81a0f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ball=C3=B3=20Gy=C3=B6rgy?= <ballogyor@gmail.com>
+Date: Mon, 26 Oct 2026 01:47:03 +0100
+Subject: [PATCH] Use 'edit-clear-all' icon for Empty Trash
+
+This menu item removes all files from the trash, not just one
+item. Replace the icon 'edit-clear' with 'edit-clear-all'.
+---
+ trashapplet/src/trashapplet.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/trashapplet/src/trashapplet.c b/trashapplet/src/trashapplet.c
+index e537bc7c4..b6d91672d 100644
+--- a/trashapplet/src/trashapplet.c
++++ b/trashapplet/src/trashapplet.c
+@@ -65,7 +65,7 @@ static void trash_applet_show_help   (GtkAction   *action,
+                                       TrashApplet *applet);
+ 
+ static const GtkActionEntry trash_applet_menu_actions [] = {
+-	{ "EmptyTrash", "edit-clear", N_("_Empty Trash"),
++	{ "EmptyTrash", "edit-clear-all", N_("_Empty Trash"),
+ 	  NULL, NULL,
+ 	  G_CALLBACK (trash_applet_do_empty) },
+ 	{ "OpenTrash", "document-open", N_("_Open Trash"),

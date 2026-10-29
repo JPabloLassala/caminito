@@ -1,0 +1,162 @@
+From ad8c20a6da9ef74cbd61bfaa0d16dcd5d8067077 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ball=C3=B3=20Gy=C3=B6rgy?= <ballogyor@gmail.com>
+Date: Sun, 18 Oct 2026 08:02:35 +0200
+Subject: [PATCH] Replace ngettext() with dngettext()
+
+ngettext() is not aware that applets use a different domain than
+mate-panel, so it needs to be replaced with dngettext() to get the
+translated strings when the applets are built as in-process.
+---
+ battstat/battstat_applet.c       | 47 ++++++++++++++++++--------------
+ netspeed/src/netspeed.c          |  8 +++---
+ stickynotes/stickynotes_applet.c |  7 +++--
+ trashapplet/src/trashapplet.c    |  7 +++--
+ 4 files changed, 38 insertions(+), 31 deletions(-)
+
+diff --git a/battstat/battstat_applet.c b/battstat/battstat_applet.c
+index 072039960..040b785ef 100644
+--- a/battstat/battstat_applet.c
++++ b/battstat/battstat_applet.c
+@@ -181,40 +181,44 @@ get_remaining (BatteryStatus *info)
+     else
+         if (hours == 0)
+             if (!info->on_ac_power)
+-                return g_strdup_printf (ngettext ("%d minute (%d%%) remaining",
+-                                                  "%d minutes (%d%%) remaining",
+-                                                  mins),
++                return g_strdup_printf (dngettext (GETTEXT_PACKAGE,
++                                                   "%d minute (%d%%) remaining",
++                                                   "%d minutes (%d%%) remaining",
++                                                   mins),
+                                         mins, info->percent);
+             else
+-                return g_strdup_printf (ngettext ("%d minute until charged (%d%%)",
+-                                                  "%d minutes until charged (%d%%)",
+-                                                  mins),
++                return g_strdup_printf (dngettext (GETTEXT_PACKAGE,
++                                                   "%d minute until charged (%d%%)",
++                                                   "%d minutes until charged (%d%%)",
++                                                   mins),
+                                         mins, info->percent);
+         else if (mins == 0)
+             if (!info->on_ac_power)
+-                return g_strdup_printf (ngettext ("%d hour (%d%%) remaining",
+-                                                  "%d hours (%d%%) remaining",
+-                                                  hours),
++                return g_strdup_printf (dngettext (GETTEXT_PACKAGE,
++                                                   "%d hour (%d%%) remaining",
++                                                   "%d hours (%d%%) remaining",
++                                                   hours),
+                                         hours, info->percent);
+             else
+-                return g_strdup_printf (ngettext ("%d hour until charged (%d%%)",
+-                                                  "%d hours until charged (%d%%)",
+-                                                  hours),
++                return g_strdup_printf (dngettext (GETTEXT_PACKAGE,
++                                                   "%d hour until charged (%d%%)",
++                                                   "%d hours until charged (%d%%)",
++                                                   hours),
+                                         hours, info->percent);
+         else
+             if (!info->on_ac_power)
+                 /* TRANSLATOR: "%d %s %d %s" are "%d hours %d minutes"
+                  * Swap order with "%2$s %2$d %1$s %1$d if needed */
+                 return g_strdup_printf (_("%d %s %d %s (%d%%) remaining"),
+-                                        hours, ngettext ("hour", "hours", hours),
+-                                        mins, ngettext ("minute", "minutes", mins),
++                                        hours, dngettext (GETTEXT_PACKAGE, "hour", "hours", hours),
++                                        mins, dngettext (GETTEXT_PACKAGE, "minute", "minutes", mins),
+                                         info->percent);
+             else
+                 /* TRANSLATOR: "%d %s %d %s" are "%d hours %d minutes"
+                  * Swap order with "%2$s %2$d %1$s %1$d if needed */
+                 return g_strdup_printf (_("%d %s %d %s until charged (%d%%)"),
+-                                        hours, ngettext ("hour", "hours", hours),
+-                                        mins, ngettext ("minute", "minutes", mins),
++                                        hours, dngettext (GETTEXT_PACKAGE, "hour", "hours", hours),
++                                        mins, dngettext (GETTEXT_PACKAGE, "minute", "minutes", mins),
+                                         info->percent);
+ }
+ 
+@@ -379,11 +383,12 @@ battery_low_update_text (ProgressData  *battstat,
+     }
+     else
+     {
+-      remaining = g_strdup_printf (ngettext ("You have %d minute of battery power "
+-                                             "remaining (%d%% of the total capacity).",
+-                                             "You have %d minutes of battery power "
+-                                             "remaining (%d%% of the total capacity).",
+-                                             info->minutes),
++      remaining = g_strdup_printf (dngettext (GETTEXT_PACKAGE,
++                                              "You have %d minute of battery power "
++                                              "remaining (%d%% of the total capacity).",
++                                              "You have %d minutes of battery power "
++                                              "remaining (%d%% of the total capacity).",
++                                              info->minutes),
+                                    info->minutes,
+                                    info->percent);
+     }
+diff --git a/netspeed/src/netspeed.c b/netspeed/src/netspeed.c
+index 73185abd3..3585d1e53 100644
+--- a/netspeed/src/netspeed.c
++++ b/netspeed/src/netspeed.c
+@@ -643,19 +643,19 @@ format_time (guint32 sec)
+     int hours;
+ 
+     if (sec < 60)
+-        return g_strdup_printf (ngettext ("%'" G_GUINT32_FORMAT " second","%'" G_GUINT32_FORMAT " seconds", sec), sec);
++        return g_strdup_printf (dngettext (GETTEXT_PACKAGE, "%'" G_GUINT32_FORMAT " second","%'" G_GUINT32_FORMAT " seconds", sec), sec);
+ 
+     hours = (sec/3600);
+     minutes = (sec -(3600*hours))/60;
+     seconds = (sec -(3600*hours)-(minutes*60));
+ 
+-    m = g_strdup_printf (ngettext ("%'d minute", "%'d minutes", minutes), minutes);
+-    s = g_strdup_printf (ngettext ("%'d secon", "%'d seconds", seconds), seconds);
++    m = g_strdup_printf (dngettext (GETTEXT_PACKAGE, "%'d minute", "%'d minutes", minutes), minutes);
++    s = g_strdup_printf (dngettext (GETTEXT_PACKAGE, "%'d secon", "%'d seconds", seconds), seconds);
+     if (sec < 60*60) {
+         res = g_strconcat (m, ", ", s, NULL);
+     } else {
+         char *h;
+-        h = g_strdup_printf (ngettext ("%'d hour", "%'d hours", hours), hours);
++        h = g_strdup_printf (dngettext (GETTEXT_PACKAGE, "%'d hour", "%'d hours", hours), hours);
+         res = g_strconcat (h, ", ", m, ", ", s, NULL);
+         g_free (h);
+     }
+diff --git a/stickynotes/stickynotes_applet.c b/stickynotes/stickynotes_applet.c
+index fa777efe3..99e44816a 100644
+--- a/stickynotes/stickynotes_applet.c
++++ b/stickynotes/stickynotes_applet.c
+@@ -638,9 +638,10 @@ stickynotes_applet_update_tooltips (void)
+ 
+     num = g_list_length (stickynotes->notes);
+ 
+-    no_notes = g_strdup_printf (ngettext ("%d note",
+-                                          "%d notes",
+-                                          num),
++    no_notes = g_strdup_printf (dngettext (GETTEXT_PACKAGE,
++                                           "%d note",
++                                           "%d notes",
++                                           num),
+                                 num);
+ 
+     tooltip = g_strdup_printf ("%s\n%s",
+diff --git a/trashapplet/src/trashapplet.c b/trashapplet/src/trashapplet.c
+index e4f2966b0..0c7d6fcb9 100644
+--- a/trashapplet/src/trashapplet.c
++++ b/trashapplet/src/trashapplet.c
+@@ -127,9 +127,10 @@ trash_applet_monitor_changed (TrashApplet *applet)
+ 
+       if (items)
+         {
+-          text = g_strdup_printf (ngettext ("%d Item in Trash",
+-                                            "%d Items in Trash",
+-                                            items), items);
++          text = g_strdup_printf (dngettext (GETTEXT_PACKAGE,
++                                             "%d Item in Trash",
++                                             "%d Items in Trash",
++                                             items), items);
+         }
+       else
+         text = g_strdup (_("No Items in Trash"));

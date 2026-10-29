@@ -1,0 +1,49 @@
+From 75cdf8118992cc1525c482f5af8c1d493ccb4dce Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ball=C3=B3=20Gy=C3=B6rgy?= <ballogyor@gmail.com>
+Date: Sun, 18 Oct 2026 13:15:29 +0200
+Subject: [PATCH] Set gettext domain for the template XMLs
+
+This is needed to get the translations for these UIs when the applets are
+built as in-process.
+---
+ battstat/battstat-preferences.ui       | 2 +-
+ mateweather/data/mateweather-dialog.ui | 2 +-
+ netspeed/data/netspeed-preferences.ui  | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/battstat/battstat-preferences.ui b/battstat/battstat-preferences.ui
+index 424f0b9c2..ed2eaf458 100644
+--- a/battstat/battstat-preferences.ui
++++ b/battstat/battstat-preferences.ui
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!-- Generated with glade 3.36.0 -->
+-<interface>
++<interface domain="mate-applets">
+   <requires lib="gtk+" version="3.22"/>
+   <object class="GtkAdjustment" id="adjustment1">
+     <property name="upper">25</property>
+diff --git a/mateweather/data/mateweather-dialog.ui b/mateweather/data/mateweather-dialog.ui
+index 5beedb05b..b7f126202 100644
+--- a/mateweather/data/mateweather-dialog.ui
++++ b/mateweather/data/mateweather-dialog.ui
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!-- Generated with glade 3.36.0 -->
+-<interface>
++<interface domain="mate-applets">
+   <requires lib="gtk+" version="3.22"/>
+   <object class="GtkImage" id="close_img">
+     <property name="visible">True</property>
+diff --git a/netspeed/data/netspeed-preferences.ui b/netspeed/data/netspeed-preferences.ui
+index bc1e55872..0ac778c1c 100644
+--- a/netspeed/data/netspeed-preferences.ui
++++ b/netspeed/data/netspeed-preferences.ui
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!-- Generated with glade 3.38.2 -->
+-<interface>
++<interface domain="mate-applets">
+   <requires lib="gtk+" version="3.22"/>
+   <object class="GtkImage" id="image1">
+     <property name="visible">True</property>

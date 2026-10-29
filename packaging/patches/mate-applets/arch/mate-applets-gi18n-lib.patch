@@ -1,0 +1,347 @@
+From d62c12aa5887883c82a19e99aa3a244ed6f9d0ba Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ball=C3=B3=20Gy=C3=B6rgy?= <ballogyor@gmail.com>
+Date: Tue, 20 Oct 2026 12:23:15 +0200
+Subject: [PATCH] Fix translations in in-process mode
+
+Use gi18n-lib.h instead of gi18n.h to ensure translations
+use the mate-applets gettext domain.
+
+In in-process mode, the applet cannot rely on the default
+gettext domain because changing it would affect the entire
+panel process.
+---
+ accessx-status/src/applet.c                | 2 +-
+ battstat/battstat.h                        | 2 +-
+ charpick/charpick.h                        | 2 +-
+ command/src/command.c                      | 2 +-
+ cpufreq/src/cpufreq-applet.c               | 2 +-
+ cpufreq/src/cpufreq-monitor-cpuinfo.c      | 2 +-
+ cpufreq/src/cpufreq-monitor-factory.c      | 2 +-
+ cpufreq/src/cpufreq-monitor-libcpufreq.c   | 2 +-
+ cpufreq/src/cpufreq-monitor-sysfs.c        | 2 +-
+ cpufreq/src/cpufreq-popup.c                | 6 +++++-
+ cpufreq/src/cpufreq-prefs.c                | 2 +-
+ drivemount/src/drive-button.c              | 2 +-
+ drivemount/src/drive-list.c                | 2 +-
+ drivemount/src/drivemount.c                | 2 +-
+ geyes/src/geyes.h                          | 2 +-
+ invest-applet/invest/invest-applet-chart.c | 2 +-
+ invest-applet/invest/invest-applet.c       | 2 +-
+ mateweather/src/mateweather.h              | 2 +-
+ multiload/src/global.h                     | 2 +-
+ netspeed/src/backend.c                     | 2 +-
+ netspeed/src/netspeed.c                    | 2 +-
+ stickynotes/stickynotes_applet.h           | 2 +-
+ timerapplet/src/timerapplet.c              | 2 +-
+ trashapplet/src/trash-empty.c              | 6 +++++-
+ trashapplet/src/trashapplet.c              | 2 +-
+ 25 files changed, 33 insertions(+), 25 deletions(-)
+
+diff --git a/accessx-status/src/applet.c b/accessx-status/src/applet.c
+index dd3e6cc9b..220fe575f 100644
+--- a/accessx-status/src/applet.c
++++ b/accessx-status/src/applet.c
+@@ -22,7 +22,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <glib-object.h>
+ #include <gtk/gtk.h>
+ #include <gio/gio.h>
+diff --git a/battstat/battstat.h b/battstat/battstat.h
+index 994f7e7e6..f372238c0 100644
+--- a/battstat/battstat.h
++++ b/battstat/battstat.h
+@@ -22,7 +22,7 @@
+ #define _battstat_h_
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ #include <gio/gio.h>
+ 
+diff --git a/charpick/charpick.h b/charpick/charpick.h
+index 713685c28..82337aa51 100644
+--- a/charpick/charpick.h
++++ b/charpick/charpick.h
+@@ -4,7 +4,7 @@
+ #define __CHARPICK_H__
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ #include <gio/gio.h>
+ #include <mate-panel-applet.h>
+diff --git a/command/src/command.c b/command/src/command.c
+index 8df976304..b375e0706 100644
+--- a/command/src/command.c
++++ b/command/src/command.c
+@@ -26,7 +26,7 @@
+ 
+ #include <glib.h>
+ #include <gmodule.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gio/gio.h>
+ #include <gtk/gtk.h>
+ 
+diff --git a/cpufreq/src/cpufreq-applet.c b/cpufreq/src/cpufreq-applet.c
+index b1509eaab..a4bfc1adc 100644
+--- a/cpufreq/src/cpufreq-applet.c
++++ b/cpufreq/src/cpufreq-applet.c
+@@ -29,7 +29,7 @@
+ #include <gio/gio.h>
+ #include <mate-panel-applet.h>
+ #include <mate-panel-applet-gsettings.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 
+diff --git a/cpufreq/src/cpufreq-monitor-cpuinfo.c b/cpufreq/src/cpufreq-monitor-cpuinfo.c
+index 230a56cc6..bf573418f 100644
+--- a/cpufreq/src/cpufreq-monitor-cpuinfo.c
++++ b/cpufreq/src/cpufreq-monitor-cpuinfo.c
+@@ -24,7 +24,7 @@
+ #endif
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ 
+ #include <string.h>
+ #include <stdio.h>
+diff --git a/cpufreq/src/cpufreq-monitor-factory.c b/cpufreq/src/cpufreq-monitor-factory.c
+index 0c809671b..b1fb5f168 100644
+--- a/cpufreq/src/cpufreq-monitor-factory.c
++++ b/cpufreq/src/cpufreq-monitor-factory.c
+@@ -24,7 +24,7 @@
+ #endif
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ 
+ #include "cpufreq-applet.h"
+ #include "cpufreq-utils.h"
+diff --git a/cpufreq/src/cpufreq-monitor-libcpufreq.c b/cpufreq/src/cpufreq-monitor-libcpufreq.c
+index cd0d3e531..f942622d0 100644
+--- a/cpufreq/src/cpufreq-monitor-libcpufreq.c
++++ b/cpufreq/src/cpufreq-monitor-libcpufreq.c
+@@ -24,7 +24,7 @@
+ #endif
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ 
+ #include <stdlib.h>
+ #include <cpufreq.h>
+diff --git a/cpufreq/src/cpufreq-monitor-sysfs.c b/cpufreq/src/cpufreq-monitor-sysfs.c
+index 8ea88de27..7df8cd441 100644
+--- a/cpufreq/src/cpufreq-monitor-sysfs.c
++++ b/cpufreq/src/cpufreq-monitor-sysfs.c
+@@ -20,7 +20,7 @@
+  */
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ 
+ #include <string.h>
+ #include <stdlib.h>
+diff --git a/cpufreq/src/cpufreq-popup.c b/cpufreq/src/cpufreq-popup.c
+index 456a60a6b..d63588f30 100644
+--- a/cpufreq/src/cpufreq-popup.c
++++ b/cpufreq/src/cpufreq-popup.c
+@@ -19,7 +19,11 @@
+  * Authors : Carlos García Campos <carlosgc@gnome.org>
+  */
+ 
+-#include <glib/gi18n.h>
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include <glib/gi18n-lib.h>
+ 
+ #include <gtk/gtk.h>
+ #include <gdk/gdkx.h>
+diff --git a/cpufreq/src/cpufreq-prefs.c b/cpufreq/src/cpufreq-prefs.c
+index c767861ed..685f071cd 100644
+--- a/cpufreq/src/cpufreq-prefs.c
++++ b/cpufreq/src/cpufreq-prefs.c
+@@ -24,7 +24,7 @@
+ #endif
+ 
+ #include <gtk/gtk.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gio/gio.h>
+ 
+ #include "cpufreq-prefs.h"
+diff --git a/drivemount/src/drive-button.c b/drivemount/src/drive-button.c
+index 80f4b7ce3..45ff32057 100644
+--- a/drivemount/src/drive-button.c
++++ b/drivemount/src/drive-button.c
+@@ -27,7 +27,7 @@
+ 
+ #include <gio/gio.h>
+ #include "drive-button.h"
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gdk/gdkkeysyms.h>
+ #include <gio/gdesktopappinfo.h>
+ 
+diff --git a/drivemount/src/drive-list.c b/drivemount/src/drive-list.c
+index 21d5ee5cc..1dca847cd 100644
+--- a/drivemount/src/drive-list.c
++++ b/drivemount/src/drive-list.c
+@@ -28,7 +28,7 @@
+ #include <gio/gio.h>
+ #include "drive-list.h"
+ #include "drive-button.h"
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ 
+ G_DEFINE_TYPE (DriveList, drive_list, GTK_TYPE_GRID);
+ 
+diff --git a/drivemount/src/drivemount.c b/drivemount/src/drivemount.c
+index 408c76450..6fc614f2d 100644
+--- a/drivemount/src/drivemount.c
++++ b/drivemount/src/drivemount.c
+@@ -26,7 +26,7 @@
+ 
+ #include <string.h>
+ 
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ #include <mate-panel-applet.h>
+ 
+diff --git a/geyes/src/geyes.h b/geyes/src/geyes.h
+index 3ee6b240b..b49b7ab46 100644
+--- a/geyes/src/geyes.h
++++ b/geyes/src/geyes.h
+@@ -19,7 +19,7 @@
+ #define __GEYES_H__
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gdk-pixbuf/gdk-pixbuf.h>
+ #include <gtk/gtk.h>
+ #include <gio/gio.h>
+diff --git a/mateweather/src/mateweather.h b/mateweather/src/mateweather.h
+index 4e4b923bd..975882694 100644
+--- a/mateweather/src/mateweather.h
++++ b/mateweather/src/mateweather.h
+@@ -10,7 +10,7 @@
+  * main header file
+  *
+  */
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ 
+ #include <gio/gio.h>
+ 
+diff --git a/multiload/src/global.h b/multiload/src/global.h
+index f40f194ad..ce12f95eb 100644
+--- a/multiload/src/global.h
++++ b/multiload/src/global.h
+@@ -2,7 +2,7 @@
+ #define __GLOBAL_H__
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gdk-pixbuf/gdk-pixbuf.h>
+ #include <gtk/gtk.h>
+ #include <gio/gio.h>
+diff --git a/netspeed/src/backend.c b/netspeed/src/backend.c
+index cd3692005..92a9617aa 100644
+--- a/netspeed/src/backend.c
++++ b/netspeed/src/backend.c
+@@ -34,7 +34,7 @@
+ #include <arpa/inet.h>
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <glibtop/netlist.h>
+ #include <glibtop/netload.h>
+ 
+diff --git a/netspeed/src/netspeed.c b/netspeed/src/netspeed.c
+index 73185abd3..93f89658b 100644
+--- a/netspeed/src/netspeed.c
++++ b/netspeed/src/netspeed.c
+@@ -28,7 +28,7 @@
+ #include <mate-panel-applet.h>
+ #include <mate-panel-applet-gsettings.h>
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gio/gio.h>
+ 
+ #include "backend.h"
+diff --git a/stickynotes/stickynotes_applet.h b/stickynotes/stickynotes_applet.h
+index e14f076ff..755d0d451 100644
+--- a/stickynotes/stickynotes_applet.h
++++ b/stickynotes/stickynotes_applet.h
+@@ -20,7 +20,7 @@
+ #ifndef __STICKYNOTES_APPLET_H__
+ #define __STICKYNOTES_APPLET_H__
+ 
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gdk/gdk.h>
+ #include <gtk/gtk.h>
+ #include <gio/gio.h>
+diff --git a/timerapplet/src/timerapplet.c b/timerapplet/src/timerapplet.c
+index c5cb2107b..28c28fa82 100644
+--- a/timerapplet/src/timerapplet.c
++++ b/timerapplet/src/timerapplet.c
+@@ -25,7 +25,7 @@
+ #include <config.h>
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gio/gio.h>
+ #include <gdk/gdkx.h>
+ #include <gtk/gtk.h>
+diff --git a/trashapplet/src/trash-empty.c b/trashapplet/src/trash-empty.c
+index 3a3bb6fa3..31156ec48 100644
+--- a/trashapplet/src/trash-empty.c
++++ b/trashapplet/src/trash-empty.c
+@@ -19,8 +19,12 @@
+  * 02110-1301, USA.
+  */
+ 
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
+ #include <gio/gio.h>
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ 
+ #include "trash-empty.h"
+ #include "config.h"
+diff --git a/trashapplet/src/trashapplet.c b/trashapplet/src/trashapplet.c
+index e4f2966b0..069458c49 100644
+--- a/trashapplet/src/trashapplet.c
++++ b/trashapplet/src/trashapplet.c
+@@ -27,7 +27,7 @@
+ 
+ #include <string.h>
+ 
+-#include <glib/gi18n.h>
++#include <glib/gi18n-lib.h>
+ #include <gdk/gdkx.h>
+ #include <gtk/gtk.h>
+ #include <gdk/gdkkeysyms.h>

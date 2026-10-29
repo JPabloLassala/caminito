@@ -251,6 +251,7 @@ License: LGPL-3
 
 Files: packaging/arch/appmenu-gtk-module-caminito/*
        packaging/arch/caja-caminito/*
+       packaging/arch/mate-applets-caminito/*
        packaging/arch/mate-control-center-caminito/*
        packaging/arch/mate-panel-caminito/*
        packaging/arch/mate-power-manager-caminito/*
@@ -279,6 +280,11 @@ Comment: Taken from Fedora's specs.
 Files: packaging/fedora/*/*.patch
 Copyright: MATE Developers
            Fedora Project contributors
+License: GPL-2+
+
+Files: packaging/patches/mate-applets/arch/*
+Copyright: MATE Developers
+           Arch Linux contributors
 License: GPL-2+
 
 License: GPL-3+

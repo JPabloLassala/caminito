@@ -1,0 +1,349 @@
+From 0b1004eff1083bce34ffa1d1b6ade6f5059da580 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ball=C3=B3=20Gy=C3=B6rgy?= <ballogyor@gmail.com>
+Date: Tue, 20 Oct 2026 11:21:10 +0200
+Subject: [PATCH] Don't use gtk_show_about_dialog
+
+gtk_show_about_dialog() sets its values only on first invocation, and
+cannot be used to display the about dialog with different content.
+
+This fixes the problem that wrong content is shown, when the about dialog
+is opened from multiple applets, and the applets are built as in-process.
+---
+ accessx-status/src/applet.c                | 7 ++++++-
+ battstat/battstat_applet.c                 | 6 +++++-
+ charpick/charpick.c                        | 7 ++++++-
+ command/src/command.c                      | 7 ++++++-
+ cpufreq/src/cpufreq-applet.c               | 7 ++++++-
+ drivemount/src/drivemount.c                | 7 ++++++-
+ geyes/src/geyes.c                          | 7 ++++++-
+ invest-applet/invest/invest-applet.c       | 6 +++++-
+ mateweather/src/mateweather-about.c        | 7 ++++++-
+ multiload/src/main.c                       | 7 ++++++-
+ netspeed/src/netspeed.c                    | 7 ++++++-
+ stickynotes/stickynotes_applet_callbacks.c | 7 ++++++-
+ timerapplet/src/timerapplet.c              | 7 ++++++-
+ trashapplet/src/trashapplet.c              | 7 ++++++-
+ 14 files changed, 82 insertions(+), 14 deletions(-)
+
+diff --git a/accessx-status/src/applet.c b/accessx-status/src/applet.c
+index dd3e6cc9b..d0c3d4fed 100644
+--- a/accessx-status/src/applet.c
++++ b/accessx-status/src/applet.c
+@@ -108,7 +108,8 @@ about_cb (GtkAction*           action,
+         *p = _(*p);
+ #endif
+ 
+-    gtk_show_about_dialog (NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++        "program-name", _("AccessX Status"),
+         "title", _("About AccessX Status"),
+         "version", VERSION,
+         "comments", _("Shows the state of AccessX features such as latched modifiers"),
+@@ -119,6 +120,10 @@ about_cb (GtkAction*           action,
+         "translator-credits", _("translator-credits"),
+         "logo-icon-name", ACCESSX_APPLET,
+         NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ static void
+diff --git a/battstat/battstat_applet.c b/battstat/battstat_applet.c
+index 072039960..1e63f9af7 100644
+--- a/battstat/battstat_applet.c
++++ b/battstat/battstat_applet.c
+@@ -840,7 +840,8 @@ about_cb (GtkAction *action, ProgressData *battstat)
+         *p = _(*p);
+ #endif
+ 
+-    gtk_show_about_dialog (NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                           "program-name",       _("Battery Charge Monitor"),
+                            "title",              _("About Battery Charge Monitor"),
+                            "version",            VERSION,
+                            "copyright",          _("Copyright \xc2\xa9 2000 The Gnulix Society\n"
+@@ -853,6 +854,9 @@ about_cb (GtkAction *action, ProgressData *battstat)
+                            "logo-icon-name",     "battery",
+                            NULL);
+ 
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+     g_free (comments);
+ }
+ 
+diff --git a/charpick/charpick.c b/charpick/charpick.c
+index 932c6919c..612c625ed 100644
+--- a/charpick/charpick.c
++++ b/charpick/charpick.c
+@@ -628,7 +628,8 @@ about (GtkAction     *action,
+         *p = _(*p);
+ #endif
+ 
+-    gtk_show_about_dialog (NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                           "program-name",       _("Character Palette"),
+                            "title",              _("About Character Palette"),
+                            "version",            VERSION,
+                            "copyright",          _("Copyright \xc2\xa9 1998, 2004-2005 GNOME Applets Maintainers and others\n"
+@@ -641,6 +642,10 @@ about (GtkAction     *action,
+                            "translator-credits", _("translator-credits"),
+                            "logo-icon-name",     "accessories-character-map",
+                            NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ static void
+diff --git a/command/src/command.c b/command/src/command.c
+index 8df976304..6970b8346 100644
+--- a/command/src/command.c
++++ b/command/src/command.c
+@@ -158,7 +158,8 @@ command_about_callback (GtkAction *action, CommandApplet *command_applet)
+ {
+     const char* authors[] = { "Stefano Karapetsas <stefano@karapetsas.com>", NULL };
+ 
+-    gtk_show_about_dialog(NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                          "program-name", _("Command Applet"),
+                           "title", _("About Command Applet"),
+                           "version", VERSION,
+                           "copyright", _("Copyright \xc2\xa9 2013-2014 Stefano Karapetsas\n"
+@@ -168,6 +169,10 @@ command_about_callback (GtkAction *action, CommandApplet *command_applet)
+                           "translator-credits", _("translator-credits"),
+                           "logo-icon-name", APPLET_ICON,
+                           NULL );
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ static gboolean
+diff --git a/cpufreq/src/cpufreq-applet.c b/cpufreq/src/cpufreq-applet.c
+index b1509eaab..1cbce0b4a 100644
+--- a/cpufreq/src/cpufreq-applet.c
++++ b/cpufreq/src/cpufreq-applet.c
+@@ -474,7 +474,8 @@ cpufreq_applet_about_cb (GtkAction     *action,
+          *p = _(*p);
+ #endif
+ 
+-    gtk_show_about_dialog (NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                           "program-name",       _("CPU Frequency Scaling Monitor"),
+                            "title",              _("About CPU Frequency Scaling Monitor"),
+                            "version",            VERSION,
+                            "copyright",          _("Copyright \xC2\xA9 2004 Carlos Garcia Campos\n"
+@@ -487,6 +488,10 @@ cpufreq_applet_about_cb (GtkAction     *action,
+                            "translator-credits", _("translator-credits"),
+                            "logo-icon-name",     "mate-cpu-frequency-applet",
+                             NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ static void
+diff --git a/drivemount/src/drivemount.c b/drivemount/src/drivemount.c
+index 408c76450..197dd1432 100644
+--- a/drivemount/src/drivemount.c
++++ b/drivemount/src/drivemount.c
+@@ -114,7 +114,8 @@ display_about_dialog (GtkAction *action,
+         *p = _(*p);
+ #endif
+ 
+-    gtk_show_about_dialog (NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                           "program-name",       _("Disk Mounter"),
+                            "title",              _("About Disk Mounter"),
+                            "version",            VERSION,
+                            "copyright",          _("Copyright \xC2\xA9 2004 Canonical Ltd\n"
+@@ -125,6 +126,10 @@ display_about_dialog (GtkAction *action,
+                            "translator-credits", _("translator-credits"),
+                            "logo_icon_name",     "media-floppy",
+                            NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ static void
+diff --git a/geyes/src/geyes.c b/geyes/src/geyes.c
+index 76c86d657..a41f1ec09 100644
+--- a/geyes/src/geyes.c
++++ b/geyes/src/geyes.c
+@@ -206,7 +206,8 @@ about_cb (GtkAction  *action,
+         *p = _(*p);
+ #endif
+ 
+-    gtk_show_about_dialog (NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                           "program-name",       _("Eyes"),
+                            "title",              _("About Eyes"),
+                            "version",            VERSION,
+                            "comments",           _("A goofy set of eyes for the MATE "
+@@ -218,6 +219,10 @@ about_cb (GtkAction  *action,
+                            "translator-credits", _("translator-credits"),
+                            "logo-icon-name",     "mate-eyes-applet",
+                            NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ static gboolean
+diff --git a/mateweather/src/mateweather-about.c b/mateweather/src/mateweather-about.c
+index 55607bbfe..7fd78d1c3 100644
+--- a/mateweather/src/mateweather-about.c
++++ b/mateweather/src/mateweather-about.c
+@@ -50,7 +50,8 @@ void mateweather_about_run(MateWeatherApplet* gw_applet)
+ 		*p = _(*p);
+ #endif
+ 
+-	gtk_show_about_dialog(NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++		"program-name", _("Weather Report"),
+ 		"title", _("About Weather Report"),
+ 		"version", VERSION,
+ 		"copyright", _("Copyright \xC2\xA9 1999-2005 by S. Papadimitriou and others\n"
+@@ -61,4 +62,8 @@ void mateweather_about_run(MateWeatherApplet* gw_applet)
+ 		"translator-credits", _("translator-credits"),
+ 		"logo-icon-name", "weather-storm",
+ 		NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+diff --git a/multiload/src/main.c b/multiload/src/main.c
+index 9439b3200..74fe56f80 100644
+--- a/multiload/src/main.c
++++ b/multiload/src/main.c
+@@ -56,7 +56,8 @@ about_cb (GtkAction       *action,
+         *p = _(*p);
+ #endif
+ 
+-    gtk_show_about_dialog (NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++    "program-name",          _("System Monitor"),
+     "title",                 _("About System Monitor"),
+     "version",               VERSION,
+     "copyright",             _("Copyright \xc2\xa9 1999-2005 Free Software Foundation and others\n"
+@@ -69,6 +70,10 @@ about_cb (GtkAction       *action,
+     "translator-credits",    _("translator-credits"),
+     "logo-icon-name",        "utilities-system-monitor",
+     NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ static void
+diff --git a/netspeed/src/netspeed.c b/netspeed/src/netspeed.c
+index 73185abd3..7cb49e276 100644
+--- a/netspeed/src/netspeed.c
++++ b/netspeed/src/netspeed.c
+@@ -1046,7 +1046,8 @@ about_cb (GtkAction *action,
+         NULL
+     };
+ 
+-    gtk_show_about_dialog (NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                           "program-name", _("MATE Netspeed"),
+                            "title", _("About MATE Netspeed"),
+                            "version", VERSION,
+                            "copyright", _("Copyright \xc2\xa9 2002-2003 Jörgen Scheibengruber\n"
+@@ -1059,6 +1060,10 @@ about_cb (GtkAction *action,
+                            "website", PACKAGE_URL,
+                            "logo-icon-name", LOGO_ICON,
+                             NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ static void
+diff --git a/stickynotes/stickynotes_applet_callbacks.c b/stickynotes/stickynotes_applet_callbacks.c
+index 4be36f0f8..88fd244b1 100644
+--- a/stickynotes/stickynotes_applet_callbacks.c
++++ b/stickynotes/stickynotes_applet_callbacks.c
+@@ -452,7 +452,8 @@ menu_about_cb (GtkAction         *action,
+         *p = _(*p);
+ #endif
+ 
+-    gtk_show_about_dialog (NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                           "program-name",       _("Sticky Notes"),
+                            "title",              _("About Sticky Notes"),
+                            "version",            VERSION,
+                            "copyright",          _("Copyright \xc2\xa9 2002-2003 Loban A Rahman\n"
+@@ -465,6 +466,10 @@ menu_about_cb (GtkAction         *action,
+                            "translator-credits", _("translator-credits"),
+                            "logo-icon-name",     "mate-sticky-notes-applet",
+                            NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ /* Preferences Callback : Save. */
+diff --git a/timerapplet/src/timerapplet.c b/timerapplet/src/timerapplet.c
+index c5cb2107b..a2c476bd5 100644
+--- a/timerapplet/src/timerapplet.c
++++ b/timerapplet/src/timerapplet.c
+@@ -283,7 +283,8 @@ timer_about_callback (GtkAction *action, TimerApplet *applet)
+ {
+     const char* authors[] = { "Stefano Karapetsas <stefano@karapetsas.com>", NULL };
+ 
+-    gtk_show_about_dialog(NULL,
++    GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                          "program-name", _("Timer Applet"),
+                           "title", _("About Timer Applet"),
+                           "version", VERSION,
+                           "copyright", _("Copyright \xc2\xa9 2014 Stefano Karapetsas\n"
+@@ -293,6 +294,10 @@ timer_about_callback (GtkAction *action, TimerApplet *applet)
+                           "translator-credits", _("translator-credits"),
+                           "logo-icon-name", APPLET_ICON,
+                           NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ /* calculate duration and save in GSettings */
+diff --git a/trashapplet/src/trashapplet.c b/trashapplet/src/trashapplet.c
+index e4f2966b0..a55b08a6f 100644
+--- a/trashapplet/src/trashapplet.c
++++ b/trashapplet/src/trashapplet.c
+@@ -424,7 +424,8 @@ trash_applet_show_about (GtkAction   *action,
+     *p = _(*p);
+ #endif
+ 
+-  gtk_show_about_dialog (NULL,
++  GtkWidget *about = g_object_new (GTK_TYPE_ABOUT_DIALOG,
++                         "program-name", _("Trash Applet"),
+                          "title", _("About Trash Applet"),
+                          "version", VERSION,
+                          "copyright", _("Copyright \xc2\xa9 2004 Michiel Sikkes\n"
+@@ -438,6 +439,10 @@ trash_applet_show_about (GtkAction   *action,
+                          "translator-credits", _("translator-credits"),
+                          "logo_icon_name", "user-trash-full",
+                          NULL);
++
++    g_signal_connect_swapped (about, "response",
++                              G_CALLBACK (gtk_widget_destroy), about);
++    gtk_widget_show (about);
+ }
+ 
+ static gboolean

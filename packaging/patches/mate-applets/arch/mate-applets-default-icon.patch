@@ -1,0 +1,208 @@
+From 8aeb17d138a494b19313ef6b8587b7225350cb15 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ball=C3=B3=20Gy=C3=B6rgy?= <ballogyor@gmail.com>
+Date: Tue, 20 Oct 2026 13:58:34 +0200
+Subject: [PATCH] Don't set default icon if build as in-process
+
+Setting the default icon name causes that it's applied globally to all
+newly opened windows in the process, not just for the applet's windows,
+so it cannot be used if the applets are built as in-process.
+---
+ battstat/battstat_applet.c           | 3 +--
+ charpick/charpick.c                  | 3 +--
+ command/src/command.c                | 3 +--
+ cpufreq/src/cpufreq-applet.c         | 3 +--
+ drivemount/src/drivemount.c          | 3 +--
+ geyes/src/geyes.c                    | 2 +-
+ invest-applet/invest/invest-applet.c | 2 +-
+ mateweather/src/mateweather-applet.c | 3 +--
+ multiload/src/main.c                 | 3 +--
+ netspeed/src/netspeed.c              | 4 +---
+ stickynotes/stickynotes_applet.c     | 2 +-
+ timerapplet/src/timerapplet.c        | 2 +-
+ trashapplet/src/trashapplet.c        | 3 +--
+ 13 files changed, 13 insertions(+), 23 deletions(-)
+
+diff --git a/battstat/battstat_applet.c b/battstat/battstat_applet.c
+index 072039960..c100af105 100644
+--- a/battstat/battstat_applet.c
++++ b/battstat/battstat_applet.c
+@@ -1132,9 +1132,8 @@ battstat_applet_fill (MatePanelApplet *applet)
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name (_("Battery Charge Monitor"));
+-#endif
+-
+     gtk_window_set_default_icon_name ("battery");
++#endif
+ 
+     mate_panel_applet_set_flags (applet,
+                                  MATE_PANEL_APPLET_EXPAND_MINOR);
+diff --git a/charpick/charpick.c b/charpick/charpick.c
+index 932c6919c..cb00c402b 100644
+--- a/charpick/charpick.c
++++ b/charpick/charpick.c
+@@ -766,9 +766,8 @@ charpicker_applet_fill (MatePanelApplet *applet)
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name (_("Character Palette"));
+-#endif
+-
+     gtk_window_set_default_icon_name ("accessories-character-map");
++#endif
+ 
+     mate_panel_applet_set_flags (applet, MATE_PANEL_APPLET_EXPAND_MINOR);
+ 
+diff --git a/command/src/command.c b/command/src/command.c
+index 8df976304..c1024e081 100644
+--- a/command/src/command.c
++++ b/command/src/command.c
+@@ -426,9 +426,8 @@ command_applet_fill (MatePanelApplet* applet)
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name (_("Command Applet"));
+-#endif
+-
+     gtk_window_set_default_icon_name (APPLET_ICON);
++#endif
+ 
+     mate_panel_applet_set_flags (applet, MATE_PANEL_APPLET_EXPAND_MINOR);
+ 
+diff --git a/cpufreq/src/cpufreq-applet.c b/cpufreq/src/cpufreq-applet.c
+index b1509eaab..a3c7675f1 100644
+--- a/cpufreq/src/cpufreq-applet.c
++++ b/cpufreq/src/cpufreq-applet.c
+@@ -789,9 +789,8 @@ cpufreq_applet_setup (CPUFreqApplet *applet)
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name  (_("CPU Frequency Scaling Monitor"));
+-#endif
+-
+     gtk_window_set_default_icon_name ("mate-cpu-frequency-applet");
++#endif
+ 
+     /* Preferences */
+     if (applet->prefs)
+diff --git a/drivemount/src/drivemount.c b/drivemount/src/drivemount.c
+index 408c76450..6b236e4e6 100644
+--- a/drivemount/src/drivemount.c
++++ b/drivemount/src/drivemount.c
+@@ -181,9 +181,8 @@ applet_factory (MatePanelApplet *applet,
+     if (!strcmp (iid, drivemount_iid)) {
+ #ifndef ENABLE_IN_PROCESS
+         g_set_application_name (_("Disk Mounter"));
+-#endif
+-
+         gtk_window_set_default_icon_name ("media-floppy");
++#endif
+ 
+         mate_panel_applet_set_flags (applet, MATE_PANEL_APPLET_EXPAND_MINOR);
+ 
+diff --git a/geyes/src/geyes.c b/geyes/src/geyes.c
+index 76c86d657..dbcd4678e 100644
+--- a/geyes/src/geyes.c
++++ b/geyes/src/geyes.c
+@@ -416,8 +416,8 @@ geyes_applet_fill (MatePanelApplet *applet)
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name (_("Eyes"));
+-#endif
+     gtk_window_set_default_icon_name ("mate-eyes-applet");
++#endif
+     mate_panel_applet_set_flags (applet, MATE_PANEL_APPLET_EXPAND_MINOR);
+ 
+     eyes_applet = create_eyes (applet);
+diff --git a/mateweather/src/mateweather-applet.c b/mateweather/src/mateweather-applet.c
+index efb2c3081..4ac97b69a 100644
+--- a/mateweather/src/mateweather-applet.c
++++ b/mateweather/src/mateweather-applet.c
+@@ -343,9 +343,8 @@ void mateweather_applet_create (MateWeatherApplet *gw_applet)
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name (_("Weather Report"));
+-#endif
+-
+     gtk_window_set_default_icon_name ("weather-storm");
++#endif
+ 
+     g_signal_connect (gw_applet->applet, "change-orient",
+                       G_CALLBACK (change_orient_cb),
+diff --git a/multiload/src/main.c b/multiload/src/main.c
+index 9439b3200..8ebac7f45 100644
+--- a/multiload/src/main.c
++++ b/multiload/src/main.c
+@@ -497,9 +497,8 @@ multiload_applet_new(MatePanelApplet *applet, const gchar *iid, gpointer data)
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name (_("System Monitor"));
+-#endif
+-
+     gtk_window_set_default_icon_name ("utilities-system-monitor");
++#endif
+ 
+     ma->settings = mate_panel_applet_settings_new (applet, "org.mate.panel.applet.multiload");
+     mate_panel_applet_set_flags (applet, MATE_PANEL_APPLET_EXPAND_MINOR);
+diff --git a/netspeed/src/netspeed.c b/netspeed/src/netspeed.c
+index 73185abd3..d649426da 100644
+--- a/netspeed/src/netspeed.c
++++ b/netspeed/src/netspeed.c
+@@ -218,9 +218,6 @@ change_icons (NetspeedApplet *netspeed)
+                                              OUT_ICON,
+                                              16, icon_scale, NULL, 0, NULL);
+ 
+-    /* Set the windowmanager icon for the applet */
+-    gtk_window_set_default_icon_name (LOGO_ICON);
+-
+     gtk_image_set_from_surface (GTK_IMAGE (netspeed->out_pix), out_arrow);
+     gtk_image_set_from_surface (GTK_IMAGE (netspeed->in_pix), in_arrow);
+     cairo_surface_destroy (in_arrow);
+@@ -1577,6 +1574,7 @@ netspeed_applet_factory (MatePanelApplet *applet,
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name (_("MATE Netspeed"));
++    gtk_window_set_default_icon_name (LOGO_ICON);
+ #endif
+ 
+     netspeed = NETSPEED_APPLET (applet);
+diff --git a/stickynotes/stickynotes_applet.c b/stickynotes/stickynotes_applet.c
+index fa777efe3..d61614bf2 100644
+--- a/stickynotes/stickynotes_applet.c
++++ b/stickynotes/stickynotes_applet.c
+@@ -180,8 +180,8 @@ stickynotes_applet_init (MatePanelApplet *mate_panel_applet)
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name (_("Sticky Notes"));
+-#endif
+     gtk_window_set_default_icon_name ("mate-sticky-notes-applet");
++#endif
+ 
+     stickynotes->icon_normal =
+         gtk_icon_theme_load_surface (gtk_icon_theme_get_default (),
+diff --git a/timerapplet/src/timerapplet.c b/timerapplet/src/timerapplet.c
+index c5cb2107b..7535c972b 100644
+--- a/timerapplet/src/timerapplet.c
++++ b/timerapplet/src/timerapplet.c
+@@ -384,8 +384,8 @@ timer_applet_fill (MatePanelApplet* applet_widget)
+ 
+ #ifndef ENABLE_IN_PROCESS
+     g_set_application_name (_("Timer Applet"));
+-#endif
+     gtk_window_set_default_icon_name (APPLET_ICON);
++#endif
+ 
+     if (!notify_is_initted ())
+         notify_init ("timer-applet");
+diff --git a/trashapplet/src/trashapplet.c b/trashapplet/src/trashapplet.c
+index e4f2966b0..e537bc7c4 100644
+--- a/trashapplet/src/trashapplet.c
++++ b/trashapplet/src/trashapplet.c
+@@ -625,9 +625,8 @@ trash_applet_factory (MatePanelApplet *applet,
+ 
+ #ifndef ENABLE_IN_PROCESS
+       g_set_application_name (_("Trash Applet"));
+-#endif
+-
+       gtk_window_set_default_icon_name ("user-trash");
++#endif
+ 
+       /* Set up the menu */
+       action_group = gtk_action_group_new ("Trash Applet Actions");

@@ -2,7 +2,7 @@
 
 pkgname=caminito-desktop
 pkgver=1
-pkgrel=1
+pkgrel=2
 pkgdesc='The whole MATE desktop on Caminito: the compositor, its patched MATE packages and the rest of MATE'
 arch=(any)
 url='https://github.com/JPabloLassala/caminito'
@@ -13,13 +13,13 @@ license=(GPL-3.0-or-later)
 # which replace the stock ones (ADR 0011), and pacman can't build those from here, so
 # tools/bootstrap builds them first.
 #
-# mate-panel-caminito's applet library has a newer soname than Arch's, so the applets of
-# mate-applets, mate-netbook and mate-sensors-applet are installed but don't start until Arch
-# builds them against it (see the README).
+# mate-applets is listed as mate-applets-caminito, which tools/bootstrap builds too: Arch's
+# loads into the panel's process against the 1.28 applet library, where its Trash applet aborts
+# the panel (CMN-282).
 depends=(caminito-git
   marco mate-backgrounds mate-control-center mate-desktop mate-icon-theme mate-menus
   mate-notification-daemon mate-polkit mate-themes mate-user-guide
   atril caja-actions caja-audio-video-properties caja-image-converter caja-open-terminal
-  caja-sendto caja-share caja-wallpaper caja-xattr-tags engrampa eom mate-applets mate-calc
+  caja-sendto caja-share caja-wallpaper caja-xattr-tags engrampa eom mate-applets-caminito mate-calc
   mate-media mate-netbook mate-power-manager mate-screensaver mate-sensors-applet
   mate-system-monitor mate-terminal mate-user-share mate-utils mozo pluma)

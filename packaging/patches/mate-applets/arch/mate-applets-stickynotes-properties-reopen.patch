@@ -1,0 +1,29 @@
+From 8b914bed766f47942d05eaca77465dbe4ba877c5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ball=C3=B3=20Gy=C3=B6rgy?= <ballogyor@gmail.com>
+Date: Tue, 20 Oct 2026 17:15:34 +0200
+Subject: [PATCH] stickynotes: Fix reopening note properties after closing the
+ window
+
+gtk_widget_hide() does not return the gboolean value expected by
+the delete-event handler. Use gtk_widget_hide_on_delete() instead
+to hide the properties dialog and prevent it from being destroyed
+when the close button is clicked.
+
+This allows the properties dialog to be reopened.
+---
+ stickynotes/stickynotes.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/stickynotes/stickynotes.c b/stickynotes/stickynotes.c
+index 1a1422a4d..b6a83ecce 100644
+--- a/stickynotes/stickynotes.c
++++ b/stickynotes/stickynotes.c
+@@ -371,7 +371,7 @@ stickynote_new_aux (GdkScreen *screen,
+                       note);
+ 
+     g_signal_connect (note->w_properties, "delete-event",
+-                      G_CALLBACK (gtk_widget_hide),
++                      G_CALLBACK (gtk_widget_hide_on_delete),
+                       note);
+ 
+     g_signal_connect_after (note->w_window, "key-press-event",

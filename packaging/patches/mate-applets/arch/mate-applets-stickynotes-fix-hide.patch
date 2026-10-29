@@ -1,0 +1,54 @@
+From a4998f5f3f6e0bd04499e8854c01078243b91162 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ball=C3=B3=20Gy=C3=B6rgy?= <ballogyor@gmail.com>
+Date: Tue, 20 Oct 2026 18:49:34 +0200
+Subject: [PATCH] stickynotes: Fix click-hide behavior
+
+Move the click-hide check from stickynote_show_notes() to
+stickynote_toggle_notes_visible() so that the Hide Notes menu
+item works regardless of the click-hide setting.
+
+When click-hide is disabled, present all note windows when
+the applet is clicked and notes are marked as visible. This
+allows notes minimized by the window manager, for example
+through the Show Desktop action, to be restored without
+enabling click-hide.
+
+Closes: https://github.com/mate-desktop/mate-applets/issues/650
+---
+ stickynotes/stickynotes_applet_callbacks.c | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/stickynotes/stickynotes_applet_callbacks.c b/stickynotes/stickynotes_applet_callbacks.c
+index 4be36f0f8..3c5dc1042 100644
+--- a/stickynotes/stickynotes_applet_callbacks.c
++++ b/stickynotes/stickynotes_applet_callbacks.c
+@@ -40,9 +40,6 @@ stickynote_show_notes (gboolean visible)
+ 
+     if (stickynotes->visible == visible) return;
+ 
+-    if (g_settings_get_boolean (stickynotes->settings, "click-hide") && !visible)
+-        return;
+-
+     stickynotes->visible = visible;
+ 
+     for (l = stickynotes->notes; l; l = l->next) {
+@@ -54,6 +51,19 @@ stickynote_show_notes (gboolean visible)
+ static void
+ stickynote_toggle_notes_visible (void)
+ {
++    StickyNote *note;
++    GList *l;
++
++    if (stickynotes->visible) {
++        if (!g_settings_get_boolean (stickynotes->settings, "click-hide")) {
++            for (l = stickynotes->notes; l; l = l->next) {
++                note = l->data;
++                gtk_window_present (GTK_WINDOW (note->w_window));
++            }
++            return;
++        }
++    }
++
+     stickynote_show_notes (!stickynotes->visible);
+ }
+ 
