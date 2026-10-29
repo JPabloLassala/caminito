@@ -1,8 +1,8 @@
 /*
  * The Notifications applet (CMN-260, ADR 0051): an in-process mate-panel applet whose icon is
  * a bell, with a dot on it while the Notification history isn't empty, and whose popup is the
- * Notification center (nt-popup.c). It reads the history over caminito-notifications's
- * private API (nt-daemon.c), and hides itself while the daemon isn't on the bus, as under X11
+ * Notification center (nt-popup.c), which groups the history by app (CMN-265). It reads the
+ * history over caminito-notifications's private API (nt-daemon.c), and hides itself while the daemon isn't on the bus, as under X11
  * MATE. Left-click toggles the popup, and the daemon can ask for it too (CMN-285); it hears
  * whether the popup is open, as there are no bubbles while it is. The struck-through bell and
  * middle-click (CMN-263), and the settings gear (CMN-261), come later.
@@ -35,7 +35,8 @@ update (Applet *applet)
   const GPtrArray *entries = nt_daemon_entries (applet->daemon);
   g_autofree char *tooltip = NULL;
 
-  nt_popup_update (applet->content, entries, g_get_real_time () / G_USEC_PER_SEC);
+  nt_popup_update (applet->content, entries, nt_daemon_ungrouped (applet->daemon),
+                   g_get_real_time () / G_USEC_PER_SEC);
   /* No daemon, no icon: the applet comes back with it. */
   if (!nt_daemon_running (applet->daemon))
     {
@@ -110,6 +111,14 @@ dismiss (guint32 id, gpointer data)
 }
 
 static void
+clear_app (const char *app, gpointer data)
+{
+  Applet *applet = data;
+
+  nt_daemon_clear_app (applet->daemon, app);
+}
+
+static void
 clear_all (gpointer data)
 {
   Applet *applet = data;
@@ -145,6 +154,7 @@ static const NtPopupActions popup_actions = {
   .invoke = invoke,
   .reply = reply,
   .dismiss = dismiss,
+  .clear_app = clear_app,
   .clear_all = clear_all,
 };
 

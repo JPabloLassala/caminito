@@ -102,6 +102,7 @@ impl Notification {
             reply,
             progress: hint::<i32>(hints, "value")
                 .and_then(|value| u8::try_from(value.clamp(0, 100)).ok()),
+            earlier: Vec::new(),
         };
         Notification {
             app,

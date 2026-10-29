@@ -1,7 +1,8 @@
 /*
  * caminito-notifications as the Notifications applet uses it (CMN-260, ADR 0051): the
  * Notification history over the daemon's private API, org.mate.Caminito.Notifications,
- * followed through HistoryChanged and as the daemon leaves and comes back to the bus, and the
+ * followed through HistoryChanged and as the daemon leaves and comes back to the bus, the
+ * Notifying apps whose grouping is off, followed through UngroupedChanged (CMN-265), and the
  * calls that dismiss, clear and act on its entries. The daemon hears whether the Notification
  * center is open, as it shows no bubbles while it is, and asks for it through
  * CenterRequested (CMN-285). The applet owns no name and never talks to
@@ -30,8 +31,12 @@ void             nt_daemon_free          (NtDaemon *daemon);
 gboolean         nt_daemon_running       (NtDaemon *daemon);
 /* The NtEntries of the history, newest first. Empty while the daemon isn't running. */
 const GPtrArray *nt_daemon_entries       (NtDaemon *daemon);
+/* The keys of the Notifying apps whose grouping is off, NULL-terminated. Empty while the
+   daemon isn't running. */
+const char *const *nt_daemon_ungrouped   (NtDaemon *daemon);
 /* The history's calls. The daemon's HistoryChanged brings what they change. */
 void             nt_daemon_dismiss       (NtDaemon *daemon, guint32 id);
+void             nt_daemon_clear_app     (NtDaemon *daemon, const char *app);
 void             nt_daemon_clear_all     (NtDaemon *daemon);
 /* key "default" is a click on the entry, which brings its app forward without a default
    action. token is an xdg-activation token for the app, or NULL. */

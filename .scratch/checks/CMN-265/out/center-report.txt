@@ -1,0 +1,5 @@
+the center, grouped: the panel lives
+the center, with Chat ungrouped: the panel lives
+the center, scrolled: the panel lives
+the panel's warnings:
+A connection to the bus can't be made

@@ -3,7 +3,8 @@
 //! these calls here, since they need the server's state. An entry is a
 //! [`ENTRY_TYPE`](crate::history::ENTRY_TYPE) struct, newest first in `List`.
 //! `HistoryChanged` tells a client to list again, and `CountsChanged` carries each Notifying
-//! app's new count.
+//! app's new count. `Ungrouped` gives the Notifying apps with grouping off (CMN-265), which
+//! `UngroupedChanged` carries as they change.
 
 use std::cell::RefCell;
 use std::rc::Weak;
@@ -47,6 +48,10 @@ pub(super) fn handle(
                 .collect::<Vec<_>>();
             let list = Variant::array_from_iter_with_type(entry_type, entries);
             invocation.return_value(Some(&Variant::tuple_from_iter([list])));
+        }
+        "Ungrouped" => {
+            let apps = state.borrow().ungrouped.apps.clone();
+            invocation.return_value(Some(&(apps,).to_variant()));
         }
         "Counts" => {
             let counts = state.borrow().history.counts();

@@ -645,6 +645,7 @@ fn a_notification_gets_a_bubble_with_its_app_text_and_actions() {
                 ],
                 reply: None,
                 progress: None,
+                earlier: Vec::new(),
             }
         );
         let second = daemon.notify(notify("Another"));
@@ -1028,6 +1029,8 @@ fn a_reply_from_the_bubble_reaches_the_app_and_closes_the_notification() {
 fn bubbles_show_as_many_as_fit_and_one_that_doesnt_fit_gets_none_later_either() {
     bus::run(|bus| {
         let daemon = start(bus);
+        // Each in a bubble of its own.
+        daemon.settings.set_boolean("group", false).unwrap();
         daemon.bubbles.room.set(Some(3));
         let ids: Vec<u32> = ["1", "2", "3", "4", "5"]
             .into_iter()
@@ -1079,6 +1082,8 @@ fn the_count_loses_what_leaves_the_history_and_empties_when_the_last_bubble_clos
 fn clear_all_in_the_header_takes_the_bubbles_out_of_the_history_and_leaves_the_counted() {
     bus::run(|bus| {
         let daemon = start(bus);
+        // Each in a bubble of its own.
+        daemon.settings.set_boolean("group", false).unwrap();
         daemon.bubbles.room.set(Some(2));
         let first = daemon.notify(notify("First"));
         let second = daemon.notify(notify("Second"));
@@ -1135,6 +1140,8 @@ fn a_replacement_of_a_counted_notification_is_counted_once() {
 fn a_critical_notification_takes_the_place_of_the_oldest_ordinary_bubble_or_gets_none() {
     bus::run(|bus| {
         let daemon = start(bus);
+        // Each in a bubble of its own.
+        daemon.settings.set_boolean("group", false).unwrap();
         daemon.bubbles.room.set(Some(2));
         let critical = |summary| notify(summary).hint("urgency", 2u8);
         daemon.notify(notify("Ordinary"));
@@ -1410,6 +1417,8 @@ fn an_entry_goes_when_its_week_ends_though_nobody_asks() {
 fn dismissing_clicking_or_using_an_action_takes_a_notification_out_of_the_history() {
     bus::run(|bus| {
         let daemon = start(bus);
+        // Each in a bubble of its own.
+        daemon.settings.set_boolean("group", false).unwrap();
         let dismissed = daemon.notify(notify("Dismissed"));
         let clicked = daemon.notify(Notify {
             actions: vec!["default", "Open"],
@@ -1871,6 +1880,7 @@ fn with_previews_off_a_bubble_shows_only_its_app_and_notification() {
                 }],
                 reply: None,
                 progress: None,
+                earlier: Vec::new(),
             }
         );
     });
@@ -2117,5 +2127,207 @@ fn an_app_joins_the_known_apps_with_its_first_notification() {
         daemon.notify(notify("Second"));
 
         assert_eq!(daemon.apps.known_apps(), ["Test", "org.example.Mail"]);
+    });
+}
+
+/// The summaries of the notifications before the newest in the bubble `id`, newest first.
+fn earlier(daemon: &Daemon<'_>, id: u32) -> Vec<String> {
+    let bubble = daemon.bubbles.bubble(id);
+    bubble
+        .earlier
+        .into_iter()
+        .map(|earlier| earlier.summary)
+        .collect()
+}
+
+#[test]
+fn an_apps_third_notification_merges_its_first_two_bubbles_into_one_which_later_ones_join() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let first = daemon.notify(notify("1"));
+        let second = daemon.notify(notify("2"));
+        let other = daemon.notify(Notify {
+            app_name: "Other",
+            ..notify("Other")
+        });
+        assert_eq!(daemon.bubbles.ids(), [first, second, other]);
+
+        let third = daemon.notify(Notify {
+            actions: vec!["reply", "Reply"],
+            ..notify("3")
+        });
+        assert_eq!(daemon.bubbles.ids(), [other, third]);
+        let grouped = daemon.bubbles.bubble(third);
+        assert_eq!(grouped.summary, "3");
+        assert_eq!(grouped.actions[0].key, "reply");
+        assert_eq!(earlier(&daemon, third), ["2", "1"]);
+
+        let fourth = daemon.notify(notify("4"));
+        assert_eq!(daemon.bubbles.ids(), [other, third]);
+        assert_eq!(daemon.bubbles.bubble(third).summary, "4");
+        assert_eq!(earlier(&daemon, third), ["3", "2", "1"]);
+
+        // Its actions are the newest's, and the others stay in the bubble.
+        daemon.bubbles.events(third).invoke("reply", None);
+        daemon.wait_for_signals(2);
+        assert_eq!(
+            daemon.signals(),
+            [
+                signal("ActionInvoked", &format!("({fourth}, 'reply')")),
+                signal("NotificationClosed", &format!("({fourth}, {DISMISSED})")),
+            ]
+        );
+        assert_eq!(daemon.bubbles.bubble(third).summary, "3");
+
+        // Closing it dismisses all of them.
+        daemon.forget_signals();
+        daemon.bubbles.events(third).dismiss();
+        daemon.wait_for_signals(3);
+        assert_eq!(daemon.bubbles.ids(), [other]);
+        assert_eq!(daemon.summaries(), ["Other"]);
+    });
+}
+
+#[test]
+fn a_notification_joining_a_grouped_bubble_starts_its_timeout_again() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let timed = |summary| Notify {
+            timeout: 300,
+            ..notify(summary)
+        };
+        daemon.notify(timed("1"));
+        daemon.notify(timed("2"));
+        let grouped = daemon.notify(timed("3"));
+
+        bus.run_for(Duration::from_millis(200));
+        daemon.notify(timed("4"));
+        // Past the first three's timeout, but not the fourth's.
+        bus.run_for(Duration::from_millis(200));
+        assert_eq!(daemon.bubbles.ids(), [grouped]);
+        assert!(daemon.signals().is_empty());
+
+        daemon.wait_for_signals(4);
+        assert!(daemon.bubbles.ids().is_empty());
+        assert_eq!(daemon.summaries(), ["4", "3", "2", "1"]);
+    });
+}
+
+#[test]
+fn critical_notifications_group_only_with_their_apps_critical_ones_and_never_expire() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let critical = |summary| Notify {
+            timeout: 50,
+            ..notify(summary).hint("urgency", 2u8)
+        };
+        let ordinary = daemon.notify(Notify {
+            timeout: 0,
+            ..notify("Ordinary")
+        });
+        daemon.notify(critical("Low"));
+        daemon.notify(critical("Lower"));
+        let grouped = daemon.notify(critical("Lowest"));
+
+        assert_eq!(daemon.bubbles.ids(), [ordinary, grouped]);
+        assert_eq!(earlier(&daemon, grouped), ["Lower", "Low"]);
+        assert!(earlier(&daemon, ordinary).is_empty());
+
+        // Six times the timeouts it would have had.
+        bus.run_for(Duration::from_millis(300));
+        assert_eq!(daemon.bubbles.ids(), [ordinary, grouped]);
+    });
+}
+
+#[test]
+fn with_grouping_off_each_notification_has_a_bubble_of_its_own() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.apps.app("Test").set_boolean("group", false).unwrap();
+        let ids: Vec<u32> = ["1", "2", "3"]
+            .into_iter()
+            .map(|summary| daemon.notify(notify(summary)))
+            .collect();
+
+        assert_eq!(daemon.bubbles.ids(), ids);
+        assert!(ids.iter().all(|&id| earlier(&daemon, id).is_empty()));
+    });
+}
+
+impl Daemon<'_> {
+    /// The Notifying apps the private API says have grouping off.
+    fn ungrouped(&self) -> Vec<String> {
+        self.api("Ungrouped", ().to_variant())
+            .get::<(Vec<String>,)>()
+            .expect("Ungrouped answers apps")
+            .0
+    }
+
+    /// Waits for the private API's signal `name`.
+    fn wait_for_api_signal(&self, name: &str) -> String {
+        self.bus.wait_until(name, || {
+            self.api_signals
+                .borrow()
+                .iter()
+                .any(|signal| signal.0 == name)
+        });
+        let signals = self.api_signals();
+        signals
+            .into_iter()
+            .rfind(|signal| signal.0 == name)
+            .expect("it came")
+            .1
+    }
+}
+
+#[test]
+fn the_api_names_the_apps_with_grouping_off_and_signals_a_change() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.notify(notify("Grouped"));
+        daemon.notify(Notify {
+            app_name: "Mail",
+            ..notify("Mail")
+        });
+        assert!(daemon.ungrouped().is_empty());
+
+        daemon.forget_signals();
+        daemon.apps.app("Mail").set_boolean("group", false).unwrap();
+        assert_eq!(
+            daemon.wait_for_api_signal("UngroupedChanged"),
+            "(['Mail'],)"
+        );
+        assert_eq!(daemon.ungrouped(), ["Mail"]);
+
+        // An app without its own settings follows the default.
+        daemon.forget_signals();
+        daemon.settings.set_boolean("group", false).unwrap();
+        assert_eq!(
+            daemon.wait_for_api_signal("UngroupedChanged"),
+            "(['Mail', 'Test'],)"
+        );
+    });
+}
+
+#[test]
+fn a_grouped_bubble_merged_under_the_pointer_waits_for_it_to_leave() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let timed = |summary| Notify {
+            timeout: 100,
+            ..notify(summary)
+        };
+        daemon.notify(timed("1"));
+        let hovered = daemon.notify(timed("2"));
+        daemon.bubbles.events(hovered).hovered(true);
+        let grouped = daemon.notify(timed("3"));
+
+        // Three times its timeout.
+        bus.run_for(Duration::from_millis(300));
+        assert_eq!(daemon.bubbles.ids(), [grouped]);
+
+        daemon.bubbles.events(grouped).hovered(false);
+        daemon.wait_for_signals(3);
+        assert!(daemon.bubbles.ids().is_empty());
     });
 }

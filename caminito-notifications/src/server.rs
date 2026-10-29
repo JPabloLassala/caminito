@@ -8,6 +8,10 @@
 //! the Delivery and the sound as a notification arrives, what a bubble shows as it opens, and
 //! the default timeout. An app joins the known apps with its first notification.
 //!
+//! With its app's grouping on (CMN-265), an app's third notification on screen merges its
+//! first two bubbles into one grouped bubble, which its later ones join, critical ones only
+//! with critical ones.
+//!
 //! Every notification that isn't transient also enters the Notification history (CMN-259),
 //! which outlasts its bubble and the daemon, and `api` serves it to the applets. The time
 //! the history ages by comes from a [`Clock`].
@@ -33,6 +37,7 @@ use crate::private_api::{INTERFACE_NAME as PRIVATE_INTERFACE, PATH as PRIVATE_PA
 use crate::settings::{Delivery, NO_PREVIEW, Settings};
 
 mod api;
+mod ungrouped;
 
 /// The name the server owns.
 pub const NAME: &str = "org.freedesktop.Notifications";
@@ -134,6 +139,18 @@ pub struct Bubble {
     /// The progress bar's percentage, from the `value` hint. An app moves it by replacing the
     /// notification. The Notification center has no bar, so the history doesn't keep it.
     pub progress: Option<u8>,
+    /// In a grouped bubble, the notifications before this one, newest first. Empty in a
+    /// bubble of one notification.
+    pub earlier: Vec<Earlier>,
+}
+
+/// What a grouped bubble shows of a notification before its newest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Earlier {
+    /// The summary, as plain text.
+    pub summary: String,
+    /// The body as Pango markup, as [`Bubble::body`] has it.
+    pub body: String,
 }
 
 /// An icon, by its icon theme's name or as a file.
@@ -216,17 +233,19 @@ pub struct Header {
 }
 
 /// What draws the bubbles. The server decides when each opens, changes and closes, and the
-/// bubbles tell it what the user does through the [`Events`] each is shown with.
+/// bubbles tell it what the user does through the [`Events`] each is shown with. A bubble's
+/// `id` is its notification's, and a grouped bubble's is that of the notification that made
+/// it, which it keeps while that one is gone and others stay.
 pub trait Bubbles {
-    /// Shows the bubble of notification `id`, newest nearest the corner, if it fits between
-    /// the panel and the output's far edge with those on screen and their header, and returns
-    /// whether it did. The first one always fits.
+    /// Shows the bubble `id`, newest nearest the corner, if it fits between the panel and the
+    /// output's far edge with those on screen and their header, and returns whether it did.
+    /// The first one always fits.
     fn show(&self, id: u32, bubble: &Bubble, events: Events) -> bool;
     /// Shows `header` above the bubbles, and the user's clicks on it go to `events`.
     fn header(&self, header: Header, events: HeaderEvents);
-    /// Shows `bubble` in place of what the bubble of `id` showed, where it is.
+    /// Shows `bubble` in place of what the bubble `id` showed, where it is.
     fn update(&self, id: u32, bubble: &Bubble);
-    /// Takes the bubble of `id` away.
+    /// Takes the bubble `id` away.
     fn close(&self, id: u32);
 }
 
@@ -236,12 +255,14 @@ pub trait Sounds {
     fn play(&self, sound: &Sound);
 }
 
-/// What the user does to one bubble, for the server to act on. Once the notification is
-/// closed, they do nothing.
+/// What the user does to one bubble, for the server to act on. A click, the reply field and
+/// the actions are its newest notification's, and closing it closes all of its notifications.
+/// Once the bubble is gone, they do nothing.
 #[derive(Clone)]
 pub struct Events {
     state: Weak<RefCell<State>>,
-    id: u32,
+    /// The bubble's key in `shown`.
+    key: u32,
 }
 
 impl Events {
@@ -249,7 +270,7 @@ impl Events {
     /// there.
     pub fn hovered(&self, hovered: bool) {
         if let Some(state) = self.state.upgrade() {
-            hover(&state, self.id, hovered);
+            hover(&state, self.key, hovered);
         }
     }
 
@@ -257,30 +278,39 @@ impl Events {
     /// for the app to bring its window forward with, or else Caminito brings the app forward
     /// (CMN-266).
     pub fn click(&self, token: Option<String>) {
-        if let Some(state) = self.state.upgrade() {
-            click(&state, self.id, token);
+        if let Some((state, newest)) = self.newest() {
+            click(&state, newest, token);
         }
     }
 
     /// The user sent `text` from the bubble's reply field.
     pub fn reply(&self, text: &str) {
-        if let Some(state) = self.state.upgrade() {
-            reply(&state, self.id, text);
+        if let Some((state, newest)) = self.newest() {
+            reply(&state, newest, text);
         }
     }
 
     /// The user used the action `key`, with an xdg-activation token for the app.
     pub fn invoke(&self, key: &str, token: Option<String>) {
-        if let Some(state) = self.state.upgrade() {
-            invoke(&state, self.id, key, token);
+        if let Some((state, newest)) = self.newest() {
+            invoke(&state, newest, key, token);
         }
     }
 
     /// The user closed the bubble.
     pub fn dismiss(&self) {
         if let Some(state) = self.state.upgrade() {
-            close(&state, self.id, Reason::Dismissed);
+            close_bubble(&state, self.key, Reason::Dismissed);
         }
+    }
+
+    /// The bubble's newest notification, while the bubble is there.
+    fn newest(&self) -> Option<(Rc<RefCell<State>>, u32)> {
+        let state = self.state.upgrade()?;
+        let guard = state.borrow();
+        let newest = *guard.shown[guard.bubble(self.key)?].ids.last()?;
+        drop(guard);
+        Some((state, newest))
     }
 }
 
@@ -295,7 +325,7 @@ impl HeaderEvents {
     /// private API's `Dismiss` takes them out. Those that got no bubble stay.
     pub fn clear_all(&self) {
         if let Some(state) = self.state.upgrade() {
-            let shown = state.borrow().shown.clone();
+            let shown = state.borrow().shown_ids();
             close_all(&state, &shown, Reason::Dismissed);
         }
     }
@@ -385,9 +415,9 @@ struct State {
     expiry: Option<glib::JoinHandle<()>>,
     last_id: u32,
     /// The notifications that have a bubble.
-    notifications: HashMap<u32, Entry>,
+    notifications: HashMap<u32, Notification>,
     /// The bubbles on screen, oldest first.
-    shown: Vec<u32>,
+    shown: Vec<Shown>,
     /// The notifications that got no bubble since the first on screen opened, and whether
     /// each is critical, which the header counts.
     more: Vec<(u32, bool)>,
@@ -396,17 +426,38 @@ struct State {
     /// While the Notification center is open, what ends the watch on the client that said
     /// so, which closes it if the client leaves the bus. gio doesn't export the watch's type.
     center: Option<Box<dyn FnOnce()>>,
+    /// The Notifying apps with grouping off, for the Notification center.
+    ungrouped: ungrouped::Ungrouped,
     /// What the timers call back, which the state can't hold of itself.
     this: Weak<RefCell<State>>,
 }
 
-struct Entry {
-    notification: Notification,
+/// A bubble on screen: one notification's, or a grouped bubble of one app's.
+struct Shown {
+    /// What [`Bubbles`] knows it by.
+    key: u32,
+    /// Its notifications, oldest first, which are never none.
+    ids: Vec<u32>,
+    /// The app of its notifications, and whether they're critical.
+    app: String,
+    critical: bool,
+    /// Whether it's a grouped bubble, which its app's next notifications join.
+    grouped: bool,
     /// What's left of its timeout, while its timer doesn't run.
     remaining: Option<Duration>,
     /// Its timer, while it runs, and when it ends.
     timer: Option<(glib::JoinHandle<()>, Instant)>,
     hovered: bool,
+}
+
+/// Where a notification's bubble goes.
+enum Place {
+    /// Into the grouped bubble at this index of `shown`.
+    Join(usize),
+    /// Into a grouped bubble that takes the place of these bubbles of its app.
+    Merge(Vec<usize>),
+    /// Into a bubble of its own.
+    Alone,
 }
 
 impl Drop for Server {
@@ -424,8 +475,9 @@ impl Drop for Server {
         if let Some(unwatch) = state.center.take() {
             unwatch();
         }
-        for entry in state.notifications.values_mut() {
-            entry.stop_timer();
+        ungrouped::unfollow(&mut state);
+        for shown in &mut state.shown {
+            shown.stop_timer();
         }
     }
 }
@@ -462,6 +514,7 @@ impl Server {
                 more: Vec::new(),
                 header: None,
                 center: None,
+                ungrouped: ungrouped::Ungrouped::default(),
                 this: this.clone(),
             })
         });
@@ -481,6 +534,7 @@ impl Server {
             .build()
             .map_err(Error::Export)?;
         state.borrow_mut().schedule_expiry();
+        ungrouped::follow(&state);
 
         let owner = gio::bus_own_name_on_connection(
             connection,
@@ -574,24 +628,16 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
 
     // A bubble on screen is replaced whatever the Delivery is now.
     if live {
-        let bubble = guard.shown_bubble(&notification);
-        let entry = guard
-            .notifications
-            .get_mut(&id)
-            .expect("the server has the notification it replaces");
-        entry.notification = notification;
-        // A replacement starts its time again.
-        entry.stop_timer();
-        entry.remaining = timeout;
-        let shown = guard.shown.contains(&id);
-        if shown {
-            guard.start_timer(id);
-        }
+        guard.notifications.insert(id, notification);
+        let Some(index) = guard.shown.iter().position(|shown| shown.ids.contains(&id)) else {
+            return id;
+        };
+        // A replacement starts its bubble's time again.
+        guard.restart_timer(index, timeout);
+        let (key, bubble) = (guard.shown[index].key, guard.render(index));
         let bubbles = guard.bubbles.clone();
         drop(guard);
-        if shown {
-            bubbles.update(id, &bubble);
-        }
+        bubbles.update(key, &bubble);
         return id;
     }
 
@@ -606,22 +652,23 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     let critical = notification.critical;
     // A replacement of a counted one is counted again only if it doesn't fit either.
     guard.more.retain(|&(more, _)| more != id);
-    guard.notifications.insert(
-        id,
-        Entry {
-            notification,
-            remaining: timeout,
-            timer: None,
-            hovered: false,
-        },
-    );
+    guard.notifications.insert(id, notification);
     let sounds = guard.sounds.clone();
     let center = guard.center.is_some();
+    let place = guard.place_of(id);
     drop(guard);
     if center {
         without_bubble(state, id, false);
-    } else if !show_making_room(state, id, critical) {
-        without_bubble(state, id, true);
+    } else {
+        match place {
+            Place::Alone => {
+                if !show_making_room(state, id, critical) {
+                    without_bubble(state, id, true);
+                }
+            }
+            Place::Join(index) => join(state, id, index),
+            Place::Merge(indices) => merge(state, id, indices),
+        }
     }
     sync_header(state);
     if let Some(sound) = sound {
@@ -630,26 +677,102 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     id
 }
 
-/// Opens the bubble of `id`, if it fits, starts its time, and returns whether it opened.
+/// Opens the bubble of `id` alone, if it fits, starts its time, and returns whether it
+/// opened.
 fn show(state: &Rc<RefCell<State>>, id: u32) -> bool {
     let guard = state.borrow();
-    let Some(entry) = guard.notifications.get(&id) else {
+    let Some(notification) = guard.notifications.get(&id) else {
         return false;
     };
-    let bubble = guard.shown_bubble(&entry.notification);
+    let shown = Shown::new(
+        id,
+        vec![id],
+        notification.app.clone(),
+        notification.critical,
+        false,
+    );
+    let timeout = notification.timeout;
+    drop(guard);
+    open(state, shown, timeout)
+}
+
+/// Opens the bubble `shown`, if it fits, and starts its time from `timeout`.
+fn open(state: &Rc<RefCell<State>>, shown: Shown, timeout: Option<Duration>) -> bool {
+    let mut guard = state.borrow_mut();
+    let key = shown.key;
+    guard.shown.push(shown);
+    let index = guard.shown.len() - 1;
+    let bubble = guard.render(index);
     let bubbles = guard.bubbles.clone();
     drop(guard);
     let events = Events {
         state: Rc::downgrade(state),
-        id,
+        key,
     };
-    if !bubbles.show(id, &bubble, events) {
-        return false;
-    }
+    let opened = bubbles.show(key, &bubble, events);
     let mut guard = state.borrow_mut();
-    guard.shown.push(id);
-    guard.start_timer(id);
-    true
+    if opened {
+        guard.restart_timer(index, timeout);
+    } else {
+        guard.shown.pop();
+    }
+    opened
+}
+
+/// Puts notification `id` into the grouped bubble at `index` of `shown`, and starts the
+/// bubble's time again.
+fn join(state: &Rc<RefCell<State>>, id: u32, index: usize) {
+    let mut guard = state.borrow_mut();
+    let timeout = guard
+        .notifications
+        .get(&id)
+        .and_then(|notification| notification.timeout);
+    guard.shown[index].ids.push(id);
+    guard.restart_timer(index, timeout);
+    let (key, bubble) = (guard.shown[index].key, guard.render(index));
+    let bubbles = guard.bubbles.clone();
+    drop(guard);
+    bubbles.update(key, &bubble);
+}
+
+/// Merges the bubbles at `indices` of `shown` and notification `id` into one grouped bubble
+/// in their place. If it doesn't fit, their notifications are left to the history, which the
+/// header counts.
+fn merge(state: &Rc<RefCell<State>>, id: u32, indices: Vec<usize>) {
+    let mut guard = state.borrow_mut();
+    let Some(notification) = guard.notifications.get(&id) else {
+        return;
+    };
+    let (app, critical, timeout) = (
+        notification.app.clone(),
+        notification.critical,
+        notification.timeout,
+    );
+    let mut ids = Vec::new();
+    let mut merged = Vec::new();
+    let mut hovered = false;
+    // From the newest, so that each index is still right.
+    for index in indices.into_iter().rev() {
+        let mut shown = guard.shown.remove(index);
+        shown.stop_timer();
+        merged.push(shown.key);
+        hovered |= shown.hovered;
+        ids.splice(0..0, shown.ids);
+    }
+    ids.push(id);
+    let mut grouped = Shown::new(id, ids.clone(), app, critical, true);
+    // The pointer on a bubble merged is on the grouped bubble in its place.
+    grouped.hovered = hovered;
+    let bubbles = guard.bubbles.clone();
+    drop(guard);
+    for key in merged {
+        bubbles.close(key);
+    }
+    if !open(state, grouped, timeout) {
+        for id in ids {
+            without_bubble(state, id, true);
+        }
+    }
 }
 
 /// Opens the bubble of `id` as [`show`] does. One that doesn't fit, if it's critical, takes
@@ -664,35 +787,38 @@ fn show_making_room(state: &Rc<RefCell<State>>, id: u32, critical: bool) -> bool
             return false;
         }
         let guard = state.borrow();
-        let oldest = guard.shown.iter().copied().find(|shown| {
-            guard
-                .notifications
-                .get(shown)
-                .is_some_and(|entry| !entry.notification.critical)
-        });
+        let oldest = guard
+            .shown
+            .iter()
+            .find(|shown| !shown.critical)
+            .map(|shown| shown.key);
         let Some(oldest) = oldest else {
             return false;
         };
         drop(guard);
-        put_away(state, &[oldest]);
-        without_bubble(state, oldest, true);
+        for id in put_away(state, &[oldest]) {
+            without_bubble(state, id, true);
+        }
     }
 }
 
-/// Takes the bubbles of `ids` away without closing their notifications.
-fn put_away(state: &Rc<RefCell<State>>, ids: &[u32]) {
+/// Takes the bubbles `keys` away without closing their notifications, and returns those.
+fn put_away(state: &Rc<RefCell<State>>, keys: &[u32]) -> Vec<u32> {
     let mut guard = state.borrow_mut();
-    for id in ids {
-        if let Some(entry) = guard.notifications.get_mut(id) {
-            entry.stop_timer();
+    let mut ids = Vec::new();
+    for key in keys {
+        if let Some(index) = guard.bubble(*key) {
+            let mut shown = guard.shown.remove(index);
+            shown.stop_timer();
+            ids.extend(shown.ids);
         }
-        guard.shown.retain(|shown| shown != id);
     }
     let bubbles = guard.bubbles.clone();
     drop(guard);
-    for &id in ids {
-        bubbles.close(id);
+    for &key in keys {
+        bubbles.close(key);
     }
+    ids
 }
 
 /// Leaves the notification `id`, whose bubble didn't open or was put away, to the history,
@@ -700,15 +826,15 @@ fn put_away(state: &Rc<RefCell<State>>, ids: &[u32]) {
 /// expired.
 fn without_bubble(state: &Rc<RefCell<State>>, id: u32, counted: bool) {
     let mut guard = state.borrow_mut();
-    let Some(entry) = guard.notifications.remove(&id) else {
+    let Some(notification) = guard.notifications.remove(&id) else {
         return;
     };
-    if entry.notification.transient {
-        guard.notifications.insert(id, entry);
+    if notification.transient {
+        guard.notifications.insert(id, notification);
         drop(guard);
         close(state, id, Reason::Expired);
     } else if counted {
-        guard.more.push((id, entry.notification.critical));
+        guard.more.push((id, notification.critical));
     }
 }
 
@@ -750,10 +876,9 @@ fn set_center_open(state: &Rc<RefCell<State>>, open: bool, sender: Option<&str>)
     );
     guard.center = Some(Box::new(move || gio::bus_unwatch_name(watch)));
     guard.more.clear();
-    let shown = guard.shown.clone();
+    let keys: Vec<u32> = guard.shown.iter().map(|shown| shown.key).collect();
     drop(guard);
-    put_away(state, &shown);
-    for id in shown {
+    for id in put_away(state, &keys) {
         without_bubble(state, id, false);
     }
     sync_header(state);
@@ -783,9 +908,23 @@ fn close(state: &Rc<RefCell<State>>, id: u32, reason: Reason) {
     close_all(state, &[id], reason);
 }
 
-/// Closes the notifications `ids` that the server has, for `reason`: their bubbles go, and
-/// their apps hear why. A bubble that times out leaves its notification in the history, and
-/// any other way of closing takes it out too. The header's count empties with the last bubble.
+/// Closes all the notifications of the bubble `key` for `reason`, if it's there.
+fn close_bubble(state: &Rc<RefCell<State>>, key: u32, reason: Reason) {
+    let ids = {
+        let guard = state.borrow();
+        guard
+            .bubble(key)
+            .map(|index| guard.shown[index].ids.clone())
+    };
+    if let Some(ids) = ids {
+        close_all(state, &ids, reason);
+    }
+}
+
+/// Closes the notifications `ids` that the server has, for `reason`: they leave their bubbles,
+/// a bubble left with none goes, and their apps hear why. A bubble that times out leaves its
+/// notifications in the history, and any other way of closing takes them out too. The
+/// header's count empties with the last bubble.
 fn close_all(state: &Rc<RefCell<State>>, ids: &[u32], reason: Reason) {
     let mut guard = state.borrow_mut();
     let in_history = if matches!(reason, Reason::Expired) {
@@ -795,31 +934,43 @@ fn close_all(state: &Rc<RefCell<State>>, ids: &[u32], reason: Reason) {
     };
     let mut gone = Vec::new();
     for &id in ids {
-        let live = guard.notifications.remove(&id);
-        if live.is_some() || in_history.contains(&id) {
+        let live = guard.notifications.remove(&id).is_some();
+        if live || in_history.contains(&id) {
             gone.push(id);
         }
-        if let Some(mut entry) = live {
-            entry.stop_timer();
-        }
     }
-    let mut was_shown = Vec::new();
-    for &id in &gone {
-        guard.more.retain(|&(more, _)| more != id);
-        if guard.shown.contains(&id) {
-            guard.shown.retain(|shown| *shown != id);
-            was_shown.push(id);
+    guard.more.retain(|&(more, _)| !gone.contains(&more));
+    let mut closed = Vec::new();
+    let mut changed = Vec::new();
+    guard.shown.retain_mut(|shown| {
+        let before = shown.ids.len();
+        shown.ids.retain(|id| !gone.contains(id));
+        if shown.ids.is_empty() {
+            shown.stop_timer();
+            closed.push(shown.key);
+            return false;
         }
-    }
+        if shown.ids.len() != before {
+            changed.push(shown.key);
+        }
+        true
+    });
     if guard.shown.is_empty() {
         guard.more.clear();
     }
+    let updates: Vec<(u32, Bubble)> = changed
+        .into_iter()
+        .filter_map(|key| Some((key, guard.render(guard.bubble(key)?))))
+        .collect();
     let bubbles = guard.bubbles.clone();
     let connection = guard.connection.clone();
     drop(guard);
 
-    for id in was_shown {
-        bubbles.close(id);
+    for key in closed {
+        bubbles.close(key);
+    }
+    for (key, bubble) in updates {
+        bubbles.update(key, &bubble);
     }
     sync_header(state);
     for id in gone {
@@ -846,10 +997,7 @@ fn invoke(state: &Rc<RefCell<State>>, id: u32, key: &str, token: Option<String>)
 fn click(state: &Rc<RefCell<State>>, id: u32, token: Option<String>) {
     let guard = state.borrow();
     let clicked = match guard.notifications.get(&id) {
-        Some(entry) => Some((
-            entry.notification.has_default,
-            entry.notification.app.clone(),
-        )),
+        Some(notification) => Some((notification.has_default, notification.app.clone())),
         None => guard
             .history
             .get(id)
@@ -900,7 +1048,7 @@ fn act(state: &Rc<RefCell<State>>, id: u32, tell: impl FnOnce(&gio::DBusConnecti
     let resident = guard
         .notifications
         .get(&id)
-        .map(|entry| entry.notification.resident)
+        .map(|notification| notification.resident)
         .or_else(|| guard.history.get(id).map(|entry| entry.resident));
     let Some(resident) = resident else {
         return;
@@ -913,23 +1061,24 @@ fn act(state: &Rc<RefCell<State>>, id: u32, tell: impl FnOnce(&gio::DBusConnecti
     }
 }
 
-/// Pauses the bubble's time while the pointer is on it, and goes on with what's left once
-/// it leaves.
-fn hover(state: &Rc<RefCell<State>>, id: u32, hovered: bool) {
+/// Pauses the time of the bubble `key` while the pointer is on it, and goes on with what's
+/// left once it leaves.
+fn hover(state: &Rc<RefCell<State>>, key: u32, hovered: bool) {
     let mut guard = state.borrow_mut();
-    let Some(entry) = guard.notifications.get_mut(&id) else {
+    let Some(index) = guard.bubble(key) else {
         return;
     };
-    if entry.hovered == hovered {
+    let shown = &mut guard.shown[index];
+    if shown.hovered == hovered {
         return;
     }
-    entry.hovered = hovered;
+    shown.hovered = hovered;
     if hovered {
-        if let Some(end) = entry.stop_timer() {
-            entry.remaining = Some(end.saturating_duration_since(Instant::now()));
+        if let Some(end) = shown.stop_timer() {
+            shown.remaining = Some(end.saturating_duration_since(Instant::now()));
         }
     } else {
-        guard.start_timer(id);
+        guard.start_timer(index);
     }
 }
 
@@ -951,7 +1100,20 @@ fn emit_on(
     }
 }
 
-impl Entry {
+impl Shown {
+    fn new(key: u32, ids: Vec<u32>, app: String, critical: bool, grouped: bool) -> Shown {
+        Shown {
+            key,
+            ids,
+            app,
+            critical,
+            grouped,
+            remaining: None,
+            timer: None,
+            hovered: false,
+        }
+    }
+
     /// Stops its timer, if it runs, and returns when it would have ended.
     fn stop_timer(&mut self) -> Option<Instant> {
         let (timer, end) = self.timer.take()?;
@@ -961,6 +1123,68 @@ impl Entry {
 }
 
 impl State {
+    /// The index in `shown` of the bubble `key`.
+    fn bubble(&self, key: u32) -> Option<usize> {
+        self.shown.iter().position(|shown| shown.key == key)
+    }
+
+    /// The notifications of the bubbles on screen.
+    fn shown_ids(&self) -> Vec<u32> {
+        self.shown
+            .iter()
+            .flat_map(|shown| shown.ids.iter().copied())
+            .collect()
+    }
+
+    /// Where the bubble of notification `id` goes. With its app's grouping on, it joins the
+    /// app's grouped bubble of its urgency, or makes one of the app's bubbles of its urgency
+    /// once there are two; otherwise it has one of its own.
+    fn place_of(&self, id: u32) -> Place {
+        let Some(notification) = self.notifications.get(&id) else {
+            return Place::Alone;
+        };
+        if !self.settings.effective(&notification.app).group {
+            return Place::Alone;
+        }
+        let same = |shown: &Shown| {
+            shown.app == notification.app && shown.critical == notification.critical
+        };
+        if let Some(index) = self
+            .shown
+            .iter()
+            .position(|shown| shown.grouped && same(shown))
+        {
+            return Place::Join(index);
+        }
+        let same_bubbles: Vec<usize> = (0..self.shown.len())
+            .filter(|&index| same(&self.shown[index]))
+            .collect();
+        if same_bubbles.len() >= 2 {
+            Place::Merge(same_bubbles)
+        } else {
+            Place::Alone
+        }
+    }
+
+    /// What the bubble at `index` of `shown` shows: its newest notification, and in a grouped
+    /// bubble the others before it.
+    fn render(&self, index: usize) -> Bubble {
+        let shown = &self.shown[index];
+        let mut ids = shown.ids.iter().rev().map(|id| &self.notifications[id]);
+        let newest = ids.next().expect("a bubble has a notification");
+        let mut bubble = self.shown_bubble(newest);
+        bubble.earlier = ids
+            .map(|notification| {
+                let earlier = self.shown_bubble(notification);
+                Earlier {
+                    summary: earlier.summary,
+                    body: earlier.body,
+                }
+            })
+            .collect();
+        bubble
+    }
+
     /// What the bubble of `notification` shows: without its summary, body and image while
     /// its app's Previews are off, and without its app's icon while that's off.
     fn shown_bubble(&self, notification: &Notification) -> Bubble {
@@ -1015,6 +1239,7 @@ impl State {
                 );
             }
             self.schedule_expiry();
+            self.queue_ungrouped();
         }
         result
     }
@@ -1055,6 +1280,7 @@ impl State {
             self.last_id = self.last_id.wrapping_add(1);
             if self.last_id != 0
                 && !self.notifications.contains_key(&self.last_id)
+                && self.bubble(self.last_id).is_none()
                 && self.history.get(self.last_id).is_none()
             {
                 return self.last_id;
@@ -1062,28 +1288,35 @@ impl State {
         }
     }
 
-    /// Runs what's left of the timeout of `id`, unless the pointer is on its bubble or it
-    /// has none.
-    fn start_timer(&mut self, id: u32) {
+    /// Starts the time of the bubble at `index` of `shown` again, from `timeout`.
+    fn restart_timer(&mut self, index: usize, timeout: Option<Duration>) {
+        let shown = &mut self.shown[index];
+        shown.stop_timer();
+        shown.remaining = timeout;
+        self.start_timer(index);
+    }
+
+    /// Runs what's left of the timeout of the bubble at `index` of `shown`, unless the pointer
+    /// is on it or it has none.
+    fn start_timer(&mut self, index: usize) {
         let this = self.this.clone();
-        let Some(entry) = self.notifications.get_mut(&id) else {
-            return;
-        };
-        let Some(remaining) = entry
+        let shown = &mut self.shown[index];
+        let Some(remaining) = shown
             .remaining
-            .filter(|_| !entry.hovered && entry.timer.is_none())
+            .filter(|_| !shown.hovered && shown.timer.is_none())
         else {
             return;
         };
+        let key = shown.key;
         // On the thread's default context, as the bus's calls are, which a test runs a
         // context of its own for.
         let timer = glib::MainContext::ref_thread_default().spawn_local(async move {
             glib::timeout_future(remaining).await;
             if let Some(state) = this.upgrade() {
-                close(&state, id, Reason::Expired);
+                close_bubble(&state, key, Reason::Expired);
             }
         });
-        entry.timer = Some((timer, Instant::now() + remaining));
-        entry.remaining = None;
+        shown.timer = Some((timer, Instant::now() + remaining));
+        shown.remaining = None;
     }
 }

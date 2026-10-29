@@ -1,6 +1,7 @@
 /*
  * The Notifications applet's state (CMN-260): entries read from a List reply built by hand,
- * as the daemon's private API gives it, an entry's age, and the tooltip.
+ * as the daemon's private API gives it, an entry's age, the tooltip, and the history grouped
+ * by app (CMN-265).
  */
 
 #include "nt-state.h"
@@ -153,6 +154,70 @@ test_the_icon_is_a_bell (void)
   g_assert_cmpstr (names[n - 1], ==, "caminito-bell-symbolic");
 }
 
+/* An entry of app's, built by hand, with nothing else. */
+static NtEntry *
+app_entry (guint32 id, const char *app)
+{
+  NtEntry *entry = g_new0 (NtEntry, 1);
+
+  entry->id = id;
+  entry->app = g_strdup (app);
+  entry->actions = g_ptr_array_new ();
+  return entry;
+}
+
+/* The ids of a group's entries, as "9 7". */
+static char *
+ids_of (const NtGroup *group)
+{
+  GString *ids = g_string_new (NULL);
+
+  for (guint i = 0; i < group->entries->len; i++)
+    {
+      const NtEntry *entry = g_ptr_array_index (group->entries, i);
+
+      g_string_append_printf (ids, i == 0 ? "%u" : " %u", entry->id);
+    }
+  return g_string_free (ids, FALSE);
+}
+
+static void
+test_the_history_is_grouped_by_app_newest_group_first_but_an_ungrouped_apps_entries_stand_alone (void)
+{
+  g_autoptr (GPtrArray) entries = g_ptr_array_new_with_free_func ((GDestroyNotify) nt_entry_free);
+  const char *const ungrouped[] = { "chat", NULL };
+  g_autoptr (GPtrArray) groups = NULL;
+  const struct
+  {
+    const char *app;
+    gboolean    grouped;
+    const char *ids;
+  } expected[] = {
+    { "mail", TRUE, "9 7" },
+    { "chat", FALSE, "8" },
+    { "chat", FALSE, "6" },
+    { "calendar", TRUE, "5" },
+  };
+
+  g_ptr_array_add (entries, app_entry (9, "mail"));
+  g_ptr_array_add (entries, app_entry (8, "chat"));
+  g_ptr_array_add (entries, app_entry (7, "mail"));
+  g_ptr_array_add (entries, app_entry (6, "chat"));
+  g_ptr_array_add (entries, app_entry (5, "calendar"));
+  groups = nt_state_groups (entries, ungrouped);
+
+  g_assert_cmpuint (groups->len, ==, G_N_ELEMENTS (expected));
+  for (guint i = 0; i < groups->len; i++)
+    {
+      const NtGroup *group = g_ptr_array_index (groups, i);
+      g_autofree char *ids = ids_of (group);
+
+      g_assert_cmpstr (group->app, ==, expected[i].app);
+      g_assert_cmpint (group->grouped, ==, expected[i].grouped);
+      g_assert_cmpstr (ids, ==, expected[i].ids);
+    }
+}
+
 int
 main (int argc, char **argv)
 {
@@ -163,5 +228,7 @@ main (int argc, char **argv)
   g_test_add_func ("/state/the-age-reads-as-a-person-would-say-it", test_the_age_reads_as_a_person_would_say_it);
   g_test_add_func ("/state/the-tooltip-counts-the-notifications", test_the_tooltip_counts_the_notifications);
   g_test_add_func ("/state/the-icon-is-a-bell", test_the_icon_is_a_bell);
+  g_test_add_func ("/state/the-history-is-grouped-by-app-newest-group-first-but-an-ungrouped-apps-entries-stand-alone",
+                   test_the_history_is_grouped_by_app_newest_group_first_but_an_ungrouped_apps_entries_stand_alone);
   return g_test_run ();
 }

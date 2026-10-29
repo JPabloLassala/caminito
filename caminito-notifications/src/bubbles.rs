@@ -10,14 +10,17 @@
 //! output at a time in v1 (the spec's "Not in v1").
 //!
 //! The server decides what's on screen; this draws it, from the GTK theme, and tells the server
-//! what the user does through each bubble's [`Events`].
+//! what the user does through each bubble's [`Events`]. A grouped bubble (CMN-265) is the
+//! prototype's "Digest": its newest notification in full with the count in its header, the two
+//! before it on a line each, and "+*N* more" or "Show all *N*", which opens them all inside the
+//! bubble, scrolling past half the output's height.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use caminito_notifications::server::{
-    Bubble, Bubbles, Events, Header, HeaderEvents, Icon, Image, Pixels,
+    Bubble, Bubbles, Earlier, Events, Header, HeaderEvents, Icon, Image, Pixels,
 };
 use caminito_notifications::settings::Corner;
 use gtk::prelude::*;
@@ -32,6 +35,8 @@ const GAP: i32 = 10;
 const WIDTH: i32 = 360;
 const APP_ICON_SIZE: i32 = 16;
 const IMAGE_SIZE: i32 = 48;
+/// The notifications before the newest that a closed grouped bubble has a line of.
+const DIGEST_LINES: usize = 2;
 
 const CSS: &str = "
 window.caminito-notifications { background: none; }
@@ -47,6 +52,12 @@ window.caminito-notifications { background: none; }
 .caminito-notification progressbar trough, .caminito-notification progressbar progress {
   min-height: 6px;
 }
+.caminito-notification .count {
+  font-size: smaller; font-weight: bold; padding: 0 7px; margin-right: 22px;
+  border-radius: 9px; background: alpha(currentColor, 0.16);
+}
+.caminito-notification .digest { border-top: 1px solid alpha(currentColor, 0.1); padding-top: 6px; }
+.caminito-notification .more { font-size: smaller; padding: 2px 9px; min-height: 0; }
 ";
 
 /// The bubbles, in their layer surface.
@@ -77,6 +88,8 @@ struct Shown {
     events: Events,
     /// Whether it has a reply field, which needs the keyboard.
     reply: bool,
+    /// Whether a grouped bubble shows all its notifications, which an update keeps.
+    open: Rc<Cell<bool>>,
 }
 
 impl GtkBubbles {
@@ -310,7 +323,8 @@ fn reshape(window: &gtk::Window, column: &gtk::Box, layer: bool) {
 impl Bubbles for GtkBubbles {
     fn show(&self, id: u32, bubble: &Bubble, events: Events) -> bool {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        fill(&root, bubble, &events);
+        let open = Rc::new(Cell::new(false));
+        fill(&root, bubble, &events, &open);
         self.follow_corner();
         let first = self.stack.first_child().is_none();
         if self.corner.get().is_top() {
@@ -333,6 +347,7 @@ impl Bubbles for GtkBubbles {
                 root,
                 events,
                 reply,
+                open,
             },
         );
         self.present();
@@ -365,7 +380,7 @@ impl Bubbles for GtkBubbles {
             while let Some(child) = shown.root.first_child() {
                 shown.root.remove(&child);
             }
-            fill(&shown.root, bubble, &shown.events);
+            fill(&shown.root, bubble, &shown.events, &shown.open);
             shown.reply = bubble.reply.is_some();
         }
         self.present();
@@ -382,8 +397,9 @@ impl Bubbles for GtkBubbles {
 
 /// Puts what `bubble` shows into `root`: the app's icon and name on top, the summary in bold
 /// and the body, the image on the right, the progress bar, the actions and the reply field
-/// below, and a close button on hover.
-fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events) {
+/// below, and a close button on hover. A grouped bubble has its count in the header and the
+/// notifications before the newest below, all of them while `open`.
+fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events, open: &Rc<Cell<bool>>) {
     // The timeout waits while the pointer is on the bubble, or a reply is being typed in it.
     let pointer = Rc::new(Cell::new(false));
     let typing = Rc::new(Cell::new(false));
@@ -411,6 +427,11 @@ fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events) {
     app_name.set_hexpand(true);
     app_name.set_ellipsize(pango::EllipsizeMode::End);
     header.append(&app_name);
+    if !bubble.earlier.is_empty() {
+        let count = gtk::Label::new(Some(&(bubble.earlier.len() + 1).to_string()));
+        count.add_css_class("count");
+        header.append(&count);
+    }
     frame.append(&header);
 
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
@@ -459,6 +480,9 @@ fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events) {
 
     if let Some(placeholder) = &bubble.reply {
         frame.append(&reply_field(placeholder, events, &typing, hold.clone()));
+    }
+    if !bubble.earlier.is_empty() {
+        frame.append(&earlier_part(&bubble.earlier, open));
     }
 
     let close = gtk::Button::from_icon_name("window-close-symbolic");
@@ -572,6 +596,103 @@ fn reply_field(
     field.append(&entry);
     field.append(&send);
     field
+}
+
+/// A grouped bubble's notifications before its newest: a line each of the latest
+/// [`DIGEST_LINES`] and a button that opens them all, or all of them and a button that closes
+/// them again.
+fn earlier_part(earlier: &[Earlier], open: &Rc<Cell<bool>>) -> gtk::Box {
+    let part = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    part.add_css_class("digest");
+
+    let digest = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    for notification in earlier.iter().take(DIGEST_LINES) {
+        let line = gtk::Label::new(None);
+        let summary = glib::markup_escape_text(&notification.summary);
+        if notification.body.is_empty() {
+            line.set_markup(&summary);
+        } else {
+            line.set_markup(&format!("{summary} · {}", one_line(&notification.body)));
+        }
+        line.set_xalign(0.0);
+        line.set_ellipsize(pango::EllipsizeMode::End);
+        line.set_single_line_mode(true);
+        line.add_css_class("dim-label");
+        digest.append(&line);
+    }
+
+    let all = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    for notification in earlier {
+        let summary = text_label();
+        summary.set_markup(&format!(
+            "<b>{}</b>",
+            glib::markup_escape_text(&notification.summary)
+        ));
+        all.append(&summary);
+        if !notification.body.is_empty() {
+            let body = text_label();
+            body.set_markup(&notification.body);
+            body.add_css_class("dim-label");
+            all.append(&body);
+        }
+    }
+    let scrolled = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .propagate_natural_height(true)
+        .child(&all)
+        .build();
+    let all = all.clone();
+
+    let count = earlier.len() + 1;
+    let more = if earlier.len() > DIGEST_LINES {
+        format!("+{} more", earlier.len() - DIGEST_LINES)
+    } else {
+        format!("Show all {count}")
+    };
+    let toggle = gtk::Button::new();
+    toggle.add_css_class("more");
+    toggle.set_halign(gtk::Align::Start);
+    part.append(&digest);
+    part.append(&scrolled);
+    part.append(&toggle);
+
+    let show = {
+        let (digest, scrolled, toggle) = (digest.clone(), scrolled.clone(), toggle.clone());
+        move |opened: bool| {
+            digest.set_visible(!opened);
+            scrolled.set_visible(opened);
+            toggle.set_label(if opened { "Show less" } else { &more });
+            if opened {
+                // A scrolled window asks only for its minimum, which is what it needs up to
+                // half the output, so that the bubble grows to fit them until it scrolls.
+                let (_, natural, _, _) = all.measure(gtk::Orientation::Vertical, WIDTH);
+                let height = half_output(&scrolled).map_or(natural, |half| natural.min(half));
+                scrolled.set_max_content_height(height);
+                scrolled.set_min_content_height(height);
+            }
+        }
+    };
+    show(open.get());
+    toggle.connect_clicked({
+        let open = open.clone();
+        move |_| {
+            open.set(!open.get());
+            show(open.get());
+        }
+    });
+    part
+}
+
+/// `body`, markup, on one line: its line breaks as spaces.
+fn one_line(body: &str) -> String {
+    body.replace(['\n', '\r'], " ")
+}
+
+/// Half the height of the output `widget` is on, which an open grouped bubble scrolls past.
+fn half_output(widget: &impl IsA<gtk::Widget>) -> Option<i32> {
+    let surface = widget.native()?.surface()?;
+    let monitor = widget.display().monitor_at_surface(&surface)?;
+    Some(monitor.geometry().height() / 2)
 }
 
 fn text_label() -> gtk::Label {
