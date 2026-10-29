@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -140,6 +140,8 @@ fn start(f: &mut Fixture, command: SessionCommand) -> u32 {
 struct Systemd {
     calls: Calls,
     connection: Connection,
+    /// Whether its `ResetFailedUnit` fails.
+    reset_fails: Arc<AtomicBool>,
 }
 
 impl Drop for Systemd {
@@ -158,6 +160,7 @@ struct Manager {
     unanswered: AtomicU32,
     /// Whether it has the portal's units, as a machine with xdg-desktop-portal installed.
     has_portal: bool,
+    reset_fails: Arc<AtomicBool>,
 }
 
 /// systemd's own errors, by the names it gives them on the bus.
@@ -167,6 +170,7 @@ enum ManagerError {
     #[zbus(error)]
     ZBus(zbus::Error),
     NoSuchUnit(String),
+    AccessDenied(String),
 }
 
 /// Keeps a stand-in's call of `method` with its `argument`, sorted, in `calls`, and
@@ -194,6 +198,9 @@ impl Manager {
             return Err(ManagerError::NoSuchUnit(format!("Unit {name} not loaded.")));
         }
         self.called("ResetFailedUnit", vec![name]);
+        if self.reset_fails.load(Ordering::Relaxed) {
+            return Err(ManagerError::AccessDenied("Access denied".into()));
+        }
         Ok(())
     }
 
@@ -251,11 +258,13 @@ impl Systemd {
     /// `UnsetEnvironment` that it never answers, and the portal's unit if `has_portal`.
     fn with(address: Option<&str>, started: PathBuf, unanswered: u32, has_portal: bool) -> Self {
         let calls = Calls::default();
+        let reset_fails = Arc::<AtomicBool>::default();
         let manager = Manager {
             calls: calls.clone(),
             started,
             unanswered: unanswered.into(),
             has_portal,
+            reset_fails: reset_fails.clone(),
         };
         let builder = match address {
             Some(address) => zbus::blocking::connection::Builder::address(address),
@@ -269,11 +278,19 @@ impl Systemd {
             .unwrap()
             .build()
             .unwrap();
-        Systemd { calls, connection }
+        Systemd {
+            calls,
+            connection,
+            reset_fails,
+        }
     }
 
     fn calls(&self) -> Vec<(&'static str, Vec<String>, bool)> {
         self.calls.lock().unwrap().clone()
+    }
+
+    fn restarted_the_portal(&self) -> bool {
+        self.calls().iter().any(|call| call.0 == "TryRestartUnit")
     }
 }
 
@@ -613,6 +630,24 @@ fn systemd_forgets_the_portal_backends_failures_before_the_portal_is_restarted()
 }
 
 #[test]
+fn a_reset_that_fails_still_restarts_the_portal() {
+    let logs = Logs::capture();
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let systemd = Systemd::new(scripts.path("started"));
+    systemd.reset_fails.store(true, Ordering::Relaxed);
+    let command = scripts.session_command("touch \"$dir/started\"");
+
+    start(&mut f, command);
+    f.dispatch_until(|f| f.state.caminito.session_exit().is_some());
+
+    assert!(systemd.restarted_the_portal(), "{:?}", systemd.calls());
+    assert!(scripts.exists("started"));
+    let logs = logs.text();
+    assert!(logs.contains("can't reset the portal's backends"), "{logs}");
+}
+
+#[test]
 fn the_command_and_the_notification_daemon_start_once_the_restarted_portal_answers() {
     let mut f = fixture();
     let scripts = Scripts::new();
@@ -623,12 +658,7 @@ fn the_command_and_the_notification_daemon_start_once_the_restarted_portal_answe
     let command = scripts.session_command(&format!("touch \"$dir/started\"\n{WAIT}"));
 
     start(&mut f, command);
-    f.dispatch_until(|_| {
-        systemd
-            .calls()
-            .iter()
-            .any(|call| call.0 == "TryRestartUnit")
-    });
+    f.dispatch_until(|_| systemd.restarted_the_portal());
     // Nothing is to happen while the portal from before still has the name: GTK4 would
     // read its font settings from nowhere (CMN-284). A daemon and a command that didn't
     // wait would have written their files well within this, as in the tests above.
@@ -661,12 +691,7 @@ fn the_command_and_the_notification_daemon_wait_until_the_restarted_portal_has_t
     let command = scripts.session_command(&format!("touch \"$dir/started\"\n{WAIT}"));
 
     start(&mut f, command);
-    f.dispatch_until(|_| {
-        systemd
-            .calls()
-            .iter()
-            .any(|call| call.0 == "TryRestartUnit")
-    });
+    f.dispatch_until(|_| systemd.restarted_the_portal());
     // After a logout, the restarted portal can answer before systemd lets its Settings
     // backend start, and has no font then (CMN-287).
     let restarted = Portal::restarted_without_the_font(scripts.path("started"), 2);
@@ -700,12 +725,7 @@ fn a_portal_that_never_has_the_font_holds_the_command_only_for_the_wait() {
     f.state.caminito.set_portal_wait(wait);
     let asked = Instant::now();
     f.start_xwayland();
-    f.dispatch_until(|_| {
-        systemd
-            .calls()
-            .iter()
-            .any(|call| call.0 == "TryRestartUnit")
-    });
+    f.dispatch_until(|_| systemd.restarted_the_portal());
     let _restarted = Portal::restarted_without_the_font(scripts.path("started"), u32::MAX);
     f.dispatch_until(|_| scripts.exists("started"));
 

@@ -77,6 +77,9 @@ pub(crate) enum PortalError {
     Watch(zbus::Error),
     /// The manager failed the restart.
     Restart(zbus::Error),
+    /// The manager wouldn't forget a backend's failures, so its start limit may hold it
+    /// back.
+    Reset(zbus::Error),
     /// The bus answered for the restarted portal, which it couldn't start.
     Unreachable(zbus::Error),
     /// The restarted portal didn't answer within the wait.
@@ -95,6 +98,11 @@ impl fmt::Display for PortalError {
                     "can't restart the portal, which may have no display: {err}"
                 )
             }
+            PortalError::Reset(err) => write!(
+                f,
+                "can't reset the portal's backends, so the portal may miss the Session's font \
+                 settings for a while: {err}"
+            ),
             PortalError::Unreachable(err) => write!(
                 f,
                 "can't reach the restarted portal, so what starts now may miss the Session's \
@@ -178,6 +186,35 @@ async fn set_environment(
 /// that doesn't run is started by the bus when a client first asks for it, and a machine
 /// without xdg-desktop-portal has no unit to restart.
 async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result<(), PortalError> {
+    // A reset that fails holds nothing back: the portal is restarted all the same.
+    let reset = reset_backends(connection).await;
+    replace_portal(connection, wait).await?;
+    reset.map_err(PortalError::Reset)
+}
+
+/// Has the manager forget the failures of the portal's backends, and their start limit
+/// with them (CMN-287).
+async fn reset_backends(connection: &zbus::Connection) -> zbus::Result<()> {
+    for backend in BACKENDS {
+        let reset = connection
+            .call_method(
+                Some(NAME),
+                PATH,
+                Some(INTERFACE),
+                "ResetFailedUnit",
+                &(backend,),
+            )
+            .await;
+        match reset {
+            // A backend that hasn't run since the manager started has no unit loaded.
+            Err(zbus::Error::MethodError(name, ..)) if name == NO_SUCH_UNIT => {}
+            reset => drop(reset?),
+        }
+    }
+    Ok(())
+}
+
+async fn replace_portal(connection: &zbus::Connection, wait: Duration) -> Result<(), PortalError> {
     let watch = async {
         let bus = fdo::DBusProxy::new(connection).await?;
         // Before the restart, so that the old portal's leaving can't be missed.
@@ -192,22 +229,6 @@ async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result
     };
     // The proxy stays with the stream, which needs its match rule kept.
     let (_bus, mut changes, running) = watch.await.map_err(PortalError::Watch)?;
-    for backend in BACKENDS {
-        let reset = connection
-            .call_method(
-                Some(NAME),
-                PATH,
-                Some(INTERFACE),
-                "ResetFailedUnit",
-                &(backend,),
-            )
-            .await;
-        match reset {
-            // A backend that hasn't run since the manager started has no unit loaded.
-            Err(zbus::Error::MethodError(name, ..)) if name == NO_SUCH_UNIT => {}
-            reset => reset.map(drop).map_err(PortalError::Restart)?,
-        }
-    }
     let restarted = connection
         .call_method(
             Some(NAME),
@@ -224,7 +245,8 @@ async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result
     let Some(running) = running else {
         return Ok(());
     };
-    // Whether the restarted portal has answered without the font.
+    // Which warning a wait that runs out gives. Atomic only for the export's future to be
+    // `Send`: both futures below run on the one task.
     let unset = AtomicBool::new(false);
     let answered = async {
         while let Some(change) = changes.next().await {
@@ -259,10 +281,11 @@ async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result
                     let err = zbus::Error::MethodError(name, detail, reply);
                     return Err(PortalError::Unreachable(err));
                 }
-                Err(_) => {
+                Err(zbus::Error::MethodError(..)) => {
                     unset.store(true, Ordering::Relaxed);
                     async_io::Timer::after(READ_AGAIN).await;
                 }
+                Err(err) => return Err(PortalError::Unreachable(err)),
             }
         }
     };
