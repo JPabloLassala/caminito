@@ -71,15 +71,19 @@ const INTERFACE: &str = r#"
       <arg type="as" name="apps"/>
     </signal>
     <!-- Do Not Disturb: whether it's on, when it ends in seconds since the epoch, or 0 while
-         it's on until turned off or it's off, and why it's on: "manual", or "" while it's
-         off. "schedule", "fullscreen" and "screencast" are CMN-264's. -->
+         it's on with no end known or it's off, and why it's on, or "" while it's off. The
+         reason is the first of "manual", the user's, "schedule", its daily schedule, which
+         ends at the schedule's end, "fullscreen", a fullscreen window on the output under
+         the pointer, and "screencast", a screencast running. -->
     <method name="DoNotDisturb">
       <arg type="b" name="on" direction="out"/>
       <arg type="t" name="end" direction="out"/>
       <arg type="s" name="reason" direction="out"/>
     </method>
     <!-- Turns it on for "one-hour", "four-hours", "tomorrow-morning" (08:00 of the next
-         day, which turns at 04:00) or "until-turned-off", or turns it "off". -->
+         day, which turns at 04:00) or "until-turned-off", or turns it "off". Off holds what
+         else has it on off: the schedule until its next start, a fullscreen window or a
+         screencast until it ends. -->
     <method name="SetDoNotDisturb">
       <arg type="s" name="until" direction="in"/>
     </method>

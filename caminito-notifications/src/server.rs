@@ -16,8 +16,9 @@
 //! which outlasts its bubble and the daemon, and `api` serves it to the applets. While Do Not
 //! Disturb is on (CMN-263), a notification gets its entry but no bubble and no sound, unless
 //! it breaks through: its app's own setting says so, or it's critical and the setting for
-//! those does. Nothing is shown when it ends. The time the history ages by and Do Not Disturb
-//! ends at comes from a [`Clock`].
+//! those does. Nothing is shown when it ends. Besides the user, its schedule and Caminito's
+//! fullscreen and screencast properties turn it on (CMN-264), as `do_not_disturb` follows
+//! them. The time the history ages by and Do Not Disturb follows comes from a [`Clock`].
 //!
 //! The name is asked for with `REPLACE`: a daemon that D-Bus activation started while this
 //! one wasn't running, as mate-notification-daemon, gives it back at once if it allows its
@@ -34,20 +35,22 @@ use gio::glib::{self, Variant, VariantDict};
 use gio::prelude::*;
 
 use crate::DOMAIN;
-use crate::do_not_disturb::DoNotDisturb;
+use crate::do_not_disturb::{DoNotDisturb, Effective, Sources};
 use crate::history::{History, HistoryEntry, MAX_AGE};
 use crate::notification::{Arguments, DEFAULT_ACTION, Notification};
 use crate::private_api::{INTERFACE_NAME as PRIVATE_INTERFACE, PATH as PRIVATE_PATH};
 use crate::settings::{Delivery, NO_PREVIEW, Settings};
 
 mod api;
+mod do_not_disturb;
 mod ungrouped;
 
 /// The name the server owns.
 pub const NAME: &str = "org.freedesktop.Notifications";
 const PATH: &str = "/org/freedesktop/Notifications";
 
-/// Caminito's name and interface, and its object, which brings an app forward.
+/// Caminito's name and interface, and its object, which brings an app forward and tells
+/// what Do Not Disturb's triggers follow.
 const CAMINITO: &str = "org.mate.Caminito";
 const CAMINITO_PATH: &str = "/org/mate/Caminito";
 
@@ -342,12 +345,12 @@ impl HeaderEvents {
     }
 }
 
-/// What tells the time the history ages by and Do Not Disturb ends at.
+/// What tells the time the history ages by and Do Not Disturb follows.
 pub trait Clock {
     /// The time now, in seconds since the Unix epoch.
     fn now(&self) -> u64;
 
-    /// The zone "tomorrow morning" is in.
+    /// The zone "tomorrow morning" and the schedule are in.
     fn zone(&self) -> glib::TimeZone {
         glib::TimeZone::local()
     }
@@ -426,10 +429,13 @@ struct State {
     history: History,
     /// Waits for the end of the oldest entry's week.
     expiry: Option<glib::JoinHandle<()>>,
-    do_not_disturb: DoNotDisturb,
+    /// What turns Do Not Disturb on, the user's kept in `do_not_disturb_file`.
+    do_not_disturb: Sources,
     do_not_disturb_file: PathBuf,
-    /// Waits for Do Not Disturb's end.
-    do_not_disturb_end: Option<glib::JoinHandle<()>>,
+    /// Do Not Disturb as the clients last heard it.
+    do_not_disturb_now: Effective,
+    /// What follows the settings and Caminito for it, and its timer.
+    following: do_not_disturb::Following,
     last_id: u32,
     /// The notifications that have a bubble.
     notifications: HashMap<u32, Notification>,
@@ -492,9 +498,7 @@ impl Drop for Server {
         if let Some(unwatch) = state.center.take() {
             unwatch();
         }
-        if let Some(end) = state.do_not_disturb_end.take() {
-            end.abort();
-        }
+        do_not_disturb::unfollow(&mut state);
         ungrouped::unfollow(&mut state);
         for shown in &mut state.shown {
             shown.stop_timer();
@@ -532,9 +536,10 @@ impl Server {
                 last_id: history.max_id(),
                 history,
                 expiry: None,
-                do_not_disturb,
+                do_not_disturb: Sources::new(do_not_disturb),
                 do_not_disturb_file: config.do_not_disturb_file,
-                do_not_disturb_end: None,
+                do_not_disturb_now: Effective::Off,
+                following: do_not_disturb::Following::default(),
                 notifications: HashMap::new(),
                 shown: Vec::new(),
                 more: Vec::new(),
@@ -561,7 +566,7 @@ impl Server {
             .map_err(Error::Export)?;
         state.borrow_mut().schedule_expiry();
         ungrouped::follow(&state);
-        state.borrow_mut().schedule_do_not_disturb_end();
+        do_not_disturb::follow(&state);
 
         let owner = gio::bus_own_name_on_connection(
             connection,
@@ -671,8 +676,8 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     if app.delivery == Delivery::History {
         return id;
     }
-    guard.settle_do_not_disturb();
-    if guard.do_not_disturb.is_on() && !guard.breaks_through(&notification) {
+    guard.refresh_do_not_disturb();
+    if guard.do_not_disturb_now.is_on() && !guard.breaks_through(&notification) {
         return id;
     }
     // A replacement isn't a new notification, so it has no sound.
@@ -1305,63 +1310,11 @@ impl State {
         );
     }
 
-    /// Turns Do Not Disturb off if its end has come, whenever its timer would have run.
-    fn settle_do_not_disturb(&mut self) {
-        if self.do_not_disturb.ended(self.clock.now()) {
-            self.set_do_not_disturb(DoNotDisturb::Off);
-        }
-    }
-
     /// Whether `notification` gets its bubble and its sound while Do Not Disturb is on: its
     /// app's own setting says so, or it's critical and the setting for those does.
     fn breaks_through(&self, notification: &Notification) -> bool {
         self.settings.effective(&notification.app).breaks_through
             || (notification.critical && self.settings.critical_breaks_through())
-    }
-
-    /// Sets Do Not Disturb to `to`. If that's a change, the file is written, the clients hear
-    /// of it, and its end is waited for again.
-    fn set_do_not_disturb(&mut self, to: DoNotDisturb) {
-        if to == self.do_not_disturb {
-            return;
-        }
-        self.do_not_disturb = to;
-        to.save(&self.do_not_disturb_file);
-        emit_on(
-            &self.connection,
-            PRIVATE_PATH,
-            PRIVATE_INTERFACE,
-            "DoNotDisturbChanged",
-            to.to_wire(),
-        );
-        self.schedule_do_not_disturb_end();
-    }
-
-    /// Waits for Do Not Disturb's end, at least a second and at most a day away, and then
-    /// checks the clock again, so that a clock that jumped is followed.
-    fn schedule_do_not_disturb_end(&mut self) {
-        if let Some(end) = self.do_not_disturb_end.take() {
-            end.abort();
-        }
-        let DoNotDisturb::On { end: Some(end) } = self.do_not_disturb else {
-            return;
-        };
-        let wait = end.saturating_sub(self.clock.now()).clamp(1, 24 * 60 * 60);
-        let this = self.this.clone();
-        self.do_not_disturb_end = Some(glib::MainContext::ref_thread_default().spawn_local(
-            async move {
-                glib::timeout_future(Duration::from_secs(wait)).await;
-                if let Some(state) = this.upgrade() {
-                    let mut guard = state.borrow_mut();
-                    // Its own handle, which a change would abort as it runs.
-                    guard.do_not_disturb_end = None;
-                    guard.settle_do_not_disturb();
-                    if guard.do_not_disturb_end.is_none() {
-                        guard.schedule_do_not_disturb_end();
-                    }
-                }
-            },
-        ));
     }
 
     /// The next id, which is never 0: that's `replaces_id`'s "none".

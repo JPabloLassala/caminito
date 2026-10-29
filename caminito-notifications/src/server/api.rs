@@ -5,7 +5,8 @@
 //! `HistoryChanged` tells a client to list again, and `CountsChanged` carries each Notifying
 //! app's new count. `Ungrouped` gives the Notifying apps with grouping off (CMN-265), which
 //! `UngroupedChanged` carries as they change. Do Not Disturb's calls (CMN-263) give its state
-//! and set it, and `DoNotDisturbChanged` carries its new state.
+//! and set the user's, and `DoNotDisturbChanged` carries its new state, whatever changed it
+//! (CMN-264).
 
 use std::cell::RefCell;
 use std::rc::Weak;
@@ -34,10 +35,10 @@ pub(super) fn handle(
         invocation.return_dbus_error("org.freedesktop.DBus.Error.Failed", "the server stopped");
         return;
     };
-    // What a week passed over isn't listed or counted, and a Do Not Disturb that ended is
-    // off, whenever the timers would have run.
+    // What a week passed over isn't listed or counted, and Do Not Disturb is as the clock
+    // has it, whenever the timers would have run.
     state.borrow_mut().prune_history();
-    state.borrow_mut().settle_do_not_disturb();
+    state.borrow_mut().refresh_do_not_disturb();
     let refuse = |message: String| invocation.clone().return_dbus_error(INVALID_ARGS, &message);
     let id = || parameters.child_value(0).get::<u32>().unwrap_or(0);
     let text = |index| parameters.child_value(index).str().unwrap_or("").to_owned();
@@ -129,7 +130,7 @@ pub(super) fn handle(
             invocation.return_value(None);
         }
         "DoNotDisturb" => {
-            let state = state.borrow().do_not_disturb.to_wire();
+            let state = state.borrow().do_not_disturb_now.to_wire();
             invocation.return_value(Some(&state.to_variant()));
         }
         "SetDoNotDisturb" => {
@@ -145,7 +146,7 @@ pub(super) fn handle(
         }
         "ToggleDoNotDisturb" => {
             let mut guard = state.borrow_mut();
-            let to = if guard.do_not_disturb.is_on() {
+            let to = if guard.do_not_disturb_now.is_on() {
                 DoNotDisturb::Off
             } else {
                 DoNotDisturb::On { end: None }
