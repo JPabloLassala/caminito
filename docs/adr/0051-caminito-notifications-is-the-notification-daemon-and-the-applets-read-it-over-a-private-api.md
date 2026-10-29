@@ -25,7 +25,8 @@ ADR 0035 split a feature into a thin C and GTK3 in-process applet and a Rust pro
   - the Notification history: list, dismiss, clear an app's notifications or all of them, invoke an action, reply;
   - Do Not Disturb: its state, when it ends, why it's on, and setting it;
   - each Notifying app's count for the Badge;
-  - opening the settings window, at an app's page.
+  - opening the settings window, at an app's page;
+  - the Notification center: the daemon asks the applet to open it, and the applet says while it's open, as there are no bubbles then (CMN-285).
 
   Each comes with change signals. Its clients are the Notifications applet and the Dock applet. It's unversioned, because all three ship in the `caminito` package.
 - **Settings are GSettings:** `org.mate.Caminito.notifications`, plus the relocatable `org.mate.Caminito.notifications.app`, one path per Notifying app. The C applets can read them, and `dconf` can edit them. The history is a file under `$XDG_STATE_HOME/caminito/`.

@@ -11,7 +11,7 @@ use std::rc::Weak;
 use gio::glib::{self, Variant};
 use gio::prelude::*;
 
-use super::{Reason, State, close, close_all, invoke, reply};
+use super::{Reason, State, close, close_all, invoke, open_center, reply, set_center_open};
 use crate::history::ENTRY_TYPE;
 
 const INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
@@ -102,6 +102,15 @@ pub(super) fn handle(
                 Some(true) => {}
             }
             reply(&state, id, &text(1));
+            invocation.return_value(None);
+        }
+        "OpenCenter" => {
+            open_center(&state);
+            invocation.return_value(None);
+        }
+        "SetCenterOpen" => {
+            let open = parameters.child_value(0).get::<bool>().unwrap_or(false);
+            set_center_open(&state, open, invocation.sender().as_deref());
             invocation.return_value(None);
         }
         _ => invocation.return_dbus_error(

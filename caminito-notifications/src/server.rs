@@ -1,11 +1,12 @@
 //! The Desktop Notifications spec's server (1.3), at `/org/freedesktop/Notifications`, owning
-//! `org.freedesktop.Notifications` (ADR 0051). It decides which bubbles are on screen, at most
-//! [`MAX_SHOWN`] with the rest queued, how long each stays, and which sound plays, and tells
-//! the apps what became of their notifications. The binary draws the bubbles and plays the
-//! sounds, behind [`Bubbles`] and [`Sounds`]. It follows the notification settings (CMN-261)
-//! as it goes, the app's own or else the default (CMN-262): the Delivery and the sound as a
-//! notification arrives, what a bubble shows as it opens, and the default timeout. An app
-//! joins the known apps with its first notification.
+//! `org.freedesktop.Notifications` (ADR 0051). It decides which bubbles are on screen, as many
+//! as fit (CMN-285), how long each stays, and which sound plays, and tells the apps what became
+//! of their notifications. A notification that doesn't fit gets no bubble, now or later, and
+//! counts in the bubbles' [`Header`] until the last of them closes. The binary draws the
+//! bubbles and plays the sounds, behind [`Bubbles`] and [`Sounds`]. It follows the
+//! notification settings (CMN-261) as it goes, the app's own or else the default (CMN-262):
+//! the Delivery and the sound as a notification arrives, what a bubble shows as it opens, and
+//! the default timeout. An app joins the known apps with its first notification.
 //!
 //! Every notification that isn't transient also enters the Notification history (CMN-259),
 //! which outlasts its bubble and the daemon, and `api` serves it to the applets. The time
@@ -17,7 +18,7 @@
 //! from it. Refused, it waits in the bus's queue for the name.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
@@ -36,9 +37,6 @@ mod api;
 /// The name the server owns.
 pub const NAME: &str = "org.freedesktop.Notifications";
 const PATH: &str = "/org/freedesktop/Notifications";
-
-/// How many bubbles are on screen at once. The rest wait, oldest first.
-pub const MAX_SHOWN: usize = 3;
 
 /// What the server tells of itself: its name, its vendor, its version and the spec's.
 const SERVER_NAME: &str = "Caminito";
@@ -197,11 +195,25 @@ pub enum Sound {
     File(PathBuf),
 }
 
+/// What the header above the bubbles shows while there's a bubble: how many notifications got
+/// none since the first of them opened, and whether a critical one is among those.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Header {
+    /// The notifications in "*N* more notifications".
+    pub more: usize,
+    /// Whether one of them is critical.
+    pub critical: bool,
+}
+
 /// What draws the bubbles. The server decides when each opens, changes and closes, and the
 /// bubbles tell it what the user does through the [`Events`] each is shown with.
 pub trait Bubbles {
-    /// Shows the bubble of notification `id`, newest nearest the corner.
-    fn show(&self, id: u32, bubble: &Bubble, events: Events);
+    /// Shows the bubble of notification `id`, newest nearest the corner, if it fits between
+    /// the panel and the output's far edge with those on screen and their header, and returns
+    /// whether it did. The first one always fits.
+    fn show(&self, id: u32, bubble: &Bubble, events: Events) -> bool;
+    /// Shows `header` above the bubbles, and the user's clicks on it go to `events`.
+    fn header(&self, header: Header, events: HeaderEvents);
     /// Shows `bubble` in place of what the bubble of `id` showed, where it is.
     fn update(&self, id: u32, bubble: &Bubble);
     /// Takes the bubble of `id` away.
@@ -262,6 +274,30 @@ impl Events {
     pub fn dismiss(&self) {
         if let Some(state) = self.state.upgrade() {
             close(&state, self.id, Reason::Dismissed);
+        }
+    }
+}
+
+/// What the user does to the header above the bubbles.
+#[derive(Clone)]
+pub struct HeaderEvents {
+    state: Weak<RefCell<State>>,
+}
+
+impl HeaderEvents {
+    /// "Clear all": the notifications of the bubbles on screen leave the history, as the
+    /// private API's `Dismiss` takes them out. Those that got no bubble stay.
+    pub fn clear_all(&self) {
+        if let Some(state) = self.state.upgrade() {
+            let shown = state.borrow().shown.clone();
+            close_all(&state, &shown, Reason::Dismissed);
+        }
+    }
+
+    /// "*N* more notifications": asks the Notifications applet for the Notification center.
+    pub fn open_center(&self) {
+        if let Some(state) = self.state.upgrade() {
+            open_center(&state);
         }
     }
 }
@@ -342,12 +378,18 @@ struct State {
     /// Waits for the end of the oldest entry's week.
     expiry: Option<glib::JoinHandle<()>>,
     last_id: u32,
-    /// The notifications that have a bubble, shown or queued.
+    /// The notifications that have a bubble.
     notifications: HashMap<u32, Entry>,
     /// The bubbles on screen, oldest first.
     shown: Vec<u32>,
-    /// The notifications waiting for a bubble, oldest first.
-    queued: VecDeque<u32>,
+    /// The notifications that got no bubble since the first on screen opened, and whether
+    /// each is critical, which the header counts.
+    more: Vec<(u32, bool)>,
+    /// The header the bubbles were last given, if any.
+    header: Option<Header>,
+    /// While the Notification center is open, what ends the watch on the client that said
+    /// so, which closes it if the client leaves the bus. gio doesn't export the watch's type.
+    center: Option<Box<dyn FnOnce()>>,
     /// What the timers call back, which the state can't hold of itself.
     this: Weak<RefCell<State>>,
 }
@@ -372,6 +414,9 @@ impl Drop for Server {
         let mut state = self.state.borrow_mut();
         if let Some(expiry) = state.expiry.take() {
             expiry.abort();
+        }
+        if let Some(unwatch) = state.center.take() {
+            unwatch();
         }
         for entry in state.notifications.values_mut() {
             entry.stop_timer();
@@ -408,7 +453,9 @@ impl Server {
                 expiry: None,
                 notifications: HashMap::new(),
                 shown: Vec::new(),
-                queued: VecDeque::new(),
+                more: Vec::new(),
+                header: None,
+                center: None,
                 this: this.clone(),
             })
         });
@@ -500,7 +547,8 @@ fn handle(
 /// Takes a notification, in place of `replaces` if that's one the server has, and returns
 /// its id. Its app's Delivery decides what it gets: with Off, nothing but an id that names no
 /// notification, and with History only, its entry. Otherwise a new one plays its sound, unless
-/// its app's sound is off, and gets a bubble if there's room, or waits for one.
+/// its app's sound is off, and gets a bubble if it fits, or else counts in the header. While
+/// the Notification center is open it gets none and shows only there.
 fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -> u32 {
     let mut guard = state.borrow_mut();
     let now = guard.clock.now();
@@ -549,6 +597,9 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         .sound
         .clone()
         .filter(|_| !replaced && app.sound);
+    let critical = notification.critical;
+    // A replacement of a counted one is counted again only if it doesn't fit either.
+    guard.more.retain(|&(more, _)| more != id);
     guard.notifications.insert(
         id,
         Entry {
@@ -559,35 +610,166 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         },
     );
     let sounds = guard.sounds.clone();
-    if guard.shown.len() < MAX_SHOWN {
-        drop(guard);
-        show(state, id);
-    } else {
-        guard.queued.push_back(id);
-        drop(guard);
+    let center = guard.center.is_some();
+    drop(guard);
+    if center {
+        without_bubble(state, id, false);
+    } else if !show_making_room(state, id, critical) {
+        without_bubble(state, id, true);
     }
+    sync_header(state);
     if let Some(sound) = sound {
         sounds.play(&sound);
     }
     id
 }
 
-/// Opens the bubble of `id` and starts its time.
-fn show(state: &Rc<RefCell<State>>, id: u32) {
-    let mut guard = state.borrow_mut();
+/// Opens the bubble of `id`, if it fits, starts its time, and returns whether it opened.
+fn show(state: &Rc<RefCell<State>>, id: u32) -> bool {
+    let guard = state.borrow();
     let Some(entry) = guard.notifications.get(&id) else {
-        return;
+        return false;
     };
     let bubble = guard.shown_bubble(&entry.notification);
-    guard.shown.push(id);
-    guard.start_timer(id);
     let bubbles = guard.bubbles.clone();
     drop(guard);
     let events = Events {
         state: Rc::downgrade(state),
         id,
     };
-    bubbles.show(id, &bubble, events);
+    if !bubbles.show(id, &bubble, events) {
+        return false;
+    }
+    let mut guard = state.borrow_mut();
+    guard.shown.push(id);
+    guard.start_timer(id);
+    true
+}
+
+/// Opens the bubble of `id` as [`show`] does. One that doesn't fit, if it's critical, takes
+/// the place of the oldest ordinary bubbles until it fits, whose notifications the header
+/// counts.
+fn show_making_room(state: &Rc<RefCell<State>>, id: u32, critical: bool) -> bool {
+    loop {
+        if show(state, id) {
+            return true;
+        }
+        if !critical {
+            return false;
+        }
+        let guard = state.borrow();
+        let oldest = guard.shown.iter().copied().find(|shown| {
+            guard
+                .notifications
+                .get(shown)
+                .is_some_and(|entry| !entry.notification.critical)
+        });
+        let Some(oldest) = oldest else {
+            return false;
+        };
+        drop(guard);
+        put_away(state, &[oldest]);
+        without_bubble(state, oldest, true);
+    }
+}
+
+/// Takes the bubbles of `ids` away without closing their notifications.
+fn put_away(state: &Rc<RefCell<State>>, ids: &[u32]) {
+    let mut guard = state.borrow_mut();
+    for id in ids {
+        if let Some(entry) = guard.notifications.get_mut(id) {
+            entry.stop_timer();
+        }
+        guard.shown.retain(|shown| shown != id);
+    }
+    let bubbles = guard.bubbles.clone();
+    drop(guard);
+    for &id in ids {
+        bubbles.close(id);
+    }
+}
+
+/// Leaves the notification `id`, whose bubble didn't open or was put away, to the history,
+/// where the header counts it if `counted`. A transient one isn't there, so it's closed as
+/// expired.
+fn without_bubble(state: &Rc<RefCell<State>>, id: u32, counted: bool) {
+    let mut guard = state.borrow_mut();
+    let Some(entry) = guard.notifications.remove(&id) else {
+        return;
+    };
+    if entry.notification.transient {
+        guard.notifications.insert(id, entry);
+        drop(guard);
+        close(state, id, Reason::Expired);
+    } else if counted {
+        guard.more.push((id, entry.notification.critical));
+    }
+}
+
+/// Asks the Notifications applet for the Notification center.
+fn open_center(state: &Rc<RefCell<State>>) {
+    let connection = state.borrow().connection.clone();
+    emit_on(
+        &connection,
+        PRIVATE_PATH,
+        PRIVATE_INTERFACE,
+        "CenterRequested",
+        (),
+    );
+}
+
+/// The Notification center opened, as the client `sender` says, or closed. The bubbles on
+/// screen are put away as it opens, and none open while it's open.
+fn set_center_open(state: &Rc<RefCell<State>>, open: bool, sender: Option<&str>) {
+    let mut guard = state.borrow_mut();
+    if let Some(unwatch) = guard.center.take() {
+        unwatch();
+    }
+    let Some(sender) = sender.filter(|_| open) else {
+        return;
+    };
+    let watch = gio::bus_watch_name_on_connection(
+        &guard.connection,
+        sender,
+        gio::BusNameWatcherFlags::NONE,
+        |_, _, _| {},
+        {
+            let state = Rc::downgrade(state);
+            move |_, _| {
+                if let Some(state) = state.upgrade() {
+                    set_center_open(&state, false, None);
+                }
+            }
+        },
+    );
+    guard.center = Some(Box::new(move || gio::bus_unwatch_name(watch)));
+    guard.more.clear();
+    let shown = guard.shown.clone();
+    drop(guard);
+    put_away(state, &shown);
+    for id in shown {
+        without_bubble(state, id, false);
+    }
+    sync_header(state);
+}
+
+/// Gives the bubbles the header, the first time and whenever it changes.
+fn sync_header(state: &Rc<RefCell<State>>) {
+    let mut guard = state.borrow_mut();
+    let header = Header {
+        more: guard.more.len(),
+        critical: guard.more.iter().any(|&(_, critical)| critical),
+    };
+    if guard.header == Some(header) {
+        return;
+    }
+    guard.header = Some(header);
+    let bubbles = guard.bubbles.clone();
+    drop(guard);
+    let events = HeaderEvents {
+        state: Rc::downgrade(state),
+    };
+    bubbles.header(header, events);
 }
 
 /// Closes the notification `id` for `reason`: see [`close_all`].
@@ -595,9 +777,9 @@ fn close(state: &Rc<RefCell<State>>, id: u32, reason: Reason) {
     close_all(state, &[id], reason);
 }
 
-/// Closes the notifications `ids` that the server has, for `reason`: their bubbles go and the
-/// oldest that wait take their places, and their apps hear why. A bubble that times out leaves
-/// its notification in the history, and any other way of closing takes it out too.
+/// Closes the notifications `ids` that the server has, for `reason`: their bubbles go, and
+/// their apps hear why. A bubble that times out leaves its notification in the history, and
+/// any other way of closing takes it out too. The header's count empties with the last bubble.
 fn close_all(state: &Rc<RefCell<State>>, ids: &[u32], reason: Reason) {
     let mut guard = state.borrow_mut();
     let in_history = if matches!(reason, Reason::Expired) {
@@ -617,18 +799,14 @@ fn close_all(state: &Rc<RefCell<State>>, ids: &[u32], reason: Reason) {
     }
     let mut was_shown = Vec::new();
     for &id in &gone {
-        guard.queued.retain(|queued| *queued != id);
+        guard.more.retain(|&(more, _)| more != id);
         if guard.shown.contains(&id) {
             guard.shown.retain(|shown| *shown != id);
             was_shown.push(id);
         }
     }
-    let mut next = Vec::new();
-    while guard.shown.len() + next.len() < MAX_SHOWN {
-        let Some(id) = guard.queued.pop_front() else {
-            break;
-        };
-        next.push(id);
+    if guard.shown.is_empty() {
+        guard.more.clear();
     }
     let bubbles = guard.bubbles.clone();
     let connection = guard.connection.clone();
@@ -637,9 +815,7 @@ fn close_all(state: &Rc<RefCell<State>>, ids: &[u32], reason: Reason) {
     for id in was_shown {
         bubbles.close(id);
     }
-    for id in next {
-        show(state, id);
-    }
+    sync_header(state);
     for id in gone {
         emit(&connection, "NotificationClosed", (id, reason as u32));
     }

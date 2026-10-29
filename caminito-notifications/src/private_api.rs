@@ -52,6 +52,14 @@ const INTERFACE: &str = r#"
     <method name="Counts">
       <arg type="a{su}" name="counts" direction="out"/>
     </method>
+    <!-- Asks the Notifications applet for the Notification center, through CenterRequested. -->
+    <method name="OpenCenter"/>
+    <!-- The Notifications applet's Notification center opened or closed. While it's open
+         there are no bubbles, until the applet says otherwise or leaves the bus. -->
+    <method name="SetCenterOpen">
+      <arg type="b" name="open" direction="in"/>
+    </method>
+    <signal name="CenterRequested"/>
     <!-- The history changed: list it again. -->
     <signal name="HistoryChanged"/>
     <signal name="CountsChanged">

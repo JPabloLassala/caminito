@@ -29,6 +29,8 @@ pub(crate) struct Notification {
     pub(crate) has_default: bool,
     /// Whether it stays after one of its actions is used (`resident`).
     pub(crate) resident: bool,
+    /// Whether its `urgency` is critical.
+    pub(crate) critical: bool,
     /// Whether it never enters the Notification history (`transient`).
     pub(crate) transient: bool,
     /// Whether it has a reply field (KDE's `x-kde-reply-placeholder-text`).
@@ -94,6 +96,7 @@ impl Notification {
             app,
             bubble,
             has_default,
+            critical,
             resident: hint::<bool>(hints, "resident").unwrap_or(false),
             transient: hint::<bool>(hints, "transient").unwrap_or(false),
             reply: hint::<String>(hints, "x-kde-reply-placeholder-text").is_some(),
