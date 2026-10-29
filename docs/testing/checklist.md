@@ -3907,14 +3907,18 @@ They are the developer's to run.
      Feel. Then run `busctl --user call org.mate.Caminito.Notifications
      /org/mate/Caminito/Notifications org.mate.Caminito.Notifications OpenSettings s ''`.
   2. Set *Corner* to *Bottom left*, and run `notify-send 'One'` and then `notify-send 'Two'`.
-  3. Clear *Show previews in bubbles* and run `notify-send -i mail-unread 'Secret' 'Body'`.
-  4. Clear *Show the app's icon in bubbles* and run `notify-send -i mail-unread 'No icon' x`.
-  5. Clear *Play a sound* and run `notify-send 'Quiet'`. Set *Stay for* to 2 seconds and run
-     `notify-send 'Short'`.
+  3. Clear *Show previews in bubbles* and run `notify-send -h string:desktop-entry:mate-terminal
+     -i mail-unread 'Secret' 'Body'`. `notify-send`'s `-i` is the image, and the desktop entry
+     gives the app's icon.
+  4. Clear *Show the app's icon in bubbles* and run `notify-send -h
+     string:desktop-entry:mate-terminal 'No icon' x`.
+  5. Run `notify-send -h string:sound-file:/usr/share/sounds/freedesktop/stereo/message-new-instant.oga
+     'Loud'`, then clear *Play a sound* and run it again. A sound file plays even under MATE's
+     *No sounds* theme. Set *Stay for* to 2 seconds and run `notify-send 'Short'`.
   6. Run `gsettings list-recursively org.mate.Caminito.notifications`.
 - **Expected:** in step 1 one *Notifications* window opens, and the call raises it rather than
   opening a second. In step 2 the bubbles are in the bottom-left corner of the output under the
-  pointer, *Two* nearest the corner. In step 3 the bubble shows the app's icon and name and
-  *Notification*, and nothing of *Secret* or *Body*. In step 4 the bubble has no icon. In step 5
-  no sound plays, and *Short* closes after about 2 seconds. In step 6 every setting is the
-  window's (CMN-261).
+  pointer, *Two* nearest the corner. In step 3 the bubble shows the terminal's small icon, the
+  app's name and *Notification*, and nothing of *Secret*, *Body* or the mail image. In step 4
+  the bubble has no icon. In step 5 the first plays a sound and the second doesn't, and *Short*
+  closes after about 2 seconds. In step 6 every setting is the window's (CMN-261).
