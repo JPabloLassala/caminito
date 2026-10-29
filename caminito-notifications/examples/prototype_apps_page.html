@@ -141,7 +141,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 .panel { display: flex; align-items: center; justify-content: flex-end; gap: 14px; height: 30px; padding: 0 12px; background: rgb(0 0 0 / .45); font-size: 13px; }
 .panel .bell { position: relative; display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; background: transparent; border: 0; padding: 2px 6px; border-radius: 6px; cursor: pointer; }
 .panel .bell[aria-expanded="true"] { background: rgb(255 255 255 / .15); }
-.center { position: absolute; z-index: 5; top: 36px; left: 8px; width: min(360px, calc(100% - 16px)); max-height: calc(100% - 46px); overflow-y: auto; box-sizing: border-box; background: var(--center); color: var(--bubble-fg); border-radius: 12px; padding: 10px; display: grid; gap: 8px; align-content: start; box-shadow: 0 8px 24px rgb(0 0 0 / .4); }
+.center { position: absolute; z-index: 5; top: 36px; right: 8px; width: min(360px, calc(100% - 16px)); max-height: calc(100% - 46px); overflow-y: auto; box-sizing: border-box; background: var(--center); color: var(--bubble-fg); border-radius: 12px; padding: 10px; display: grid; gap: 8px; align-content: start; box-shadow: 0 8px 24px rgb(0 0 0 / .4); }
 .center .c-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
 .center .c-dnd { color: var(--bubble-muted); }
 .center .c-group, .center .c-one { background: rgb(255 255 255 / .06); border-radius: 10px; padding: 8px; display: grid; gap: 6px; }
@@ -223,7 +223,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   <header class="brief">
     <div class="eyebrow">Caminito · Notifications epic · CMN-262 prototype</div>
     <h1>The Apps page of the Notifications settings</h1>
-    <p>The page where each app gets its own notification settings. The table (B) was chosen; A and C stay for comparison. Change a setting, search, or set an app back to the default, and watch the Notification center below follow them. Nothing here touches real settings.</p>
+    <p>The page where each app gets its own notification settings. The table (B) was chosen; A and C stay for comparison. Change a setting, search, or set an app back to the default, and see the bubbles and the Notification center below follow them. Nothing here touches real settings.</p>
   </header>
 
   <section class="switcher" aria-label="Layout">
@@ -244,7 +244,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 
   <section class="try" aria-label="Send a test notification">
     <h2>Send a test notification</h2>
-    <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's next notification joins its bubble on screen instead of opening another, and its timer starts again. With Group off, each gets its own bubble, unless one app sends more than 3 within 5 seconds. A critical notification always has a bubble of its own. The center on the left starts with six examples, and Slack starts ungrouped. Bubbles show top right, stay 7 seconds, pause while hovered, and at most 3 show at once.</p>
+    <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's next notification joins its bubble on screen instead of opening another, and its timer starts again. With Group off, each gets its own bubble, unless one app sends more than 3 within 5 seconds. A critical notification always has a bubble of its own. The bell opens the Notification center under it, top right, with six examples to start with; Slack starts ungrouped. While the center is open no bubbles show: those on screen close, and new notifications appear straight in it. Bubbles show top right, stay 7 seconds, pause while hovered, and at most 3 show at once.</p>
     <h3 class="sub">Grouped bubble design</h3>
     <p class="dim">Three Signal messages in a row, as one grouped bubble. Pick one; the desktop below uses it.</p>
     <div class="designs" id="designs" role="radiogroup" aria-label="Grouped bubble design"></div>
@@ -260,11 +260,11 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
       <button type="button" class="plain" id="try-clear">Clear all</button>
     </div>
     <div class="desktop" id="desktop">
-      <div class="panel"><span class="sound" id="desk-sound" aria-hidden="true">♪ sound</span><button type="button" class="bell" id="desk-bell" aria-expanded="true" aria-controls="desk-center" title="Notification center">🔔<span class="dot" id="desk-dot" hidden></span><span id="desk-count"></span></button><span>14:30</span></div>
+      <div class="panel"><span class="sound" id="desk-sound" aria-hidden="true">♪ sound</span><button type="button" class="bell" id="desk-bell" aria-expanded="false" aria-controls="desk-center" title="Notification center">🔔<span class="dot" id="desk-dot" hidden></span><span id="desk-count"></span></button><span>14:30</span></div>
       <div class="queued" id="desk-queued" hidden></div>
       <div class="bubbles" id="desk-bubbles" aria-live="polite"></div>
       <div class="dock" id="desk-dock"></div>
-      <div class="center" id="desk-center"></div>
+      <div class="center" id="desk-center" hidden></div>
     </div>
     <ul class="log" id="try-log" aria-live="polite"></ul>
   </section>
@@ -654,6 +654,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   }
   // Returns how the notification was shown: "new", "joined" or "burst".
   function deliver(n) {
+    if (centerOpen()) { if (n.prefs.flags[0]) flashSound(); renderDesk(); return "center"; }
     if (!n.critical) {
       const mine = [...visible, ...queue].filter(b => b.i === n.i && !b.critical);
       const grouped = n.prefs.flags[3];
@@ -671,7 +672,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   }
   function openCenterAt(i) {
     $("desk-center").hidden = false; $("desk-bell").setAttribute("aria-expanded", "true");
-    expanded.add(i); renderDesk();
+    closeBubbles(); expanded.add(i); renderDesk();
   }
   function renderGallery() {
     const prefs = effective(4);
@@ -711,9 +712,10 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     if (!prefs.flags[2]) notes.push("no app icon");
     if (site) notes.unshift(`from the ${SITES[site].origin} tab`);
     const how = deliver({ i, prefs, critical, site, k });
+    if (how === "center") notes.unshift("no bubble, shown in the open Notification center");
     if (how === "joined") notes.unshift("joined its bubble");
     if (how === "burst") notes.unshift("more than 3 in 5 seconds, so it joined the last bubble");
-    log(how === "new" ? "Bubble" : "Grouped", "bubble-shown", `${app.name}: ${notes.join(", ")}.${badge}`);
+    log(how === "new" ? "Bubble" : how === "center" ? "Center" : "Grouped", how === "center" ? "" : "bubble-shown", `${app.name}: ${notes.join(", ")}.${badge}`);
   });
   $("try-burst").addEventListener("click", () => { for (let n = 0; n < 3; n++) $("try-send").click(); });
   $("try-clear").addEventListener("click", () => {
@@ -757,9 +759,16 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
         ${more > 0 ? `<button type="button" class="mini" data-more="${u.i}">${more} more</button>` : open && u.items.length > SHOWN ? `<button type="button" class="mini" data-more="${u.i}">Show less</button>` : ""}</div>`;
     }).join("");
   }
+  // While the center is open there are no bubbles: those on screen close, and new notifications show in it.
+  const centerOpen = () => !$("desk-center").hidden;
+  function closeBubbles() {
+    visible.forEach(b => { clearTimeout(b.timer); b.live = false; b.el.remove(); });
+    visible = []; queue = [];
+  }
   $("desk-bell").addEventListener("click", () => {
     const c = $("desk-center"); c.hidden = !c.hidden;
     $("desk-bell").setAttribute("aria-expanded", String(!c.hidden));
+    if (!c.hidden) closeBubbles();
     renderDesk();
   });
   $("desk-center").addEventListener("click", e => {
