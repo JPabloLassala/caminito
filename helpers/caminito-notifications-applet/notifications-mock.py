@@ -5,9 +5,8 @@
 It has the Notification history's part of org.mate.Caminito.Notifications as the
 Notifications applet uses it: List, Dismiss, ClearApp, ClearAll, InvokeAction, Reply, Counts,
 Ungrouped and OpenSettings, with the HistoryChanged, CountsChanged and UngroupedChanged
-signals. As in the daemon, an
-entry leaves the history when it's dismissed or one of its actions is used, unless it's
-resident, and List gives the newest first. It refuses what the daemon refuses: an entry that
+signals. As in the daemon, an entry leaves the history when it's dismissed or one of its
+actions is used, unless it's resident, and List gives the newest first. It refuses what the daemon refuses: an entry that
 isn't there, and an action an entry hasn't, "default" without a default action.
 
 org.caminito.NotificationsMock is for a test or a check script:

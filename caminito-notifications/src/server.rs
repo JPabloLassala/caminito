@@ -1,13 +1,13 @@
 //! The Desktop Notifications spec's server (1.3), at `/org/freedesktop/Notifications`, owning
 //! `org.freedesktop.Notifications` (ADR 0051). It decides which bubbles are on screen, at most
 //! [`MAX_SHOWN`] with the rest queued, how long each stays, and which sound plays, and tells
-//! the apps what became of their notifications. With its app's grouping on (CMN-265), an app's
-//! third notification on screen merges its first two bubbles into one grouped bubble, which
-//! its later ones join, critical ones only with critical ones. The binary draws the bubbles and plays the
-//! sounds, behind [`Bubbles`] and [`Sounds`]. It follows the notification settings (CMN-261)
-//! as it goes, the app's own or else the default (CMN-262): the Delivery and the sound as a
-//! notification arrives, what a bubble shows as it opens, and the default timeout. An app
-//! joins the known apps with its first notification.
+//! the apps what became of their notifications. With its app's grouping on (CMN-265), an
+//! app's third notification on screen merges its first two bubbles into one grouped bubble,
+//! which its later ones join, critical ones only with critical ones. The binary draws the
+//! bubbles and plays the sounds, behind [`Bubbles`] and [`Sounds`]. It follows the
+//! notification settings (CMN-261) as it goes, the app's own or else the default (CMN-262):
+//! the Delivery and the sound as a notification arrives, what a bubble shows as it opens, and
+//! the default timeout. An app joins the known apps with its first notification.
 //!
 //! Every notification that isn't transient also enters the Notification history (CMN-259),
 //! which outlasts its bubble and the daemon, and `api` serves it to the applets. The time
@@ -237,7 +237,8 @@ pub trait Sounds {
 #[derive(Clone)]
 pub struct Events {
     state: Weak<RefCell<State>>,
-    id: u32,
+    /// The bubble's key in `shown`.
+    key: u32,
 }
 
 impl Events {
@@ -245,7 +246,7 @@ impl Events {
     /// there.
     pub fn hovered(&self, hovered: bool) {
         if let Some(state) = self.state.upgrade() {
-            hover(&state, self.id, hovered);
+            hover(&state, self.key, hovered);
         }
     }
 
@@ -278,15 +279,8 @@ impl Events {
 
     /// The user closed the bubble.
     pub fn dismiss(&self) {
-        let Some(state) = self.state.upgrade() else {
-            return;
-        };
-        let ids = state
-            .borrow()
-            .bubble(self.id)
-            .map(|index| state.borrow().shown[index].ids.clone());
-        if let Some(ids) = ids {
-            close_all(&state, &ids, Reason::Dismissed);
+        if let Some(state) = self.state.upgrade() {
+            close_bubble(&state, self.key, Reason::Dismissed);
         }
     }
 
@@ -294,7 +288,7 @@ impl Events {
     fn newest(&self) -> Option<(Rc<RefCell<State>>, u32)> {
         let state = self.state.upgrade()?;
         let guard = state.borrow();
-        let newest = *guard.shown[guard.bubble(self.id)?].ids.last()?;
+        let newest = *guard.shown[guard.bubble(self.key)?].ids.last()?;
         drop(guard);
         Some((state, newest))
     }
@@ -602,7 +596,7 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     guard.notifications.insert(id, notification);
     let sounds = guard.sounds.clone();
     let place = guard.place_of(id);
-    if matches!(place, Place::Alone) && guard.shown.len() >= MAX_SHOWN {
+    if !guard.has_room(&place) {
         guard.queued.push_back(id);
         drop(guard);
     } else {
@@ -634,15 +628,20 @@ fn show(state: &Rc<RefCell<State>>, id: u32, place: Place) {
         }
         Place::Merge(indices) => {
             let mut ids = Vec::new();
+            let mut hovered = false;
             // From the newest, so that each index is still right.
             for index in indices.into_iter().rev() {
                 let mut shown = guard.shown.remove(index);
                 shown.stop_timer();
                 merged.push(shown.key);
+                hovered |= shown.hovered;
                 ids.splice(0..0, shown.ids);
             }
             ids.push(id);
-            guard.shown.push(Shown::new(id, ids, app, critical, true));
+            let mut grouped = Shown::new(id, ids, app, critical, true);
+            // The pointer on a bubble merged is on the grouped bubble in its place.
+            grouped.hovered = hovered;
+            guard.shown.push(grouped);
             guard.shown.len() - 1
         }
         Place::Alone => {
@@ -666,7 +665,7 @@ fn show(state: &Rc<RefCell<State>>, id: u32, place: Place) {
     }
     let events = Events {
         state: Rc::downgrade(state),
-        id,
+        key: id,
     };
     bubbles.show(id, &bubble, events);
 }
@@ -679,7 +678,7 @@ fn show_queued(state: &Rc<RefCell<State>>) {
             return;
         };
         let place = guard.place_of(id);
-        if matches!(place, Place::Alone) && guard.shown.len() >= MAX_SHOWN {
+        if !guard.has_room(&place) {
             return;
         }
         guard.queued.pop_front();
@@ -874,14 +873,20 @@ impl State {
         {
             return Place::Join(index);
         }
-        let alone: Vec<usize> = (0..self.shown.len())
+        let same_bubbles: Vec<usize> = (0..self.shown.len())
             .filter(|&index| same(&self.shown[index]))
             .collect();
-        if alone.len() >= 2 {
-            Place::Merge(alone)
+        if same_bubbles.len() >= 2 {
+            Place::Merge(same_bubbles)
         } else {
             Place::Alone
         }
+    }
+
+    /// Whether a notification can go to `place` now: a bubble of its own needs a free one of
+    /// the [`MAX_SHOWN`], and joining or merging takes none.
+    fn has_room(&self, place: &Place) -> bool {
+        !matches!(place, Place::Alone) || self.shown.len() < MAX_SHOWN
     }
 
     /// What the bubble at `index` of `shown` shows: its newest notification, and in a grouped
@@ -1031,7 +1036,7 @@ impl State {
         let timer = glib::MainContext::ref_thread_default().spawn_local(async move {
             glib::timeout_future(remaining).await;
             if let Some(state) = this.upgrade() {
-                expire(&state, key);
+                close_bubble(&state, key, Reason::Expired);
             }
         });
         shown.timer = Some((timer, Instant::now() + remaining));
@@ -1039,8 +1044,8 @@ impl State {
     }
 }
 
-/// The bubble `key` timed out: its notifications expire.
-fn expire(state: &Rc<RefCell<State>>, key: u32) {
+/// Closes all the notifications of the bubble `key` for `reason`, if it's there.
+fn close_bubble(state: &Rc<RefCell<State>>, key: u32, reason: Reason) {
     let ids = {
         let guard = state.borrow();
         guard
@@ -1048,6 +1053,6 @@ fn expire(state: &Rc<RefCell<State>>, key: u32) {
             .map(|index| guard.shown[index].ids.clone())
     };
     if let Some(ids) = ids {
-        close_all(state, &ids, Reason::Expired);
+        close_all(state, &ids, reason);
     }
 }

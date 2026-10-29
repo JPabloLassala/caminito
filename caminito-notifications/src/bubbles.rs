@@ -269,7 +269,7 @@ fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events, open: &Rc<Cell<bool>>
         frame.append(&actions);
     }
     if !bubble.earlier.is_empty() {
-        frame.append(&earlier(&bubble.earlier, open));
+        frame.append(&earlier_part(&bubble.earlier, open));
     }
 
     let close = gtk::Button::from_icon_name("window-close-symbolic");
@@ -326,7 +326,7 @@ fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events, open: &Rc<Cell<bool>>
 /// A grouped bubble's notifications before its newest: a line each of the latest
 /// [`DIGEST_LINES`] and a button that opens them all, or all of them and a button that closes
 /// them again.
-fn earlier(earlier: &[Earlier], open: &Rc<Cell<bool>>) -> gtk::Box {
+fn earlier_part(earlier: &[Earlier], open: &Rc<Cell<bool>>) -> gtk::Box {
     let part = gtk::Box::new(gtk::Orientation::Vertical, 4);
     part.add_css_class("digest");
 

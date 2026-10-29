@@ -17,6 +17,8 @@
 #define BODY_LINES   4
 /* A group's latest entries, which show until it's opened. */
 #define GROUP_SHOWN  3
+/* The object data holding the app's key of a group's buttons. */
+#define APP_KEY      "nt-app"
 
 /* An age shown, which the minute's tick brings up to date. */
 typedef struct
@@ -201,7 +203,7 @@ on_clear_app (GtkButton *button, gpointer data)
 {
   NtPopup *popup = data;
   /* The callback may bring an update, which destroys the button app belongs to. */
-  g_autofree char *app = g_strdup (g_object_get_data (G_OBJECT (button), "nt-app"));
+  g_autofree char *app = g_strdup (g_object_get_data (G_OBJECT (button), APP_KEY));
 
   popup->actions.clear_app (app, popup->data);
 }
@@ -212,7 +214,7 @@ static void
 on_more (GtkButton *button, gpointer data)
 {
   NtPopup *popup = data;
-  const char *app = g_object_get_data (G_OBJECT (button), "nt-app");
+  const char *app = g_object_get_data (G_OBJECT (button), APP_KEY);
 
   if (!g_hash_table_remove (popup->opened, app))
     g_hash_table_add (popup->opened, g_strdup (app));
@@ -393,7 +395,7 @@ group_row (NtPopup *popup, const NtGroup *group)
   gtk_widget_set_name (clear, "clear");
   gtk_widget_set_tooltip_text (clear, "Clear this app's notifications");
   gtk_button_set_relief (GTK_BUTTON (clear), GTK_RELIEF_NONE);
-  g_object_set_data_full (G_OBJECT (clear), "nt-app", g_strdup (group->app), g_free);
+  g_object_set_data_full (G_OBJECT (clear), APP_KEY, g_strdup (group->app), g_free);
   g_signal_connect (clear, "clicked", G_CALLBACK (on_clear_app), popup);
   gtk_box_pack_end (GTK_BOX (box), clear, FALSE, FALSE, 0);
   gtk_container_add (GTK_CONTAINER (row), box);
@@ -415,7 +417,7 @@ more_row (NtPopup *popup, const NtGroup *group, gboolean opened)
   gtk_button_set_relief (GTK_BUTTON (more), GTK_RELIEF_NONE);
   gtk_widget_set_halign (more, GTK_ALIGN_START);
   g_object_set (more, "margin-start", 8, "margin-bottom", 4, NULL);
-  g_object_set_data_full (G_OBJECT (more), "nt-app", g_strdup (group->app), g_free);
+  g_object_set_data_full (G_OBJECT (more), APP_KEY, g_strdup (group->app), g_free);
   g_signal_connect (more, "clicked", G_CALLBACK (on_more), popup);
   gtk_container_add (GTK_CONTAINER (row), more);
   gtk_widget_show_all (row);

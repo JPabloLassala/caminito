@@ -1823,3 +1823,26 @@ fn the_api_names_the_apps_with_grouping_off_and_signals_a_change() {
         );
     });
 }
+
+#[test]
+fn a_grouped_bubble_merged_under_the_pointer_waits_for_it_to_leave() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let timed = |summary| Notify {
+            timeout: 100,
+            ..notify(summary)
+        };
+        daemon.notify(timed("1"));
+        let hovered = daemon.notify(timed("2"));
+        daemon.bubbles.events(hovered).hovered(true);
+        let grouped = daemon.notify(timed("3"));
+
+        // Three times its timeout.
+        bus.run_for(Duration::from_millis(300));
+        assert_eq!(daemon.bubbles.ids(), [grouped]);
+
+        daemon.bubbles.events(grouped).hovered(false);
+        daemon.wait_for_signals(3);
+        assert!(daemon.bubbles.ids().is_empty());
+    });
+}

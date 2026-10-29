@@ -1,10 +1,11 @@
 /*
  * The Notifications applet (CMN-260, ADR 0051): an in-process mate-panel applet whose icon is
  * a bell, with a dot on it while the Notification history isn't empty, and whose popup is the
- * Notification center (nt-popup.c), which groups the history by app (CMN-265). It reads the history over caminito-notifications's
- * private API (nt-daemon.c), and hides itself while the daemon isn't on the bus, as under X11
- * MATE. Left-click toggles the popup. The struck-through bell and middle-click (CMN-263), and
- * the settings gear (CMN-261), come later.
+ * Notification center (nt-popup.c), which groups the history by app (CMN-265). It reads the
+ * history over caminito-notifications's private API (nt-daemon.c), and hides itself while the
+ * daemon isn't on the bus, as under X11 MATE. Left-click toggles the popup. The
+ * struck-through bell and middle-click (CMN-263), and the settings gear (CMN-261), come
+ * later.
  */
 
 #include <mate-panel-applet.h>
