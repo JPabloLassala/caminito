@@ -229,21 +229,44 @@ impl Effective {
     }
 }
 
+/// One of Caminito's triggers: whether Caminito says it's on, and whether the user turned
+/// its Do Not Disturb off, which holds until it ends.
+#[derive(Debug, Default, Clone, Copy)]
+struct Trigger {
+    on: bool,
+    held: bool,
+}
+
+impl Trigger {
+    /// Caminito says whether it's on. One that ends ends its hold.
+    fn set(&mut self, on: bool) {
+        self.on = on;
+        self.held &= on;
+    }
+
+    /// Whether it has Do Not Disturb on, with its setting `allowed`.
+    fn has_it_on(self, allowed: bool) -> bool {
+        self.on && allowed && !self.held
+    }
+
+    /// The user turns Do Not Disturb off: it's held if it had it on.
+    fn hold(&mut self, allowed: bool) {
+        self.held |= self.has_it_on(allowed);
+    }
+}
+
 /// Everything that turns Do Not Disturb on, and what the user's turning it off holds off.
 #[derive(Debug, Default)]
 pub(crate) struct Sources {
     /// The user's.
     pub(crate) manual: DoNotDisturb,
-    /// Whether Caminito says the output under the pointer has a fullscreen window.
-    fullscreen: bool,
-    /// Whether Caminito says a screencast is running.
-    screencasting: bool,
-    /// The schedule's next start, until which the user turned the schedule off.
-    schedule_held_until: Option<u64>,
-    /// Whether the user turned a fullscreen window's Do Not Disturb off, until it ends.
-    fullscreen_held: bool,
-    /// The same for a screencast's.
-    screencast_held: bool,
+    /// Whether the output under the pointer has a fullscreen window.
+    fullscreen: Trigger,
+    /// Whether a screencast is running.
+    screencast: Trigger,
+    /// The schedule the user turned off, and its next start, until which it's held off. A
+    /// change of the schedule ends the hold.
+    schedule_held: Option<(Schedule, u64)>,
 }
 
 impl Sources {
@@ -258,14 +281,12 @@ impl Sources {
     /// Caminito says whether the output under the pointer has a fullscreen window. One
     /// that ends ends its hold.
     pub(crate) fn set_fullscreen(&mut self, fullscreen: bool) {
-        self.fullscreen = fullscreen;
-        self.fullscreen_held &= fullscreen;
+        self.fullscreen.set(fullscreen);
     }
 
     /// Caminito says whether a screencast is running. One that ends ends its hold.
     pub(crate) fn set_screencasting(&mut self, screencasting: bool) {
-        self.screencasting = screencasting;
-        self.screencast_held &= screencasting;
+        self.screencast.set(screencasting);
     }
 
     /// Whether it's on at `now` in `zone`, under `triggers`, and why.
@@ -289,14 +310,13 @@ impl Sources {
                 end: Some(next_at(now, schedule.to, zone)),
             };
         }
-        let (fullscreen, screencast) = self.triggered(triggers);
-        if fullscreen && !self.fullscreen_held {
+        if self.fullscreen.has_it_on(triggers.while_fullscreen) {
             return Effective::On {
                 reason: Reason::Fullscreen,
                 end: None,
             };
         }
-        if screencast && !self.screencast_held {
+        if self.screencast.has_it_on(triggers.while_screencasting) {
             return Effective::On {
                 reason: Reason::Screencast,
                 end: None,
@@ -310,11 +330,10 @@ impl Sources {
     pub(crate) fn turn_off(&mut self, triggers: &Triggers, now: u64, zone: &glib::TimeZone) {
         self.manual = DoNotDisturb::Off;
         if let Some(schedule) = self.schedule_on(triggers, now, zone) {
-            self.schedule_held_until = Some(next_at(now, schedule.from, zone));
+            self.schedule_held = Some((schedule, next_at(now, schedule.from, zone)));
         }
-        let (fullscreen, screencast) = self.triggered(triggers);
-        self.fullscreen_held |= fullscreen;
-        self.screencast_held |= screencast;
+        self.fullscreen.hold(triggers.while_fullscreen);
+        self.screencast.hold(triggers.while_screencasting);
     }
 
     /// Forgets what `now` has ended: the user's Do Not Disturb, and the schedule's hold.
@@ -322,8 +341,8 @@ impl Sources {
         if self.manual.ended(now) {
             self.manual = DoNotDisturb::Off;
         }
-        if self.schedule_held_until.is_some_and(|until| now >= until) {
-            self.schedule_held_until = None;
+        if self.schedule_held.is_some_and(|(_, until)| now >= until) {
+            self.schedule_held = None;
         }
     }
 
@@ -348,7 +367,7 @@ impl Sources {
         manual
             .into_iter()
             .chain(schedule)
-            .chain(self.schedule_held_until)
+            .chain(self.schedule_held.map(|(_, until)| until))
             .min()
     }
 
@@ -359,23 +378,17 @@ impl Sources {
         now: u64,
         zone: &glib::TimeZone,
     ) -> Option<Schedule> {
-        let held = self.schedule_held_until.is_some_and(|until| now < until);
-        triggers
-            .schedule
-            .filter(|schedule| !held && schedule.contains(now, zone))
-    }
-
-    /// Whether the fullscreen window and the screencast are on, each with its setting.
-    fn triggered(&self, triggers: &Triggers) -> (bool, bool) {
-        (
-            self.fullscreen && triggers.while_fullscreen,
-            self.screencasting && triggers.while_screencasting,
-        )
+        triggers.schedule.filter(|&schedule| {
+            let held = self
+                .schedule_held
+                .is_some_and(|(held, until)| held == schedule && now < until);
+            !held && schedule.contains(now, zone)
+        })
     }
 }
 
 /// `now` in `zone`.
-fn local(now: u64, zone: &glib::TimeZone) -> Option<glib::DateTime> {
+fn local_time(now: u64, zone: &glib::TimeZone) -> Option<glib::DateTime> {
     glib::DateTime::from_unix_utc(i64::try_from(now).ok()?)
         .ok()?
         .to_timezone(zone)
@@ -384,14 +397,14 @@ fn local(now: u64, zone: &glib::TimeZone) -> Option<glib::DateTime> {
 
 /// The minute of the day `now` is in, in `zone`.
 fn minute_of_day(now: u64, zone: &glib::TimeZone) -> Option<u32> {
-    let local = local(now, zone)?;
+    let local = local_time(now, zone)?;
     u32::try_from(local.hour() * 60 + local.minute()).ok()
 }
 
 /// The first time after `now` whose time of day is `minute` in `zone`.
 fn next_at(now: u64, minute: u32, zone: &glib::TimeZone) -> u64 {
     let next = (|| {
-        let today = local(now, zone)?;
+        let today = local_time(now, zone)?;
         let minute = i32::try_from(minute).ok()?;
         (0..=2).find_map(|days| {
             let day = today.add_days(days).ok()?;
@@ -478,11 +491,6 @@ mod tests {
         assert_eq!(decode("on 1 2"), None);
     }
 
-    /// 1970-01-12 at `hour`:`minute` in UTC, or the next days' with `day` past 12.
-    fn at(day: i32, hour: i32, minute: i32) -> u64 {
-        utc_time(day, hour, minute)
-    }
-
     /// 22:00 to 07:00, and both triggers on.
     fn nightly() -> Triggers {
         Triggers {
@@ -504,11 +512,20 @@ mod tests {
         let utc = glib::TimeZone::utc();
         let sources = Sources::default();
         let at_time =
-            |day, hour, minute| sources.effective(&nightly(), at(day, hour, minute), &utc);
+            |day, hour, minute| sources.effective(&nightly(), utc_time(day, hour, minute), &utc);
         assert_eq!(at_time(12, 21, 59), Effective::Off);
-        assert_eq!(at_time(12, 22, 0), on(Reason::Schedule, Some(at(13, 7, 0))));
-        assert_eq!(at_time(13, 0, 30), on(Reason::Schedule, Some(at(13, 7, 0))));
-        assert_eq!(at_time(13, 6, 59), on(Reason::Schedule, Some(at(13, 7, 0))));
+        assert_eq!(
+            at_time(12, 22, 0),
+            on(Reason::Schedule, Some(utc_time(13, 7, 0)))
+        );
+        assert_eq!(
+            at_time(13, 0, 30),
+            on(Reason::Schedule, Some(utc_time(13, 7, 0)))
+        );
+        assert_eq!(
+            at_time(13, 6, 59),
+            on(Reason::Schedule, Some(utc_time(13, 7, 0)))
+        );
         assert_eq!(at_time(13, 7, 0), Effective::Off);
     }
 
@@ -522,20 +539,20 @@ mod tests {
             to: 17 * 60 + 30,
         });
         assert_eq!(
-            sources.effective(&triggers, at(12, 8, 59), &utc),
+            sources.effective(&triggers, utc_time(12, 8, 59), &utc),
             Effective::Off
         );
         assert_eq!(
-            sources.effective(&triggers, at(12, 9, 0), &utc),
-            on(Reason::Schedule, Some(at(12, 17, 30)))
+            sources.effective(&triggers, utc_time(12, 9, 0), &utc),
+            on(Reason::Schedule, Some(utc_time(12, 17, 30)))
         );
         assert_eq!(
-            sources.effective(&triggers, at(12, 17, 30), &utc),
+            sources.effective(&triggers, utc_time(12, 17, 30), &utc),
             Effective::Off
         );
         triggers.schedule = Some(Schedule { from: 600, to: 600 });
         assert_eq!(
-            sources.effective(&triggers, at(12, 10, 0), &utc),
+            sources.effective(&triggers, utc_time(12, 10, 0), &utc),
             Effective::Off
         );
     }
@@ -546,19 +563,19 @@ mod tests {
         let sources = Sources::default();
         // 01:00 in UTC is 22:00 there.
         assert_eq!(
-            sources.effective(&nightly(), at(13, 0, 59), &three_hours_west),
+            sources.effective(&nightly(), utc_time(13, 0, 59), &three_hours_west),
             Effective::Off
         );
         assert_eq!(
-            sources.effective(&nightly(), at(13, 1, 0), &three_hours_west),
-            on(Reason::Schedule, Some(at(13, 10, 0)))
+            sources.effective(&nightly(), utc_time(13, 1, 0), &three_hours_west),
+            on(Reason::Schedule, Some(utc_time(13, 10, 0)))
         );
     }
 
     #[test]
     fn each_trigger_turns_it_on_only_while_its_setting_is_on() {
         let utc = glib::TimeZone::utc();
-        let noon = at(12, 12, 0);
+        let noon = utc_time(12, 12, 0);
         let mut sources = Sources::default();
         let mut triggers = nightly();
         sources.set_fullscreen(true);
@@ -580,17 +597,17 @@ mod tests {
     #[test]
     fn the_reason_is_the_user_then_the_schedule_then_fullscreen_then_the_screencast() {
         let utc = glib::TimeZone::utc();
-        let night = at(12, 23, 0);
+        let night = utc_time(12, 23, 0);
         let mut sources = Sources::default();
         sources.set_fullscreen(true);
         sources.set_screencasting(true);
         assert_eq!(
-            sources.effective(&nightly(), at(12, 12, 0), &utc),
+            sources.effective(&nightly(), utc_time(12, 12, 0), &utc),
             on(Reason::Fullscreen, None)
         );
         assert_eq!(
             sources.effective(&nightly(), night, &utc),
-            on(Reason::Schedule, Some(at(13, 7, 0)))
+            on(Reason::Schedule, Some(utc_time(13, 7, 0)))
         );
         sources.manual = DoNotDisturb::On {
             end: Some(night + 60),
@@ -602,7 +619,7 @@ mod tests {
         sources.set_fullscreen(false);
         sources.manual = DoNotDisturb::Off;
         assert_eq!(
-            sources.effective(&nightly(), at(12, 12, 0), &utc),
+            sources.effective(&nightly(), utc_time(12, 12, 0), &utc),
             on(Reason::Screencast, None)
         );
     }
@@ -611,24 +628,40 @@ mod tests {
     fn turning_it_off_during_the_schedule_holds_it_off_until_the_schedules_next_start() {
         let utc = glib::TimeZone::utc();
         let mut sources = Sources::default();
-        sources.turn_off(&nightly(), at(12, 23, 0), &utc);
+        sources.turn_off(&nightly(), utc_time(12, 23, 0), &utc);
         for (day, hour) in [(12, 23), (13, 6), (13, 12), (13, 21)] {
             assert_eq!(
-                sources.effective(&nightly(), at(day, hour, 0), &utc),
+                sources.effective(&nightly(), utc_time(day, hour, 0), &utc),
                 Effective::Off,
                 "{day} at {hour}:00"
             );
         }
         assert_eq!(
-            sources.effective(&nightly(), at(13, 22, 0), &utc),
-            on(Reason::Schedule, Some(at(14, 7, 0)))
+            sources.effective(&nightly(), utc_time(13, 22, 0), &utc),
+            on(Reason::Schedule, Some(utc_time(14, 7, 0)))
+        );
+    }
+
+    #[test]
+    fn a_change_of_the_schedule_ends_its_hold() {
+        let utc = glib::TimeZone::utc();
+        let mut sources = Sources::default();
+        sources.turn_off(&nightly(), utc_time(12, 23, 0), &utc);
+        let mut earlier = nightly();
+        earlier.schedule = Some(Schedule {
+            from: 21 * 60,
+            to: 7 * 60,
+        });
+        assert_eq!(
+            sources.effective(&earlier, utc_time(12, 23, 0), &utc),
+            on(Reason::Schedule, Some(utc_time(13, 7, 0)))
         );
     }
 
     #[test]
     fn turning_it_off_holds_a_trigger_off_until_it_ends() {
         let utc = glib::TimeZone::utc();
-        let noon = at(12, 12, 0);
+        let noon = utc_time(12, 12, 0);
         let mut sources = Sources::default();
         sources.set_fullscreen(true);
         sources.manual = DoNotDisturb::On { end: None };
@@ -656,22 +689,25 @@ mod tests {
         let mut sources = Sources::default();
         let mut triggers = nightly();
         assert_eq!(
-            sources.next_change(&triggers, at(12, 12, 0), &utc),
-            Some(at(12, 22, 0))
+            sources.next_change(&triggers, utc_time(12, 12, 0), &utc),
+            Some(utc_time(12, 22, 0))
         );
         assert_eq!(
-            sources.next_change(&triggers, at(12, 23, 0), &utc),
-            Some(at(13, 7, 0))
+            sources.next_change(&triggers, utc_time(12, 23, 0), &utc),
+            Some(utc_time(13, 7, 0))
         );
         sources.manual = DoNotDisturb::On {
-            end: Some(at(12, 13, 0)),
+            end: Some(utc_time(12, 13, 0)),
         };
         assert_eq!(
-            sources.next_change(&triggers, at(12, 12, 0), &utc),
-            Some(at(12, 13, 0))
+            sources.next_change(&triggers, utc_time(12, 12, 0), &utc),
+            Some(utc_time(12, 13, 0))
         );
         triggers.schedule = None;
         sources.manual = DoNotDisturb::On { end: None };
-        assert_eq!(sources.next_change(&triggers, at(12, 12, 0), &utc), None);
+        assert_eq!(
+            sources.next_change(&triggers, utc_time(12, 12, 0), &utc),
+            None
+        );
     }
 }

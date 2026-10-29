@@ -2,10 +2,11 @@
 //! schedule and the triggers of [`crate::do_not_disturb`]. The settings are followed as they
 //! change, and so are Caminito's `PointerOutputFullscreen` and `Screencasting` on
 //! `org.mate.Caminito` (ADR 0051), which are false while Caminito isn't on the bus. A timer
-//! wakes the server at the next time the clock alone changes it. Whatever changes it, the
-//! clients hear `DoNotDisturbChanged` once it's another.
+//! wakes the server at the next time the clock alone changes it, or a minute from now if
+//! that's sooner, so that a suspend or a clock that jumped is caught up with. Whatever changes
+//! it, the clients hear `DoNotDisturbChanged` once it's another.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
@@ -34,6 +35,9 @@ const KEYS: [&str; 5] = [
     DO_NOT_DISTURB_WHILE_SCREENCASTING,
 ];
 
+/// The longest the timer waits, after which it looks at the clock again.
+const LONGEST_WAIT: u64 = 60;
+
 /// What follows the settings and Caminito, and the timer.
 #[derive(Default)]
 pub(super) struct Following {
@@ -44,18 +48,20 @@ pub(super) struct Following {
     making: Option<gio::Cancellable>,
     /// Waits for the next time the clock alone changes Do Not Disturb.
     wake: Option<glib::JoinHandle<()>>,
+    /// Whether a refresh is on its way, so that a burst of changes makes one.
+    queued: Rc<Cell<bool>>,
 }
 
 /// Starts following the settings and Caminito, and tells the clients if it's on already.
 pub(super) fn follow(state: &Rc<RefCell<State>>) {
     let mut guard = state.borrow_mut();
-    let this = guard.this.clone();
+    let (this, queued) = (guard.this.clone(), guard.following.queued.clone());
     let handler = guard
         .settings
         .global()
         .connect_changed(None, move |_, key| {
             if KEYS.contains(&key) {
-                queue_refresh(&this);
+                queue_refresh(&this, &queued);
             }
         });
     guard.following.settings = Some(handler);
@@ -101,14 +107,16 @@ fn watch(this: &Weak<RefCell<State>>, proxy: gio::DBusProxy) {
     let Some(state) = this.upgrade() else {
         return;
     };
-    let changed = this.clone();
+    let mut guard = state.borrow_mut();
+    let (changed, queued) = (this.clone(), guard.following.queued.clone());
     proxy.connect_local("g-properties-changed", false, move |_| {
-        queue_refresh(&changed);
+        queue_refresh(&changed, &queued);
         None
     });
-    let changed = this.clone();
-    proxy.connect_notify_local(Some("g-name-owner"), move |_, _| queue_refresh(&changed));
-    let mut guard = state.borrow_mut();
+    let (changed, queued) = (this.clone(), guard.following.queued.clone());
+    proxy.connect_notify_local(Some("g-name-owner"), move |_, _| {
+        queue_refresh(&changed, &queued);
+    });
     guard.following.making = None;
     guard.following.caminito = Some(proxy);
     guard.refresh_do_not_disturb();
@@ -116,9 +124,13 @@ fn watch(this: &Weak<RefCell<State>>, proxy: gio::DBusProxy) {
 
 /// Refreshes Do Not Disturb once the change that called it is over: a handler may run while
 /// the state is borrowed.
-fn queue_refresh(this: &Weak<RefCell<State>>) {
-    let this = this.clone();
+fn queue_refresh(this: &Weak<RefCell<State>>, queued: &Rc<Cell<bool>>) {
+    if queued.replace(true) {
+        return;
+    }
+    let (this, queued) = (this.clone(), queued.clone());
     glib::MainContext::ref_thread_default().spawn_local(async move {
+        queued.set(false);
         if let Some(state) = this.upgrade() {
             state.borrow_mut().refresh_do_not_disturb();
         }
@@ -199,8 +211,8 @@ impl State {
         self.wake_at(next, now);
     }
 
-    /// Wakes at `next`, at least a second and at most a day after `now`, and refreshes then,
-    /// so that a clock that jumped is followed.
+    /// Wakes at `next`, at least a second and at most [`LONGEST_WAIT`] after `now`, and
+    /// refreshes then.
     fn wake_at(&mut self, next: Option<u64>, now: u64) {
         if let Some(wake) = self.following.wake.take() {
             wake.abort();
@@ -208,7 +220,7 @@ impl State {
         let Some(next) = next else {
             return;
         };
-        let wait = next.saturating_sub(now).clamp(1, 24 * 60 * 60);
+        let wait = next.saturating_sub(now).clamp(1, LONGEST_WAIT);
         let this = self.this.clone();
         self.following.wake = Some(glib::MainContext::ref_thread_default().spawn_local(
             async move {
