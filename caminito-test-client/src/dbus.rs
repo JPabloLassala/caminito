@@ -99,6 +99,10 @@ pub trait Caminito {
     /// or the empty string when there's none (104).
     fn get_active_toplevel(&self) -> zbus::Result<String>;
 
+    /// Brings forward the app whose desktop id or app id is `app`, as a click on its Task
+    /// item does (ADR 0054).
+    fn activate_application(&self, app: &str) -> zbus::Result<()>;
+
     /// Grabs each accelerator, in GTK's syntax, and returns its action id, or 0 for one
     /// that wasn't grabbed (98).
     fn grab_accelerators(&self, accelerators: &[&str]) -> zbus::Result<Vec<u32>>;

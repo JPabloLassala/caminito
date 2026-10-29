@@ -2,10 +2,12 @@
 //! caminito-displays ask of Caminito that no protocol carries. So far, the primary output (81)
 //! and saving the layout (83), both ADR 0014's, showing the desktop (94), the accelerator
 //! grabs (98), the window a window screenshot is of (104), the global menu (110), the
-//! menu claim (115), Night Light (137) and its pause (140), and the sun's position (215).
+//! menu claim (115), Night Light (137) and its pause (140), the sun's position (215), and
+//! bringing an app forward for caminito-notifications (ADR 0054).
 
 use std::collections::HashMap;
 
+use caminito_policy::{PolicyWindow, WindowId};
 use futures_channel::oneshot;
 use smithay::reexports::calloop::channel::Sender;
 use zbus::message::Header;
@@ -17,7 +19,7 @@ use super::global_menu::{GlobalMenu, Published};
 use super::{Callers, caller};
 use crate::night_light;
 use crate::output::{primary, saved};
-use crate::state::Caminito;
+use crate::state::{Caminito, SEAT};
 
 /// The well-known name, which carried patches look for an owner of (ADR 0011).
 pub(crate) const NAME: &str = "org.mate.Caminito";
@@ -49,6 +51,8 @@ pub(crate) enum Request {
     },
     /// Calls `GetActiveToplevel`, with the caller's process if the bus knows it.
     ActiveToplevel(Option<u32>, oneshot::Sender<Option<String>>),
+    /// Calls `ActivateApplication`, with the app.
+    ActivateApplication(String, oneshot::Sender<()>),
     /// `GrabAccelerators`, from `caller`, answered with an action id for each.
     GrabAccelerators {
         caller: String,
@@ -308,6 +312,17 @@ impl CaminitoInterface {
             .unwrap_or_default())
     }
 
+    /// Brings forward the app `app` names, its desktop-file ID without `.desktop` or else
+    /// its app id, as a click on its Task item does (ADR 0054): its most recently focused
+    /// window, on its workspace and unminimised. A window is the app's if its app id is
+    /// `app`, in any case, or its desktop entry's ID is. An app with no window that ever had
+    /// the focus is left as it is. caminito-notifications calls it for a click on a
+    /// notification without a default action.
+    async fn activate_application(&self, app: String) -> zbus::fdo::Result<()> {
+        let activate = |reply| Request::ActivateApplication(app, reply);
+        super::ask(&self.requests, activate).await
+    }
+
     /// Grabs key combinations for the caller, in the style of `org.gnome.Shell`'s. Each
     /// accelerator is a string in GTK's syntax, as MATE's keys store it: `<Control><Alt>t`,
     /// `XF86AudioMute`. The answer has an action id for each, in order, which
@@ -501,6 +516,10 @@ impl Caminito {
             Request::ActiveToplevel(caller, reply) => {
                 let _ = reply.send(self.active_toplevel(caller));
             }
+            Request::ActivateApplication(app, reply) => {
+                self.activate_application(&app);
+                let _ = reply.send(());
+            }
             Request::GrabAccelerators {
                 caller,
                 accelerators,
@@ -539,6 +558,29 @@ impl Caminito {
                 let _ = reply.send(self.night_light.published_sun());
             }
         }
+    }
+
+    /// Activates the most recently focused window of the app `app` names, if it has one: see
+    /// `ActivateApplication`.
+    fn activate_application(&mut self, app: &str) {
+        // Collected first: the desktop entries are looked up through the frame context, which
+        // needs `self` while policy's windows would still be borrowed.
+        let candidates: Vec<(WindowId, String)> = self
+            .policy
+            .all_by_recent_focus()
+            .filter(|id| !self.policy.is_desktop_or_dock(*id))
+            .filter_map(|id| Some((id, self.policy.window(id)?.app_id()?)))
+            .collect();
+        let found = candidates.into_iter().find(|(_, app_id)| {
+            app_id.eq_ignore_ascii_case(app)
+                || self.frame_context.desktop_id(app_id).as_deref() == Some(app)
+        });
+        let Some((id, _)) = found else {
+            tracing::debug!("no window of {app} to bring forward");
+            return;
+        };
+        let now = self.now();
+        self.policy.activate(SEAT, id, now);
     }
 
     /// Signals `AcceleratorActivated` to the grab's `owner`, by its unique name on the bus,

@@ -151,14 +151,27 @@ dim_label (const char *text)
   return label;
 }
 
+/* An xdg-activation token for the app, asked for while the popup still has the keyboard
+   and the click's serial; NULL if GDK has none. */
+static char *
+activation_token (NtPopup *popup)
+{
+  GtkWidget *window = caminito_applet_popup_get_window (popup->applet_popup);
+  g_autoptr (GdkAppLaunchContext) context =
+    gdk_display_get_app_launch_context (gtk_widget_get_display (window));
+
+  return g_app_launch_context_get_startup_notify_id (G_APP_LAUNCH_CONTEXT (context), NULL, NULL);
+}
+
 static void
 close_and_invoke (NtPopup *popup, guint32 id, const char *key)
 {
   /* The callback may bring an update, which destroys the widget key belongs to. */
   g_autofree char *copy = g_strdup (key);
+  g_autofree char *token = activation_token (popup);
 
   caminito_applet_popup_hide (popup->applet_popup);
-  popup->actions.invoke (id, copy, popup->data);
+  popup->actions.invoke (id, copy, token, popup->data);
 }
 
 static guint32
@@ -178,6 +191,28 @@ on_action (GtkButton *button, gpointer data)
 {
   close_and_invoke (data, id_of (GTK_WIDGET (button)),
                     g_object_get_data (G_OBJECT (button), "nt-key"));
+}
+
+static void
+on_reply (GtkEntry *field, gpointer data)
+{
+  NtPopup *popup = data;
+  /* The callback may bring an update, which destroys the field. */
+  g_autofree char *text = g_strdup (gtk_entry_get_text (field));
+  g_autofree char *stripped = g_strstrip (g_strdup (text));
+
+  if (*stripped == '\0')
+    return;
+  popup->actions.reply (id_of (GTK_WIDGET (field)), text, popup->data);
+}
+
+static void
+on_reply_icon (GtkEntry            *field,
+               GtkEntryIconPosition position G_GNUC_UNUSED,
+               GdkEvent            *event G_GNUC_UNUSED,
+               gpointer             data)
+{
+  on_reply (field, data);
 }
 
 static void
@@ -276,8 +311,8 @@ entry_row (NtPopup *popup, const NtEntry *entry, gint64 now)
   g_autofree char *age_text = nt_state_age (entry->time, now);
   g_autoptr (PangoAttrList) bold = pango_attr_list_new ();
 
+  /* Every row is activatable: without a default action, a click brings the app forward. */
   g_object_set_data (G_OBJECT (row), "nt-id", GUINT_TO_POINTER (entry->id));
-  gtk_list_box_row_set_activatable (GTK_LIST_BOX_ROW (row), entry->has_default);
   g_object_set (outer, "margin", 8, NULL);
 
   gtk_widget_set_valign (icon, GTK_ALIGN_START);
@@ -322,6 +357,22 @@ entry_row (NtPopup *popup, const NtEntry *entry, gint64 now)
           gtk_box_pack_start (GTK_BOX (buttons), button, FALSE, FALSE, 0);
         }
       gtk_box_pack_start (GTK_BOX (text), buttons, FALSE, FALSE, 0);
+    }
+
+  if (*entry->reply != '\0')
+    {
+      GtkWidget *field = gtk_entry_new ();
+
+      gtk_widget_set_name (field, "reply");
+      gtk_widget_set_margin_top (field, 4);
+      gtk_entry_set_placeholder_text (GTK_ENTRY (field), entry->reply);
+      gtk_entry_set_icon_from_icon_name (GTK_ENTRY (field), GTK_ENTRY_ICON_SECONDARY,
+                                         "document-send-symbolic");
+      gtk_entry_set_icon_tooltip_text (GTK_ENTRY (field), GTK_ENTRY_ICON_SECONDARY, "Send");
+      g_object_set_data (G_OBJECT (field), "nt-id", GUINT_TO_POINTER (entry->id));
+      g_signal_connect (field, "activate", G_CALLBACK (on_reply), popup);
+      g_signal_connect (field, "icon-release", G_CALLBACK (on_reply_icon), popup);
+      gtk_box_pack_start (GTK_BOX (text), field, FALSE, FALSE, 0);
     }
 
   gtk_box_pack_start (GTK_BOX (outer), icon, FALSE, FALSE, 0);

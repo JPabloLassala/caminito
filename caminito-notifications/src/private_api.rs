@@ -26,10 +26,10 @@ const INTERFACE: &str = r#"
     <!-- The history, newest first. An entry is: id, the Notifying app's key, its name, its
          icon (a path or a theme's name), summary, body as Pango markup, image (a string like
          the icon, or the pixels of image-data as (iiibiiay), in a variant), actions without
-         the default as (key, label), has a default action, resident, has a reply field, and
-         the time in seconds since the epoch. -->
+         the default as (key, label), has a default action, resident, the reply field's
+         placeholder or empty for none, and the time in seconds since the epoch. -->
     <method name="List">
-      <arg type="a(usssssva(ss)bbbt)" name="entries" direction="out"/>
+      <arg type="a(usssssva(ss)bbst)" name="entries" direction="out"/>
     </method>
     <method name="Dismiss">
       <arg type="u" name="id" direction="in"/>
@@ -38,7 +38,8 @@ const INTERFACE: &str = r#"
       <arg type="s" name="app" direction="in"/>
     </method>
     <method name="ClearAll"/>
-    <!-- The key "default" is a click. The token is an xdg-activation token, or empty. -->
+    <!-- The key "default" is a click: the default action, or else Caminito brings the app
+         forward. The token is an xdg-activation token, or empty. -->
     <method name="InvokeAction">
       <arg type="u" name="id" direction="in"/>
       <arg type="s" name="key" direction="in"/>

@@ -2,6 +2,7 @@
 
 mod accelerators;
 mod accessx;
+mod activate_application;
 mod active_toplevel;
 mod app_menu_registrar;
 mod application_overview;

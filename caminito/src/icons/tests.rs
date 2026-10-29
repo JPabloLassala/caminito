@@ -326,6 +326,30 @@ fn a_desktop_entry_whose_startup_wm_class_is_the_app_id_gives_the_icon() {
 }
 
 #[test]
+fn an_app_ids_desktop_id_is_its_entrys_by_name_or_by_startup_wm_class() {
+    let dirs = Dirs::new();
+    dirs.write(
+        "system/applications/org.mozilla.firefox.desktop",
+        "[Desktop Entry]\nIcon=firefox\nStartupWMClass=Navigator\n",
+    );
+    dirs.write(
+        "system/applications/mate/terminal.desktop",
+        "[Desktop Entry]\nIcon=utilities-terminal\n",
+    );
+    let mut lookup = dirs.lookup("menta");
+
+    assert_eq!(
+        lookup.desktop_id("navigator"),
+        Some("org.mozilla.firefox".into())
+    );
+    assert_eq!(
+        lookup.desktop_id("mate-terminal"),
+        Some("mate-terminal".into())
+    );
+    assert_eq!(lookup.desktop_id("unknown"), None);
+}
+
+#[test]
 fn an_app_id_with_no_desktop_entry_has_no_desktop_icon() {
     let dirs = Dirs::new();
     dirs.write(

@@ -8,6 +8,7 @@
 //! which is how policy tells one client's windows from another's.
 
 use caminito_policy::FocusNewWindows;
+use caminito_test_client::layer_shell::{Layer, LayerSpec};
 use caminito_test_client::xdg_activation::TokenId;
 
 use super::fixture::{ClientId, ClientWindow, Fixture, Kind, WINDOW_COLOR, WindowSpec};
@@ -96,6 +97,109 @@ fn a_token_from_the_focused_client_activates_its_second_window() {
         assert!(f.has_keyboard(second), "{mode}");
         assert!(!dumped_urgent(&f, second), "{mode}");
     }
+}
+
+/// A notification bubble of caminito-notifications's process, on the overlay layer, which
+/// never takes the keyboard, and the middle of it.
+fn bubble(f: &mut Fixture, pid: u32) -> (ClientId, (f64, f64)) {
+    let id = client(f, pid);
+    f.map_layer(
+        id,
+        LayerSpec {
+            namespace: "caminito-notification",
+            ..LayerSpec::floating(Layer::Overlay, (360, 100))
+        },
+        WINDOW_COLOR,
+    );
+    (id, (960.0, 540.0))
+}
+
+/// Asks for a token from the client `id` with its last input serial, which no window of its
+/// is named with, and returns it once issued.
+fn token_from_client(f: &mut Fixture, id: ClientId) -> String {
+    let serial = f.client_state(id).last_input_serial;
+    assert!(serial.is_some(), "the client has had input");
+    let token: TokenId = f.client(id).request_activation_token(serial, None);
+    f.roundtrip(id);
+    f.client(id).activation_token(token).unwrap().to_owned()
+}
+
+/// A click on a notification bubble gives its app's window the focus (CMN-266), though the
+/// bubble never had the keyboard.
+#[test]
+fn a_token_from_a_click_on_a_layer_surface_without_the_keyboard_activates_a_window() {
+    for mode in ["smart", "strict"] {
+        let mut f = fixture("smart");
+        let app = client(&mut f, 100);
+        let app_window = f.map(app, WindowSpec::plain((400, 300)));
+        let other = client(&mut f, 200);
+        let focused = f.map(other, WindowSpec::plain((400, 300)));
+        assert!(has_focus(&f, focused));
+        f.set_setting(MARCO_GENERAL, "focus-new-windows", Value::Str(mode.into()));
+        let (daemon, middle) = bubble(&mut f, 300);
+
+        f.click(middle.0, middle.1);
+        f.roundtrip(daemon);
+        let token = token_from_client(&mut f, daemon);
+        activate(&mut f, &token, app_window);
+
+        assert!(has_focus(&f, app_window), "{mode}");
+        assert!(f.has_keyboard(app_window), "{mode}");
+        assert!(!dumped_urgent(&f, app_window), "{mode}");
+    }
+}
+
+#[test]
+fn a_token_from_a_layer_surface_the_pointer_has_left_is_refused_under_strict() {
+    let mut f = fixture("smart");
+    let app = client(&mut f, 100);
+    let app_window = f.map(app, WindowSpec::plain((400, 300)));
+    let other = client(&mut f, 200);
+    let focused = f.map(other, WindowSpec::plain((400, 300)));
+    f.set_setting(
+        MARCO_GENERAL,
+        "focus-new-windows",
+        Value::Str("strict".into()),
+    );
+    let (daemon, middle) = bubble(&mut f, 300);
+    f.click(middle.0, middle.1);
+    f.roundtrip(daemon);
+
+    // Off the bubble, onto the focused window, before the token is asked for.
+    f.pointer_move(5.0, 5.0);
+    f.roundtrip(daemon);
+    let token = token_from_client(&mut f, daemon);
+    activate(&mut f, &token, app_window);
+
+    assert!(has_focus(&f, focused));
+    assert!(dumped_urgent(&f, app_window));
+}
+
+#[test]
+fn a_token_from_a_layer_surface_the_pointer_left_and_came_back_to_is_refused_under_strict() {
+    let mut f = fixture("smart");
+    let app = client(&mut f, 100);
+    let app_window = f.map(app, WindowSpec::plain((400, 300)));
+    let other = client(&mut f, 200);
+    let focused = f.map(other, WindowSpec::plain((400, 300)));
+    f.set_setting(
+        MARCO_GENERAL,
+        "focus-new-windows",
+        Value::Str("strict".into()),
+    );
+    let (daemon, middle) = bubble(&mut f, 300);
+    f.click(middle.0, middle.1);
+    f.roundtrip(daemon);
+
+    // A hover now, long after the press, isn't a click.
+    f.pointer_move(5.0, 5.0);
+    f.pointer_move(middle.0, middle.1);
+    f.roundtrip(daemon);
+    let token = token_from_client(&mut f, daemon);
+    activate(&mut f, &token, app_window);
+
+    assert!(has_focus(&f, focused));
+    assert!(dumped_urgent(&f, app_window));
 }
 
 #[test]

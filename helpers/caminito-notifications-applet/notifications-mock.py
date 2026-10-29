@@ -6,14 +6,17 @@ It has the Notification history's part of org.mate.Caminito.Notifications as the
 Notifications applet uses it: List, Dismiss, ClearApp, ClearAll, InvokeAction, Reply, Counts
 and OpenSettings, with the HistoryChanged and CountsChanged signals, and the Notification
 center's (CMN-285): OpenCenter, which emits CenterRequested, and SetCenterOpen. As in the
-daemon, an entry leaves the history when it's dismissed or one of its actions is used, unless
-it's resident, and List gives the newest first. It refuses what the daemon refuses: an entry that
-isn't there, and an action an entry hasn't, "default" without a default action.
+daemon, an entry leaves the history when it's dismissed, clicked, replied to or one of its
+actions is used, unless it's resident, and List gives the newest first. It refuses what the
+daemon refuses: an entry that isn't there, an action an entry hasn't, and a reply to an entry
+without a reply field. "default" is a click, which every entry takes: the daemon brings the app
+forward when there's no default action.
 
 org.caminito.NotificationsMock is for a test or a check script:
 
 * AddEntry(id, app, app_name, app_icon, summary, body, image, actions, has_default, resident,
   age): a new entry, which arrived age seconds ago. image is a path or a theme's name.
+* SetReply(id, placeholder): gives the entry a reply field with that placeholder (CMN-266).
 * GetLog() -> the calls the mock took, in order, as lines:
     Dismiss <id>
     ClearApp <app>
@@ -34,7 +37,7 @@ MAIN_OBJ = "/org/mate/Caminito/Notifications"
 MAIN_IFACE = "org.mate.Caminito.Notifications"
 SYSTEM_BUS = False
 MOCK_IFACE = "org.caminito.NotificationsMock"
-ENTRY = "(usssssva(ss)bbbt)"
+ENTRY = "(usssssva(ss)bbst)"
 
 
 def load(mock, _parameters):
@@ -86,7 +89,7 @@ def List(self):
                     dbus.Array(e["actions"], signature="(ss)"),
                     e["has_default"],
                     e["resident"],
-                    False,
+                    e["reply"],
                     dbus.UInt64(e["time"]),
                 )
             )
@@ -119,7 +122,7 @@ def ClearAll(self):
 def InvokeAction(self, entry_id, key, token):
     self.log_lines.append(f'InvokeAction {int(entry_id)} {key} "{token}"')
     entry = _find(self, int(entry_id))
-    if not (key == "default" and entry["has_default"]) and key not in dict(entry["actions"]):
+    if key != "default" and key not in dict(entry["actions"]):
         raise dbus.exceptions.DBusException(
             f"notification {int(entry_id)} has no action {key}",
             name="org.freedesktop.DBus.Error.InvalidArgs",
@@ -131,12 +134,14 @@ def InvokeAction(self, entry_id, key, token):
 @dbus.service.method(MAIN_IFACE, in_signature="us", out_signature="")
 def Reply(self, entry_id, text):
     self.log_lines.append(f'Reply {int(entry_id)} "{text}"')
-    _find(self, int(entry_id))
-    # Its entries have no reply field, as List says (CMN-266).
-    raise dbus.exceptions.DBusException(
-        f"notification {int(entry_id)} has no reply field",
-        name="org.freedesktop.DBus.Error.InvalidArgs",
-    )
+    entry = _find(self, int(entry_id))
+    if not entry["reply"]:
+        raise dbus.exceptions.DBusException(
+            f"notification {int(entry_id)} has no reply field",
+            name="org.freedesktop.DBus.Error.InvalidArgs",
+        )
+    if not entry["resident"]:
+        _remove(self, {int(entry_id)})
 
 
 @dbus.service.method(MAIN_IFACE, in_signature="", out_signature="a{su}")
@@ -177,9 +182,16 @@ def AddEntry(
             "actions": [(str(k), str(v)) for k, v in actions],
             "has_default": bool(has_default),
             "resident": bool(resident),
+            "reply": "",
             "time": int(time.time()) - int(age),
         },
     )
+    _changed(self)
+
+
+@dbus.service.method(MOCK_IFACE, in_signature="us", out_signature="")
+def SetReply(self, entry_id, placeholder):
+    _find(self, int(entry_id))["reply"] = str(placeholder)
     _changed(self)
 
 

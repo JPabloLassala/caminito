@@ -33,8 +33,14 @@ const GPtrArray *nt_daemon_entries       (NtDaemon *daemon);
 /* The history's calls. The daemon's HistoryChanged brings what they change. */
 void             nt_daemon_dismiss       (NtDaemon *daemon, guint32 id);
 void             nt_daemon_clear_all     (NtDaemon *daemon);
-/* key "default" is a click on the entry. */
-void             nt_daemon_invoke_action (NtDaemon *daemon, guint32 id, const char *key);
+/* key "default" is a click on the entry, which brings its app forward without a default
+   action. token is an xdg-activation token for the app, or NULL. */
+void             nt_daemon_invoke_action (NtDaemon   *daemon,
+                                          guint32     id,
+                                          const char *key,
+                                          const char *token);
+/* text, sent from the entry's reply field. */
+void             nt_daemon_reply         (NtDaemon *daemon, guint32 id, const char *text);
 /* Whether the Notification center is open, which the daemon hears now and whenever it comes
    back to the bus. */
 void             nt_daemon_set_center_open (NtDaemon *daemon, gboolean open);

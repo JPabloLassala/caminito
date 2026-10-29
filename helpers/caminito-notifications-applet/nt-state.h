@@ -35,13 +35,14 @@ typedef struct
   GPtrArray *actions;
   gboolean   has_default;
   gboolean   resident;
-  gboolean   reply;
+  /* The reply field's placeholder (KDE's inline reply), or empty for none. */
+  char      *reply;
   /* When it arrived, in seconds since the epoch. */
   gint64     time;
 } NtEntry;
 
 /* The D-Bus type of List's reply. */
-#define NT_LIST_TYPE "(a(usssssva(ss)bbbt))"
+#define NT_LIST_TYPE "(a(usssssva(ss)bbst))"
 
 void               nt_entry_free        (NtEntry *entry);
 /* The NtEntries of List's reply, in its order, newest first; NULL if reply isn't

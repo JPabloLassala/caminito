@@ -14,6 +14,10 @@ use crate::server::{Action, Bubble, Icon, Image, Pixels, Sound};
 /// The action a click on the bubble invokes, which has no button (the spec's "default").
 pub(crate) const DEFAULT_ACTION: &str = "default";
 
+/// KDE's action for a reply field in place of a button, whose label is the field's
+/// placeholder unless `x-kde-reply-placeholder-text` gives one.
+const INLINE_REPLY: &str = "inline-reply";
+
 /// The theme's sound for a notification that names none.
 const DEFAULT_SOUND: &str = "message-new-instant";
 
@@ -33,8 +37,6 @@ pub(crate) struct Notification {
     pub(crate) critical: bool,
     /// Whether it never enters the Notification history (`transient`).
     pub(crate) transient: bool,
-    /// Whether it has a reply field (KDE's `x-kde-reply-placeholder-text`).
-    pub(crate) reply: bool,
     /// What plays as it arrives, if anything.
     pub(crate) sound: Option<Sound>,
     /// How long its bubble stays, or `None` for as long as the user leaves it.
@@ -72,10 +74,16 @@ impl Notification {
 
         // The spec's actions are a flat list of keys and labels.
         let mut has_default = false;
+        let mut reply = None;
         let mut actions = Vec::new();
         for [key, label] in arguments.actions.as_chunks::<2>().0 {
             if key == DEFAULT_ACTION {
                 has_default = true;
+            } else if key == INLINE_REPLY {
+                let placeholder = hint::<String>(hints, "x-kde-reply-placeholder-text");
+                reply = placeholder
+                    .filter(|text| !text.is_empty())
+                    .or(Some(label.clone()));
             } else {
                 actions.push(Action {
                     key: key.clone(),
@@ -91,6 +99,9 @@ impl Notification {
             body: markup::sanitize(arguments.body),
             image: image(hints),
             actions,
+            reply,
+            progress: hint::<i32>(hints, "value")
+                .and_then(|value| u8::try_from(value.clamp(0, 100)).ok()),
         };
         Notification {
             app,
@@ -99,7 +110,6 @@ impl Notification {
             critical,
             resident: hint::<bool>(hints, "resident").unwrap_or(false),
             transient: hint::<bool>(hints, "transient").unwrap_or(false),
-            reply: hint::<String>(hints, "x-kde-reply-placeholder-text").is_some(),
             sound: sound(hints),
             timeout: timeout(arguments.expire_timeout, critical, default_timeout),
         }

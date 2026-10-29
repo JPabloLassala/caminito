@@ -38,19 +38,24 @@ mod api;
 pub const NAME: &str = "org.freedesktop.Notifications";
 const PATH: &str = "/org/freedesktop/Notifications";
 
+/// Caminito's name and interface, and its object, which brings an app forward.
+const CAMINITO: &str = "org.mate.Caminito";
+const CAMINITO_PATH: &str = "/org/mate/Caminito";
+
 /// What the server tells of itself: its name, its vendor, its version and the spec's.
 const SERVER_NAME: &str = "Caminito";
 const VENDOR: &str = "MATE";
 const SPEC_VERSION: &str = "1.3";
 
-/// The spec's optional parts the server has (`GetCapabilities`). The inline reply comes with
-/// its ticket (CMN-266).
-const CAPABILITIES: [&str; 7] = [
+/// The spec's optional parts the server has (`GetCapabilities`), with KDE's inline reply
+/// (CMN-266).
+const CAPABILITIES: [&str; 8] = [
     "actions",
     "body",
     "body-hyperlinks",
     "body-markup",
     "icon-static",
+    "inline-reply",
     "persistence",
     "sound",
 ];
@@ -124,6 +129,11 @@ pub struct Bubble {
     pub image: Option<Image>,
     /// The actions that have buttons, in the app's order. The default action is a click.
     pub actions: Vec<Action>,
+    /// The reply field's placeholder, if it has KDE's inline reply.
+    pub reply: Option<String>,
+    /// The progress bar's percentage, from the `value` hint. An app moves it by replacing the
+    /// notification. The Notification center has no bar, so the history doesn't keep it.
+    pub progress: Option<u8>,
 }
 
 /// An icon, by its icon theme's name or as a file.
@@ -243,23 +253,19 @@ impl Events {
         }
     }
 
-    /// The user clicked the bubble: its default action, or else a dismissal. `token` is an
-    /// xdg-activation token, for the app to bring its window forward with. Without a default
-    /// action the click is to bring the app forward through Caminito (CMN-266); until then
-    /// it only dismisses the bubble.
+    /// The user clicked the bubble: its default action, with `token`, an xdg-activation token
+    /// for the app to bring its window forward with, or else Caminito brings the app forward
+    /// (CMN-266).
     pub fn click(&self, token: Option<String>) {
-        let Some(state) = self.state.upgrade() else {
-            return;
-        };
-        let has_default = state
-            .borrow()
-            .notifications
-            .get(&self.id)
-            .is_some_and(|entry| entry.notification.has_default);
-        if has_default {
-            invoke(&state, self.id, DEFAULT_ACTION, token);
-        } else {
-            close(&state, self.id, Reason::Dismissed);
+        if let Some(state) = self.state.upgrade() {
+            click(&state, self.id, token);
+        }
+    }
+
+    /// The user sent `text` from the bubble's reply field.
+    pub fn reply(&self, text: &str) {
+        if let Some(state) = self.state.upgrade() {
+            reply(&state, self.id, text);
         }
     }
 
@@ -831,6 +837,52 @@ fn invoke(state: &Rc<RefCell<State>>, id: u32, key: &str, token: Option<String>)
         }
         emit(connection, "ActionInvoked", (id, key));
     });
+}
+
+/// A click on the notification `id`, in its bubble or in the Notification center: its default
+/// action, with an xdg-activation token for the app to bring its window forward with, or else
+/// Caminito brings the app forward, as a click on its Task item does. Either way it closes
+/// unless it's resident.
+fn click(state: &Rc<RefCell<State>>, id: u32, token: Option<String>) {
+    let guard = state.borrow();
+    let clicked = match guard.notifications.get(&id) {
+        Some(entry) => Some((
+            entry.notification.has_default,
+            entry.notification.app.clone(),
+        )),
+        None => guard
+            .history
+            .get(id)
+            .map(|entry| (entry.has_default, entry.app.clone())),
+    };
+    drop(guard);
+    match clicked {
+        Some((true, _)) => invoke(state, id, DEFAULT_ACTION, token),
+        Some((false, app)) => act(state, id, |connection| activate_app(connection, &app)),
+        None => {}
+    }
+}
+
+/// Asks Caminito to bring forward the app whose key is `app`, its desktop entry or else its
+/// name, with `org.mate.Caminito`'s `ActivateApplication` (ADR 0054). Without Caminito, as
+/// outside a Session, nothing comes forward.
+fn activate_app(connection: &gio::DBusConnection, app: &str) {
+    connection.call(
+        Some(CAMINITO),
+        CAMINITO_PATH,
+        CAMINITO,
+        "ActivateApplication",
+        Some(&(app,).to_variant()),
+        None,
+        gio::DBusCallFlags::NO_AUTO_START,
+        -1,
+        gio::Cancellable::NONE,
+        |result| {
+            if let Err(err) = result {
+                glib::g_debug!(DOMAIN, "can't ask Caminito to bring the app forward: {err}");
+            }
+        },
+    );
 }
 
 /// Tells the app the user's `text` in reply to `id`, and closes the notification unless it's

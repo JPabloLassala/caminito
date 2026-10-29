@@ -8,16 +8,16 @@
 /* An entry of List's reply, with an image given as a string. */
 static GVariant *
 entry (guint32 id, const char *app, const char *summary, const char *image, gboolean has_default,
-       guint64 time)
+       const char *reply, guint64 time)
 {
   GVariantBuilder actions;
 
   g_variant_builder_init (&actions, G_VARIANT_TYPE ("a(ss)"));
   g_variant_builder_add (&actions, "(ss)", "reply", "Reply");
   g_variant_builder_add (&actions, "(ss)", "archive", "Archive");
-  return g_variant_new ("(usssssv@a(ss)bbbt)", id, app, "Mail", "mail-unread", summary,
+  return g_variant_new ("(usssssv@a(ss)bbst)", id, app, "Mail", "mail-unread", summary,
                         "From <b>Ana</b>", g_variant_new_string (image),
-                        g_variant_builder_end (&actions), has_default, FALSE, FALSE, time);
+                        g_variant_builder_end (&actions), has_default, FALSE, reply, time);
 }
 
 static GVariant *
@@ -25,18 +25,18 @@ list (GVariant **entries, guint n)
 {
   GVariantBuilder builder;
 
-  g_variant_builder_init (&builder, G_VARIANT_TYPE ("a(usssssva(ss)bbbt)"));
+  g_variant_builder_init (&builder, G_VARIANT_TYPE ("a(usssssva(ss)bbst)"));
   for (guint i = 0; i < n; i++)
     g_variant_builder_add_value (&builder, entries[i]);
-  return g_variant_ref_sink (g_variant_new ("(a(usssssva(ss)bbbt))", &builder));
+  return g_variant_ref_sink (g_variant_new ("(a(usssssva(ss)bbst))", &builder));
 }
 
 static void
 test_entries_keep_the_lists_order_and_fields (void)
 {
   GVariant *entries[] = {
-    entry (7, "org.gnome.Evolution", "Lunch?", "/tmp/photo.png", TRUE, 1700000300),
-    entry (3, "org.gnome.Evolution", "Invoice", "", FALSE, 1700000000),
+    entry (7, "org.gnome.Evolution", "Lunch?", "/tmp/photo.png", TRUE, "Reply to Ana", 1700000300),
+    entry (3, "org.gnome.Evolution", "Invoice", "", FALSE, "", 1700000000),
   };
   g_autoptr (GVariant) reply = list (entries, G_N_ELEMENTS (entries));
   g_autoptr (GPtrArray) read = nt_entries_from_list (reply);
@@ -58,6 +58,8 @@ test_entries_keep_the_lists_order_and_fields (void)
   g_assert_null (newest->image_pixels);
   g_assert_true (newest->has_default);
   g_assert_false (oldest->has_default);
+  g_assert_cmpstr (newest->reply, ==, "Reply to Ana");
+  g_assert_cmpstr (oldest->reply, ==, "");
   g_assert_cmpint (newest->time, ==, 1700000300);
   g_assert_cmpuint (newest->actions->len, ==, 2);
   action = g_ptr_array_index (newest->actions, 1);
@@ -72,9 +74,9 @@ test_an_image_of_pixels_is_kept_as_pixels (void)
   GVariant *data = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, pixels, sizeof pixels, 1);
   GVariant *image = g_variant_new ("(iiibii@ay)", 2, 2, 6, FALSE, 8, 3, data);
   GVariant *entries[] = {
-    g_variant_new ("(usssssv@a(ss)bbbt)", 1, "app", "App", "", "Hi", "",
+    g_variant_new ("(usssssv@a(ss)bbst)", 1, "app", "App", "", "Hi", "",
                    image, g_variant_new_array (G_VARIANT_TYPE ("(ss)"), NULL, 0), FALSE,
-                   FALSE, FALSE, (guint64) 1),
+                   FALSE, "", (guint64) 1),
   };
   g_autoptr (GVariant) reply = list (entries, 1);
   g_autoptr (GPtrArray) read = nt_entries_from_list (reply);

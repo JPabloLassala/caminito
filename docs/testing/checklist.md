@@ -3899,6 +3899,30 @@ They are the developer's to run.
 - **Debug tool:** `busctl --user monitor org.freedesktop.Notifications`, for the calls and the
   signals.
 
+### Replying from a bubble, a progress bar, and a click that brings the app forward
+
+- **Milestone:** `notifications`.
+- **Steps:**
+  1. In *MATE on Caminito*, run `gdbus monitor --session --dest org.freedesktop.Notifications`
+     in a terminal and leave it open.
+  2. In another, run `notify-send -A inline-reply=Send -h
+     'string:x-kde-reply-placeholder-text:Reply to Ana' 'Ana' 'Lunch at one?'`. Click the reply
+     field in the bubble, type *On my way* and press Enter.
+  3. Run it again, don't answer it, and wait for the bubble to close. Open the Notification
+     center from the bell, type *Sure* in the entry's reply field and click the send icon.
+  4. Run `id=$(notify-send -p -h int:value:30 'Copying' 'photos')`, then `notify-send -r "$id" -h
+     int:value:80 'Copying' 'photos'`.
+  5. Open Pluma, then focus another window, and minimise Pluma. Run `notify-send -h
+     string:desktop-entry:pluma 'From Pluma' 'Click me'` and click the bubble's text.
+- **Expected:** in step 2 the bubble has a field with *Reply to Ana* greyed in it and no *Send*
+  button, it keeps the bubble from closing while it has the keyboard, and the monitor shows
+  `NotificationReplied` with *On my way* and then `NotificationClosed`, and the bubble closes. In
+  step 3 the monitor shows `NotificationReplied` with *Sure*, and the entry leaves the center. In
+  step 4 one bubble shows a bar at 30 % that moves to 80 % in place. In step 5 Pluma comes back,
+  unminimised and focused, and the bubble closes (CMN-266, ADR 0054).
+- **Debug tool:** the monitor, and `busctl --user call org.mate.Caminito /org/mate/Caminito
+  org.mate.Caminito ActivateApplication s pluma` to try the last step's call on its own.
+
 ### The notification settings window in a real Session
 
 - **Milestone:** `notifications`.

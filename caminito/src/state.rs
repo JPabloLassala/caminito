@@ -271,6 +271,9 @@ pub struct Caminito {
     pub pointer_focus: Option<(PointerFocus, Point<f64, Logical>)>,
     /// The layer surface a click gave the keyboard, and policy's focus then (63).
     pub(crate) keyboard_layer: Option<(LayerSurface, Option<WindowId>)>,
+    /// The client of the layer surface last pressed on, and the press's serial, which an
+    /// xdg-activation token asked for since is tied to (CMN-266).
+    pub(crate) layer_press: Option<(ClientId, Serial)>,
     /// The name policy gets for the next layer surface (163).
     pub(crate) next_layer_id: u64,
     /// Keys whose press ran a binding or a grabbed accelerator, so their release is
@@ -1040,6 +1043,7 @@ impl Caminito {
 
             pointer_focus: None,
             keyboard_layer: None,
+            layer_press: None,
             next_layer_id: 0,
             suppressed_keys: HashSet::new(),
             held_remap_step: None,

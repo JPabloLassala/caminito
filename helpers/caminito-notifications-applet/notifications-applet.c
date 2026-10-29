@@ -86,11 +86,19 @@ on_change_size (MatePanelApplet *panel_applet G_GNUC_UNUSED, guint size, gpointe
 }
 
 static void
-invoke (guint32 id, const char *key, gpointer data)
+invoke (guint32 id, const char *key, const char *token, gpointer data)
 {
   Applet *applet = data;
 
-  nt_daemon_invoke_action (applet->daemon, id, key);
+  nt_daemon_invoke_action (applet->daemon, id, key, token);
+}
+
+static void
+reply (guint32 id, const char *text, gpointer data)
+{
+  Applet *applet = data;
+
+  nt_daemon_reply (applet->daemon, id, text);
 }
 
 static void
@@ -135,6 +143,7 @@ on_popup_unmap (GtkWidget *window G_GNUC_UNUSED, gpointer data)
 
 static const NtPopupActions popup_actions = {
   .invoke = invoke,
+  .reply = reply,
   .dismiss = dismiss,
   .clear_all = clear_all,
 };

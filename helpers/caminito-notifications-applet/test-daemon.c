@@ -256,21 +256,30 @@ test_the_calls_reach_the_daemon (Fixture *fixture, gconstpointer data G_GNUC_UNU
   add_entry (fixture, 1, "Invoice", FALSE);
   add_entry (fixture, 2, "Lunch?", FALSE);
   add_entry (fixture, 3, "Ana is calling", TRUE);
+  g_variant_unref (mock_call (fixture, "SetReply", g_variant_new ("(us)", 3, "Reply to Ana")));
   fixture->daemon = nt_daemon_new (on_changed, on_center_requested, fixture);
   wait_until (fixture, list_is, "3 Ana is calling;2 Lunch?;1 Invoice");
+  g_assert_cmpstr (((NtEntry *) g_ptr_array_index (nt_daemon_entries (fixture->daemon), 0))->reply,
+                   ==, "Reply to Ana");
 
   nt_daemon_dismiss (fixture->daemon, 1);
   wait_until (fixture, list_is, "3 Ana is calling;2 Lunch?");
-  nt_daemon_invoke_action (fixture->daemon, 2, "default");
+  nt_daemon_invoke_action (fixture->daemon, 2, "default", "xdg-token");
   wait_until (fixture, list_is, "3 Ana is calling");
   /* A resident one stays. */
-  nt_daemon_invoke_action (fixture->daemon, 3, "reply");
-  wait_until (fixture, log_is, "Dismiss 1;InvokeAction 2 default \"\";InvokeAction 3 reply \"\"");
+  nt_daemon_invoke_action (fixture->daemon, 3, "reply", NULL);
+  wait_until (fixture, log_is,
+              "Dismiss 1;InvokeAction 2 default \"xdg-token\";InvokeAction 3 reply \"\"");
   g_assert_true (list_is (fixture, "3 Ana is calling"));
+  nt_daemon_reply (fixture->daemon, 3, "On my way");
+  wait_until (fixture, log_is,
+              "Dismiss 1;InvokeAction 2 default \"xdg-token\";InvokeAction 3 reply \"\";"
+              "Reply 3 \"On my way\"");
   nt_daemon_clear_all (fixture->daemon);
   wait_until (fixture, list_is, "");
   wait_until (fixture, log_is,
-              "Dismiss 1;InvokeAction 2 default \"\";InvokeAction 3 reply \"\";ClearAll");
+              "Dismiss 1;InvokeAction 2 default \"xdg-token\";InvokeAction 3 reply \"\";"
+              "Reply 3 \"On my way\";ClearAll");
 }
 
 static void

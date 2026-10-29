@@ -44,6 +44,9 @@ window.caminito-notifications { background: none; }
 .caminito-notification .close { min-width: 20px; min-height: 20px; padding: 2px; margin: 4px; }
 .caminito-notifications-header button { border-radius: 12px; min-height: 24px; padding: 0 10px; }
 .caminito-notifications-header .more.critical { color: @error_color; }
+.caminito-notification progressbar trough, .caminito-notification progressbar progress {
+  min-height: 6px;
+}
 ";
 
 /// The bubbles, in their layer surface.
@@ -72,6 +75,8 @@ struct Shown {
     /// What's in the stack.
     root: gtk::Box,
     events: Events,
+    /// Whether it has a reply field, which needs the keyboard.
+    reply: bool,
 }
 
 impl GtkBubbles {
@@ -193,8 +198,18 @@ impl GtkBubbles {
         Some(monitor.geometry().height() - 2 * GAP)
     }
 
-    /// Shows the window when it has a bubble, and hides it, shrunk, when it has none.
+    /// Shows the window when it has a bubble, and hides it, shrunk, when it has none. It takes
+    /// the keyboard on a click only while a bubble has a reply field to type in, so that a
+    /// click on any other leaves the keyboard where it was.
     fn present(&self) {
+        if self.layer {
+            let typing = self.shown.borrow().values().any(|shown| shown.reply);
+            self.window.set_keyboard_mode(if typing {
+                KeyboardMode::OnDemand
+            } else {
+                KeyboardMode::None
+            });
+        }
         if self.stack.first_child().is_some() {
             self.window.set_visible(true);
             reshape(&self.window, &self.column, self.layer);
@@ -311,7 +326,15 @@ impl Bubbles for GtkBubbles {
             self.stack.remove(&root);
             return false;
         }
-        self.shown.borrow_mut().insert(id, Shown { root, events });
+        let reply = bubble.reply.is_some();
+        self.shown.borrow_mut().insert(
+            id,
+            Shown {
+                root,
+                events,
+                reply,
+            },
+        );
         self.present();
         true
     }
@@ -334,15 +357,18 @@ impl Bubbles for GtkBubbles {
     }
 
     fn update(&self, id: u32, bubble: &Bubble) {
-        let shown = self.shown.borrow();
-        let Some(shown) = shown.get(&id) else {
-            return;
-        };
-        while let Some(child) = shown.root.first_child() {
-            shown.root.remove(&child);
+        {
+            let mut all = self.shown.borrow_mut();
+            let Some(shown) = all.get_mut(&id) else {
+                return;
+            };
+            while let Some(child) = shown.root.first_child() {
+                shown.root.remove(&child);
+            }
+            fill(&shown.root, bubble, &shown.events);
+            shown.reply = bubble.reply.is_some();
         }
-        fill(&shown.root, bubble, &shown.events);
-        reshape(&self.window, &self.column, self.layer);
+        self.present();
     }
 
     fn close(&self, id: u32) {
@@ -355,8 +381,18 @@ impl Bubbles for GtkBubbles {
 }
 
 /// Puts what `bubble` shows into `root`: the app's icon and name on top, the summary in bold
-/// and the body, the image on the right, the actions below, and a close button on hover.
+/// and the body, the image on the right, the progress bar, the actions and the reply field
+/// below, and a close button on hover.
 fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events) {
+    // The timeout waits while the pointer is on the bubble, or a reply is being typed in it.
+    let pointer = Rc::new(Cell::new(false));
+    let typing = Rc::new(Cell::new(false));
+    let hold = {
+        let events = events.clone();
+        let (pointer, typing) = (pointer.clone(), typing.clone());
+        move || events.hovered(pointer.get() || typing.get())
+    };
+
     let frame = gtk::Box::new(gtk::Orientation::Vertical, 6);
     frame.add_css_class("background");
     frame.add_css_class("caminito-notification");
@@ -400,6 +436,13 @@ fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events) {
     }
     frame.append(&content);
 
+    if let Some(progress) = bubble.progress {
+        let bar = gtk::ProgressBar::new();
+        bar.set_fraction(f64::from(progress) / 100.0);
+        bar.set_margin_top(4);
+        frame.append(&bar);
+    }
+
     if !bubble.actions.is_empty() {
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         actions.set_homogeneous(true);
@@ -412,6 +455,10 @@ fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events) {
             actions.append(&button);
         }
         frame.append(&actions);
+    }
+
+    if let Some(placeholder) = &bubble.reply {
+        frame.append(&reply_field(placeholder, events, &typing, hold.clone()));
     }
 
     let close = gtk::Button::from_icon_name("window-close-symbolic");
@@ -433,19 +480,21 @@ fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events) {
 
     let motion = gtk::EventControllerMotion::new();
     motion.connect_enter({
-        let events = events.clone();
         let close = close.clone();
+        let pointer = pointer.clone();
+        let hold = hold.clone();
         move |_, _, _| {
             close.set_visible(true);
-            events.hovered(true);
+            pointer.set(true);
+            hold();
         }
     });
     motion.connect_leave({
-        let events = events.clone();
         let close = close.clone();
         move |_| {
             close.set_visible(false);
-            events.hovered(false);
+            pointer.set(false);
+            hold();
         }
     });
     overlay.add_controller(motion);
@@ -463,6 +512,66 @@ fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events) {
     frame.add_controller(click);
 
     root.append(&overlay);
+}
+
+/// KDE's inline reply: a field with the app's placeholder and a send button, which Enter
+/// presses too. An empty reply isn't sent. While the field has the keyboard, `typing` is set
+/// and `hold` keeps the bubble's timeout waiting.
+fn reply_field(
+    placeholder: &str,
+    events: &Events,
+    typing: &Rc<Cell<bool>>,
+    hold: impl Fn() + Clone + 'static,
+) -> gtk::Box {
+    let field = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    field.set_margin_top(4);
+    let entry = gtk::Entry::new();
+    entry.set_placeholder_text(Some(placeholder));
+    entry.set_hexpand(true);
+    let send = gtk::Button::from_icon_name("document-send-symbolic");
+    send.set_tooltip_text(Some("Send"));
+    send.set_sensitive(false);
+    entry.connect_changed({
+        let send = send.clone();
+        move |entry| send.set_sensitive(!entry.text().trim().is_empty())
+    });
+    let reply = {
+        let events = events.clone();
+        let entry = entry.clone();
+        move || {
+            let text = entry.text();
+            if !text.trim().is_empty() {
+                events.reply(&text);
+            }
+        }
+    };
+    entry.connect_activate({
+        let reply = reply.clone();
+        move |_| reply()
+    });
+    send.connect_clicked(move |_| reply());
+
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_enter({
+        let typing = typing.clone();
+        let hold = hold.clone();
+        move |_| {
+            typing.set(true);
+            hold();
+        }
+    });
+    focus.connect_leave({
+        let typing = typing.clone();
+        move |_| {
+            typing.set(false);
+            hold();
+        }
+    });
+    entry.add_controller(focus);
+
+    field.append(&entry);
+    field.append(&send);
+    field
 }
 
 fn text_label() -> gtk::Label {
