@@ -1,16 +1,15 @@
-//! `org.mate.Caminito.notifications` as data/ has it, compiled by the test, over GSettings'
-//! memory backend.
+//! `org.mate.Caminito.notifications` and the apps' own `org.mate.Caminito.notifications.app`
+//! as data/ has them, compiled by the test, over GSettings' memory backend.
 
 use std::path::Path;
 use std::process::Command;
 
+use caminito_notifications::settings::{APP_SCHEMA, SCHEMA, Settings};
 use gio::prelude::*;
-
-const SCHEMA: &str = "org.mate.Caminito.notifications";
 
 /// The notifications' settings as data/ has them, compiled into `dir`, over a backend in
 /// memory.
-pub fn compiled(dir: &Path) -> gio::Settings {
+pub fn compiled(dir: &Path) -> Settings {
     let xml = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../data/org.mate.Caminito.gschema.xml"
@@ -23,11 +22,15 @@ pub fn compiled(dir: &Path) -> gio::Settings {
     assert!(status.success());
     let source = gio::SettingsSchemaSource::from_directory(dir, None, false).unwrap();
     let schema = source.lookup(SCHEMA, false).unwrap();
-    gio::Settings::new_full(&schema, Some(&gio::memory_settings_backend_new()), None)
+    let global = gio::Settings::new_full(&schema, Some(&gio::memory_settings_backend_new()), None);
+    Settings::new(global, source.lookup(APP_SCHEMA, false).unwrap())
 }
 
 /// Another `Settings` over the same keys as `settings`, as another process would have.
-pub fn outside(settings: &gio::Settings) -> gio::Settings {
-    let schema = settings.settings_schema().unwrap();
-    gio::Settings::new_full(&schema, settings.backend().as_ref(), None)
+pub fn outside(settings: &Settings) -> Settings {
+    let global = settings.global();
+    let schema = global.settings_schema().unwrap();
+    let outside = gio::Settings::new_full(&schema, global.backend().as_ref(), None);
+    let app_schema = settings.app("").settings_schema().unwrap();
+    Settings::new(outside, app_schema)
 }

@@ -15,6 +15,7 @@ use caminito_notifications::private_api::PrivateApi;
 use caminito_notifications::server::{
     Action, Bubble, Bubbles, Clock, Config, Events, Icon, Image, Server, Sound, Sounds,
 };
+use caminito_notifications::settings::Settings;
 use gio::glib::{self, Variant, VariantDict};
 use gio::prelude::*;
 
@@ -127,6 +128,8 @@ struct Daemon<'a> {
     _private_api: PrivateApi,
     /// The server's settings, as `gsettings` would change them.
     settings: gio::Settings,
+    /// The same with the apps' own, as the settings window changes them.
+    apps: Settings,
     _schemas: tempfile::TempDir,
     /// The apps whose pages the private API was asked to open the settings window at.
     opened_settings: Rc<RefCell<Vec<Option<String>>>>,
@@ -149,7 +152,7 @@ fn start(bus: &Bus) -> Daemon<'_> {
 /// A daemon that keeps its history in `home`, as one after a restart does.
 fn start_in(bus: &Bus, home: Rc<Home>) -> Daemon<'_> {
     let schemas = tempfile::tempdir().unwrap();
-    let settings = settings::compiled(schemas.path());
+    let apps = settings::compiled(schemas.path());
     let connection = bus.connect();
     let bubbles = Rc::new(FakeBubbles::default());
     let sounds = Rc::new(FakeSounds::default());
@@ -157,7 +160,7 @@ fn start_in(bus: &Bus, home: Rc<Home>) -> Daemon<'_> {
         &connection,
         bubbles.clone(),
         sounds.clone(),
-        settings::outside(&settings),
+        settings::outside(&apps),
         Config {
             history_file: home.directory.path().join("caminito").join("history"),
             clock: home.clock.clone(),
@@ -203,7 +206,8 @@ fn start_in(bus: &Bus, home: Rc<Home>) -> Daemon<'_> {
         home,
         _server: server,
         _private_api: private_api,
-        settings,
+        settings: apps.global().clone(),
+        apps,
         _schemas: schemas,
         opened_settings,
         bubbles,
@@ -1523,5 +1527,112 @@ fn open_settings_opens_the_window_at_the_general_page_or_an_apps() {
             *daemon.opened_settings.borrow(),
             [None, Some("firefox".to_owned())]
         );
+    });
+}
+
+#[test]
+fn history_only_gives_a_notification_its_entry_but_no_bubble_and_no_sound() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let own = daemon.apps.app("Test");
+        own.set_string("delivery", "history").unwrap();
+
+        let id = daemon.notify(notify("Quiet").hint("sound-name", "bell"));
+
+        assert!(daemon.bubbles.ids().is_empty());
+        assert!(daemon.sounds.0.borrow().is_empty());
+        assert_eq!(daemon.summaries(), ["Quiet"]);
+        assert_eq!(daemon.history()[0].id, id);
+    });
+}
+
+#[test]
+fn off_drops_a_notification_which_never_enters_the_history() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon
+            .apps
+            .app("Test")
+            .set_string("delivery", "off")
+            .unwrap();
+
+        let id = daemon.notify(notify("Dropped").hint("sound-name", "bell"));
+        daemon.close(id);
+
+        assert_ne!(id, 0);
+        assert!(daemon.bubbles.ids().is_empty());
+        assert!(daemon.sounds.0.borrow().is_empty());
+        assert!(daemon.summaries().is_empty());
+        assert!(daemon.signals().is_empty());
+    });
+}
+
+#[test]
+fn an_app_without_its_own_settings_follows_the_default() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.settings.set_string("delivery", "history").unwrap();
+
+        daemon.notify(notify("Default"));
+        daemon
+            .apps
+            .app("Own")
+            .set_string("delivery", "bubble")
+            .unwrap();
+        let own = daemon.notify(Notify {
+            app_name: "Own",
+            ..notify("Own")
+        });
+
+        assert_eq!(daemon.bubbles.ids(), [own]);
+        assert_eq!(daemon.summaries(), ["Own", "Default"]);
+    });
+}
+
+#[test]
+fn an_apps_own_sound_previews_and_app_icon_override_the_default() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let own = daemon.apps.app("Own");
+        own.set_boolean("sound", false).unwrap();
+        own.set_boolean("previews", false).unwrap();
+        own.set_boolean("app-icon", false).unwrap();
+        daemon.settings.set_boolean("sound", true).unwrap();
+
+        let mine = daemon.notify(Notify {
+            app_name: "Own",
+            icon: "mail-unread",
+            ..notify("Secret").hint("sound-name", "own")
+        });
+        let other = daemon.notify(Notify {
+            icon: "mail-unread",
+            ..notify("Open").hint("sound-name", "other")
+        });
+
+        let mine = daemon.bubbles.bubble(mine);
+        assert_eq!(
+            (mine.summary.as_str(), mine.app_icon),
+            ("Notification", None)
+        );
+        let other = daemon.bubbles.bubble(other);
+        assert_eq!(other.summary, "Open");
+        assert_eq!(other.app_icon, Some(Icon::Name("mail-unread".to_owned())));
+        assert_eq!(*daemon.sounds.0.borrow(), [Sound::Name("other".to_owned())]);
+    });
+}
+
+#[test]
+fn an_app_joins_the_known_apps_with_its_first_notification() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+
+        daemon.notify(notify("First"));
+        daemon.notify(Notify {
+            app_name: "Mail",
+            ..notify("Entry").hint("desktop-entry", "org.example.Mail.desktop")
+        });
+        daemon.notify(notify("Second"));
+
+        assert_eq!(daemon.apps.known_apps(), ["Test", "org.example.Mail"]);
     });
 }

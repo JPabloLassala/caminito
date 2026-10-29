@@ -62,8 +62,9 @@ fn main() -> glib::ExitCode {
         let Some(settings) = settings::installed() else {
             glib::g_warning!(
                 DOMAIN,
-                "can't serve notifications: the schema {} isn't installed",
-                settings::SCHEMA
+                "can't serve notifications: the schemas {} and {} aren't installed",
+                settings::SCHEMA,
+                settings::APP_SCHEMA
             );
             return;
         };
@@ -81,7 +82,10 @@ fn main() -> glib::ExitCode {
         });
         application.add_action(&open);
 
-        let bubbles = Rc::new(bubbles::GtkBubbles::new(application, settings.clone()));
+        let bubbles = Rc::new(bubbles::GtkBubbles::new(
+            application,
+            settings.global().clone(),
+        ));
         let sounds = Rc::new(sound::Canberra::default());
         let history = Config {
             history_file: glib::user_state_dir()

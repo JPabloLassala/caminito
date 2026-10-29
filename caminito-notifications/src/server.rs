@@ -3,8 +3,9 @@
 //! [`MAX_SHOWN`] with the rest queued, how long each stays, and which sound plays, and tells
 //! the apps what became of their notifications. The binary draws the bubbles and plays the
 //! sounds, behind [`Bubbles`] and [`Sounds`]. It follows the notification settings (CMN-261)
-//! as it goes: what a bubble shows as it opens, the sound as a notification arrives, and the
-//! default timeout.
+//! as it goes, the app's own or else the default (CMN-262): the Delivery and the sound as a
+//! notification arrives, what a bubble shows as it opens, and the default timeout. An app
+//! joins the known apps with its first notification.
 //!
 //! Every notification that isn't transient also enters the Notification history (CMN-259),
 //! which outlasts its bubble and the daemon, and `api` serves it to the applets. The time
@@ -28,7 +29,7 @@ use crate::DOMAIN;
 use crate::history::{History, HistoryEntry, MAX_AGE};
 use crate::notification::{Arguments, DEFAULT_ACTION, Notification};
 use crate::private_api::{INTERFACE_NAME as PRIVATE_INTERFACE, PATH as PRIVATE_PATH};
-use crate::settings;
+use crate::settings::{Delivery, NO_PREVIEW, Settings};
 
 mod api;
 
@@ -335,7 +336,7 @@ struct State {
     connection: gio::DBusConnection,
     bubbles: Rc<dyn Bubbles>,
     sounds: Rc<dyn Sounds>,
-    settings: gio::Settings,
+    settings: Settings,
     clock: Rc<dyn Clock>,
     history: History,
     /// Waits for the end of the oldest entry's week.
@@ -385,13 +386,12 @@ impl Server {
     }
 
     /// Exports the server on `connection` and asks for the notification name. It follows
-    /// `settings`, which are `org.mate.Caminito.notifications`'s, and keeps the history
-    /// `config` names.
+    /// `settings`, and keeps the history `config` names.
     pub fn new(
         connection: &gio::DBusConnection,
         bubbles: Rc<dyn Bubbles>,
         sounds: Rc<dyn Sounds>,
-        settings: gio::Settings,
+        settings: Settings,
         config: Config,
     ) -> Result<Server, Error> {
         let history = History::load(config.history_file, config.clock.now());
@@ -498,13 +498,19 @@ fn handle(
 }
 
 /// Takes a notification, in place of `replaces` if that's one the server has, and returns
-/// its id. A new one plays its sound, unless sounds are off, and gets a bubble if there's
-/// room, or waits for one.
+/// its id. Its app's Delivery decides what it gets: with Off, nothing but an id that names no
+/// notification, and with History only, its entry. Otherwise a new one plays its sound, unless
+/// its app's sound is off, and gets a bubble if there's room, or waits for one.
 fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -> u32 {
     let mut guard = state.borrow_mut();
     let now = guard.clock.now();
-    let notification = Notification::new(arguments, settings::timeout(&guard.settings));
+    let notification = Notification::new(arguments, guard.settings.timeout());
     let timeout = notification.timeout;
+    guard.settings.remember(&notification.app);
+    let app = guard.settings.effective(&notification.app);
+    if app.delivery == Delivery::Off {
+        return guard.next_id();
+    }
 
     let live = guard.notifications.contains_key(&replaces);
     // One whose bubble is gone is replaced too, when its app still holds its id.
@@ -512,8 +518,9 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     let id = if replaced { replaces } else { guard.next_id() };
     guard.remember(id, &notification, now);
 
+    // A bubble on screen is replaced whatever the Delivery is now.
     if live {
-        let bubble = guard.shown_bubble(&notification.bubble);
+        let bubble = guard.shown_bubble(&notification);
         let entry = guard
             .notifications
             .get_mut(&id)
@@ -534,8 +541,14 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         return id;
     }
 
+    if app.delivery == Delivery::History {
+        return id;
+    }
     // A replacement isn't a new notification, so it has no sound.
-    let sound = notification.sound.clone().filter(|_| !replaced);
+    let sound = notification
+        .sound
+        .clone()
+        .filter(|_| !replaced && app.sound);
     guard.notifications.insert(
         id,
         Entry {
@@ -546,7 +559,6 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         },
     );
     let sounds = guard.sounds.clone();
-    let sound = sound.filter(|_| settings::sound(&guard.settings));
     if guard.shown.len() < MAX_SHOWN {
         drop(guard);
         show(state, id);
@@ -566,7 +578,7 @@ fn show(state: &Rc<RefCell<State>>, id: u32) {
     let Some(entry) = guard.notifications.get(&id) else {
         return;
     };
-    let bubble = guard.shown_bubble(&entry.notification.bubble);
+    let bubble = guard.shown_bubble(&entry.notification);
     guard.shown.push(id);
     guard.start_timer(id);
     let bubbles = guard.bubbles.clone();
@@ -721,16 +733,17 @@ impl Entry {
 }
 
 impl State {
-    /// What the bubble of a notification that has `bubble` shows: without its summary, body
-    /// and image while Previews are off, and without its app's icon while that's off.
-    fn shown_bubble(&self, bubble: &Bubble) -> Bubble {
-        let mut shown = bubble.clone();
-        if !settings::previews(&self.settings) {
-            settings::NO_PREVIEW.clone_into(&mut shown.summary);
+    /// What the bubble of `notification` shows: without its summary, body and image while
+    /// its app's Previews are off, and without its app's icon while that's off.
+    fn shown_bubble(&self, notification: &Notification) -> Bubble {
+        let app = self.settings.effective(&notification.app);
+        let mut shown = notification.bubble.clone();
+        if !app.previews {
+            NO_PREVIEW.clone_into(&mut shown.summary);
             shown.body.clear();
             shown.image = None;
         }
-        if !settings::app_icon(&self.settings) {
+        if !app.app_icon {
             shown.app_icon = None;
         }
         shown

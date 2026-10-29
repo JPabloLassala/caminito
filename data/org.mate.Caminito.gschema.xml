@@ -325,9 +325,10 @@
 
   <!--
     The notifications (ADR 0051, CMN-261), which caminito-notifications follows as they change
-    and its settings window sets. delivery, sound, previews and app-icon are the default, which
-    a Notifying app without its own settings follows. The Notifications applet and the Dock
-    applet read these keys too, so their names and types are a contract.
+    and its settings window sets. delivery, sound, previews, app-icon, group, badge and
+    breaks-through are the default, which a Notifying app follows for each key its own path of
+    org.mate.Caminito.notifications.app doesn't set (CMN-262). The Notifications applet and the
+    Dock applet read these keys too, so their names and types are a contract.
   -->
   <schema id="org.mate.Caminito.notifications" path="/org/mate/caminito/notifications/">
     <key name="delivery" enum="org.mate.Caminito.NotificationDelivery">
@@ -349,6 +350,21 @@
       <default>true</default>
       <summary>Whether bubbles show their app's icon</summary>
       <description>Whether a Notification bubble shows its app's icon beside the app's name. The image follows previews alone.</description>
+    </key>
+    <key name="group" type="b">
+      <default>true</default>
+      <summary>Whether an app's notifications are grouped</summary>
+      <description>Whether a Notifying app's notifications share a grouped Notification bubble and one group in the Notification center. Off, each stands alone in both.</description>
+    </key>
+    <key name="badge" type="b">
+      <default>true</default>
+      <summary>Whether an app's Dock item shows its Badge</summary>
+      <description>Whether the Dock's item of a Notifying app shows the number of the app's notifications in the Notification history, when the program sets no count of its own.</description>
+    </key>
+    <key name="breaks-through" type="b">
+      <default>false</default>
+      <summary>Whether an app's notifications break through Do Not Disturb</summary>
+      <description>Whether a Notifying app's notifications get their bubble and their sound while Do Not Disturb is on.</description>
     </key>
     <key name="corner" enum="org.mate.Caminito.NotificationCorner">
       <default>'top-right'</default>
@@ -396,7 +412,55 @@
     <key name="known-apps" type="as">
       <default>[]</default>
       <summary>The Notifying apps</summary>
-      <description>The key of each Notifying app the daemon knows: its desktop entry's id without ".desktop", or the name it gives when it has none. caminito-notifications writes it.</description>
+      <description>The key of each Notifying app the daemon knows: its desktop entry's id without ".desktop", or the name it gives when it has none. caminito-notifications adds an app as it sends its first notification.</description>
+    </key>
+  </schema>
+
+  <!--
+    A Notifying app's own notification settings (CMN-262), relocatable, at
+    /org/mate/caminito/notifications/apps/<app>/, where <app> is the app's key with each byte
+    other than an ASCII letter, a digit, "-" or "." written as "_" and its two lowercase hex
+    digits: "Mail Beta" is at apps/Mail_20Beta/, and the empty key at apps/_/. Each key the path doesn't set is
+    org.mate.Caminito.notifications's of the same name, so an app without its own path follows
+    the default; the settings window sets all seven at the app's first change, and resets them
+    all for "Use the default". The defaults below are only the schema's: read the global key
+    for a key the path doesn't set.
+  -->
+  <schema id="org.mate.Caminito.notifications.app">
+    <key name="delivery" enum="org.mate.Caminito.NotificationDelivery">
+      <default>'bubble'</default>
+      <summary>The app's Delivery</summary>
+      <description>What the app's notifications get: "bubble", a Notification bubble and a place in the Notification history, "history", a place in the history only, with no bubble and no sound, or "off", nothing at all.</description>
+    </key>
+    <key name="sound" type="b">
+      <default>true</default>
+      <summary>Whether the app's notifications play a sound</summary>
+      <description>Whether a new notification of the app plays its sound. None plays while org.mate.sound's event-sounds is off.</description>
+    </key>
+    <key name="previews" type="b">
+      <default>true</default>
+      <summary>Whether the app's bubbles show their notification</summary>
+      <description>Whether the app's Notification bubbles show the notification's summary, body and image.</description>
+    </key>
+    <key name="app-icon" type="b">
+      <default>true</default>
+      <summary>Whether the app's bubbles show its icon</summary>
+      <description>Whether the app's Notification bubbles show its icon beside its name.</description>
+    </key>
+    <key name="group" type="b">
+      <default>true</default>
+      <summary>Whether the app's notifications are grouped</summary>
+      <description>Whether the app's notifications share a grouped Notification bubble and one group in the Notification center.</description>
+    </key>
+    <key name="badge" type="b">
+      <default>true</default>
+      <summary>Whether the app's Dock item shows its Badge</summary>
+      <description>Whether the app's Dock item shows the number of its notifications in the Notification history.</description>
+    </key>
+    <key name="breaks-through" type="b">
+      <default>false</default>
+      <summary>Whether the app's notifications break through Do Not Disturb</summary>
+      <description>Whether the app's notifications get their bubble and their sound while Do Not Disturb is on.</description>
     </key>
   </schema>
 </schemalist>
