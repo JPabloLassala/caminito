@@ -1,6 +1,7 @@
 /*
  * The Notifications applet's state (CMN-260): entries read from a List reply built by hand,
- * as the daemon's private API gives it, an entry's age, and the tooltip.
+ * as the daemon's private API gives it, an entry's age, the tooltip, the icon, and when Do Not
+ * Disturb ends (CMN-263).
  */
 
 #include "nt-state.h"
@@ -141,7 +142,7 @@ test_the_tooltip_counts_the_notifications (void)
 static void
 test_the_icon_is_a_bell (void)
 {
-  const char *const *names = nt_state_icon_names ();
+  const char *const *names = nt_state_icon_names (FALSE);
   guint n = g_strv_length ((char **) names);
 
   g_assert_true (g_strv_contains (names, "notifications-symbolic"));
@@ -149,6 +150,32 @@ test_the_icon_is_a_bell (void)
   g_assert_false (g_strv_contains (names, "preferences-system-notifications-symbolic"));
   /* Caminito's own, in hicolor, where every theme ends. */
   g_assert_cmpstr (names[n - 1], ==, "caminito-bell-symbolic");
+}
+
+static void
+test_the_icon_is_struck_through_during_do_not_disturb (void)
+{
+  const char *const *names = nt_state_icon_names (TRUE);
+  guint n = g_strv_length ((char **) names);
+
+  g_assert_cmpstr (names[0], ==, "notifications-disabled-symbolic");
+  g_assert_false (g_strv_contains (names, "notifications-symbolic"));
+  g_assert_cmpstr (names[n - 1], ==, "caminito-bell-disabled-symbolic");
+}
+
+static void
+test_do_not_disturb_says_when_it_ends (void)
+{
+  g_autoptr (GTimeZone) utc = g_time_zone_new_utc ();
+  /* 22:13:20 on 14 November 2023, in UTC. */
+  gint64 now = 1700000000;
+  g_autofree char *never = nt_state_until (0, now, utc);
+  g_autofree char *today = nt_state_until (now + 30 * 60, now, utc);
+  g_autofree char *tomorrow = nt_state_until (now + 4 * 60 * 60, now, utc);
+
+  g_assert_cmpstr (never, ==, "Until turned off");
+  g_assert_cmpstr (today, ==, "Until 22:43");
+  g_assert_cmpstr (tomorrow, ==, "Until tomorrow, 02:13");
 }
 
 int
@@ -161,5 +188,7 @@ main (int argc, char **argv)
   g_test_add_func ("/state/the-age-reads-as-a-person-would-say-it", test_the_age_reads_as_a_person_would_say_it);
   g_test_add_func ("/state/the-tooltip-counts-the-notifications", test_the_tooltip_counts_the_notifications);
   g_test_add_func ("/state/the-icon-is-a-bell", test_the_icon_is_a_bell);
+  g_test_add_func ("/state/the-icon-is-struck-through-during-do-not-disturb", test_the_icon_is_struck_through_during_do_not_disturb);
+  g_test_add_func ("/state/do-not-disturb-says-when-it-ends", test_do_not_disturb_says_when_it_ends);
   return g_test_run ();
 }

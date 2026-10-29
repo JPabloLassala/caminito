@@ -4,7 +4,9 @@
 
 It has the Notification history's part of org.mate.Caminito.Notifications as the
 Notifications applet uses it: List, Dismiss, ClearApp, ClearAll, InvokeAction, Reply, Counts
-and OpenSettings, with the HistoryChanged and CountsChanged signals. As in the daemon, an
+and OpenSettings, with the HistoryChanged and CountsChanged signals; and Do Not Disturb's
+(CMN-263), DoNotDisturb, SetDoNotDisturb and ToggleDoNotDisturb, with DoNotDisturbChanged,
+and OpenCenter, which emits OpenCenterRequested. Its Do Not Disturb never ends by itself. As in the daemon, an
 entry leaves the history when it's dismissed or one of its actions is used, unless it's
 resident, and List gives the newest first. It refuses what the daemon refuses: an entry that
 isn't there, and an action an entry hasn't, "default" without a default action.
@@ -20,8 +22,12 @@ org.caminito.NotificationsMock is for a test or a check script:
     InvokeAction <id> <key> "<token>"
     Reply <id> "<text>"
     OpenSettings "<app>"
+    SetDoNotDisturb <until>
+    ToggleDoNotDisturb
+    OpenCenter
 """
 
+import datetime
 import time
 
 import dbus
@@ -39,6 +45,8 @@ def load(mock, _parameters):
     mock.log_lines = []
     # Newest first, as List gives them: dicts with the entry's fields.
     mock.entries = []
+    # Do Not Disturb: off, or on until the end, 0 for until turned off.
+    mock.do_not_disturb = None
 
 
 def _counts(mock):
@@ -145,6 +153,60 @@ def Counts(self):
 @dbus.service.method(MAIN_IFACE, in_signature="s", out_signature="")
 def OpenSettings(self, app):
     self.log_lines.append(f'OpenSettings "{app}"')
+
+
+def _do_not_disturb(mock):
+    if mock.do_not_disturb is None:
+        return (False, dbus.UInt64(0), "")
+    return (True, dbus.UInt64(mock.do_not_disturb), "manual")
+
+
+def _set_do_not_disturb(mock, end):
+    mock.do_not_disturb = end
+    mock.EmitSignal(MAIN_IFACE, "DoNotDisturbChanged", "bts", _do_not_disturb(mock))
+
+
+def _tomorrow_morning():
+    """08:00 of the next day, the day turning at 04:00, in local time, as the daemon has it."""
+    day = (datetime.datetime.now() - datetime.timedelta(hours=4)).date()
+    morning = datetime.datetime.combine(day + datetime.timedelta(days=1), datetime.time(8))
+    return int(morning.timestamp())
+
+
+@dbus.service.method(MAIN_IFACE, in_signature="", out_signature="bts")
+def DoNotDisturb(self):
+    return _do_not_disturb(self)
+
+
+@dbus.service.method(MAIN_IFACE, in_signature="s", out_signature="")
+def SetDoNotDisturb(self, until):
+    self.log_lines.append(f"SetDoNotDisturb {until}")
+    now = int(time.time())
+    ends = {
+        "off": None,
+        "one-hour": now + 60 * 60,
+        "four-hours": now + 4 * 60 * 60,
+        "tomorrow-morning": _tomorrow_morning(),
+        "until-turned-off": 0,
+    }
+    if until not in ends:
+        raise dbus.exceptions.DBusException(
+            f"Do Not Disturb has no duration {until}",
+            name="org.freedesktop.DBus.Error.InvalidArgs",
+        )
+    _set_do_not_disturb(self, ends[until])
+
+
+@dbus.service.method(MAIN_IFACE, in_signature="", out_signature="")
+def ToggleDoNotDisturb(self):
+    self.log_lines.append("ToggleDoNotDisturb")
+    _set_do_not_disturb(self, None if self.do_not_disturb is not None else 0)
+
+
+@dbus.service.method(MAIN_IFACE, in_signature="", out_signature="")
+def OpenCenter(self):
+    self.log_lines.append("OpenCenter")
+    self.EmitSignal(MAIN_IFACE, "OpenCenterRequested", "", [])
 
 
 @dbus.service.method(MOCK_IFACE, in_signature="ussssssa(ss)bbt", out_signature="")

@@ -1,7 +1,8 @@
 /*
  * The Notification center (CMN-260): the history drawn from entries built by hand, newest
  * first, and what a click on an entry, its close button, its actions and "Clear all" call
- * back. Without a display, GTK can't start, and it's skipped.
+ * back, and the Do Not Disturb row (CMN-263), in UTC, as meson runs it. Without a display,
+ * GTK can't start, and it's skipped.
  */
 
 #include "nt-popup.h"
@@ -15,7 +16,8 @@ typedef struct
   GtkWidget           *anchor;
   CaminitoAppletPopup *applet_popup;
   NtPopup             *popup;
-  /* What the popup called back, as "invoke 7 default;", "dismiss 3;", "clear all;". */
+  /* What the popup called back, as "invoke 7 default;", "dismiss 3;", "clear all;",
+     "do not disturb one-hour;". */
   GString             *calls;
   GPtrArray           *entries;
 } Fixture;
@@ -44,10 +46,19 @@ on_clear_all (gpointer data)
   g_string_append (fixture->calls, "clear all;");
 }
 
+static void
+on_set_do_not_disturb (const char *until, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "do not disturb %s;", until);
+}
+
 static const NtPopupActions actions = {
   .invoke = on_invoke,
   .dismiss = on_dismiss,
   .clear_all = on_clear_all,
+  .set_do_not_disturb = on_set_do_not_disturb,
 };
 
 /* An entry from Mail, which arrived ago seconds before NOW, with the actions given as
@@ -371,6 +382,63 @@ test_an_image_is_shown (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
   g_assert_false (widget_shows (fixture, named_under (row_of (fixture, "Lunch?"), "image")));
 }
 
+static GtkWidget *
+do_not_disturb_switch (Fixture *fixture)
+{
+  GtkWidget *found = named_under (window_of (fixture), "do-not-disturb");
+
+  g_assert_true (GTK_IS_SWITCH (found));
+  return found;
+}
+
+static void
+click (Fixture *fixture, const char *label)
+{
+  gtk_button_clicked (GTK_BUTTON (ancestor (label_under (window_of (fixture), label),
+                                            GTK_TYPE_BUTTON)));
+}
+
+static void
+test_the_do_not_disturb_row_shows_its_state (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  /* Off: the switch off, and the durations to turn it on for. */
+  nt_popup_set_do_not_disturb (fixture->popup, FALSE, 0, NOW);
+  g_assert_true (shows (fixture, "Do Not Disturb"));
+  g_assert_false (gtk_switch_get_active (GTK_SWITCH (do_not_disturb_switch (fixture))));
+  g_assert_true (shows (fixture, "1 hour"));
+  g_assert_true (shows (fixture, "4 hours"));
+  g_assert_true (shows (fixture, "Tomorrow morning"));
+
+  /* NOW is 22:13:20 in UTC. */
+  nt_popup_set_do_not_disturb (fixture->popup, TRUE, NOW + 60 * 60, NOW);
+  g_assert_true (gtk_switch_get_active (GTK_SWITCH (do_not_disturb_switch (fixture))));
+  g_assert_true (shows (fixture, "Until 23:13"));
+  g_assert_false (shows (fixture, "1 hour"));
+
+  nt_popup_set_do_not_disturb (fixture->popup, TRUE, 0, NOW);
+  g_assert_true (shows (fixture, "Until turned off"));
+  /* What the daemon says is shown, and nothing is asked of it. */
+  g_assert_cmpstr (fixture->calls->str, ==, "");
+}
+
+static void
+test_the_switch_and_the_durations_set_do_not_disturb (Fixture *fixture,
+                                                      gconstpointer data G_GNUC_UNUSED)
+{
+  nt_popup_set_do_not_disturb (fixture->popup, FALSE, 0, NOW);
+  gtk_switch_set_active (GTK_SWITCH (do_not_disturb_switch (fixture)), TRUE);
+  nt_popup_set_do_not_disturb (fixture->popup, TRUE, 0, NOW);
+  gtk_switch_set_active (GTK_SWITCH (do_not_disturb_switch (fixture)), FALSE);
+  nt_popup_set_do_not_disturb (fixture->popup, FALSE, 0, NOW);
+  click (fixture, "1 hour");
+  click (fixture, "4 hours");
+  click (fixture, "Tomorrow morning");
+  g_assert_cmpstr (fixture->calls->str, ==,
+                   "do not disturb until-turned-off;do not disturb off;"
+                   "do not disturb one-hour;do not disturb four-hours;"
+                   "do not disturb tomorrow-morning;");
+}
+
 int
 main (int argc, char **argv)
 {
@@ -388,5 +456,7 @@ main (int argc, char **argv)
   g_test_add ("/popup/the-close-button-dismisses-the-entry", Fixture, NULL, setup, test_the_close_button_dismisses_the_entry, teardown);
   g_test_add ("/popup/clear-all-clears-the-history", Fixture, NULL, setup, test_clear_all_clears_the_history, teardown);
   g_test_add ("/popup/an-image-is-shown", Fixture, NULL, setup, test_an_image_is_shown, teardown);
+  g_test_add ("/popup/the-do-not-disturb-row-shows-its-state", Fixture, NULL, setup, test_the_do_not_disturb_row_shows_its_state, teardown);
+  g_test_add ("/popup/the-switch-and-the-durations-set-do-not-disturb", Fixture, NULL, setup, test_the_switch_and_the_durations_set_do_not_disturb, teardown);
   return g_test_run ();
 }

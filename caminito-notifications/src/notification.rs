@@ -33,6 +33,8 @@ pub(crate) struct Notification {
     pub(crate) transient: bool,
     /// Whether it has a reply field (KDE's `x-kde-reply-placeholder-text`).
     pub(crate) reply: bool,
+    /// Whether its urgency is critical.
+    pub(crate) critical: bool,
     /// What plays as it arrives, if anything.
     pub(crate) sound: Option<Sound>,
     /// How long its bubble stays, or `None` for as long as the user leaves it.
@@ -97,6 +99,7 @@ impl Notification {
             resident: hint::<bool>(hints, "resident").unwrap_or(false),
             transient: hint::<bool>(hints, "transient").unwrap_or(false),
             reply: hint::<String>(hints, "x-kde-reply-placeholder-text").is_some(),
+            critical,
             sound: sound(hints),
             timeout: timeout(arguments.expire_timeout, critical, default_timeout),
         }

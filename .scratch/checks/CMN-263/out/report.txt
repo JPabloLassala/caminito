@@ -1,0 +1,12 @@
+off: the panel lives
+the center, off: the panel lives
+on for an hour: the panel lives
+the center, on: the panel lives
+middle-click, off: the panel lives
+middle-click, on: the panel lives
+the center, until turned off: the panel lives
+OpenCenter: the panel lives
+the mock's calls:
+(['SetDoNotDisturb one-hour', 'ToggleDoNotDisturb', 'ToggleDoNotDisturb', 'OpenCenter'],)
+the panel's warnings:
+A connection to the bus can't be made

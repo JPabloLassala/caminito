@@ -3922,3 +3922,24 @@ They are the developer's to run.
   app's name and *Notification*, and nothing of *Secret*, *Body* or the mail image. In step 4
   the bubble has no icon. In step 5 the first plays a sound and the second doesn't, and *Short*
   closes after about 2 seconds. In step 6 every setting is the window's (CMN-261).
+
+### Do Not Disturb in a real Session
+
+- **Milestone:** `notifications`.
+- **Steps:**
+  1. In *MATE on Caminito*, press Super+N, and in the Notification center click *1 hour*.
+  2. Run `notify-send 'Quiet'` and `notify-send -u critical 'Battery low'`.
+  3. Middle-click the bell twice. Then open *System Shortcuts*, give *Turn Do Not Disturb on or
+     off*, under Notifications, a combination, and press it.
+  4. Middle-click the bell, run `killall caminito-notifications`, wait a second, and press
+     Super+N.
+  5. Turn it off, click *1 hour* again, and wait for the hour to end, or set the clock past it.
+- **Expected:** in step 1 the Notification center opens with *Do Not Disturb* on top, and after
+  the click the bell is struck through and the center says *Until* an hour from now. In step 2
+  *Quiet* has no bubble and no sound but is in the center, and *Battery low* has its bubble and
+  sound. In step 3 the first middle-click turns it off and the second on until turned off, and the
+  combination turns it off. In step 4 the bell is still struck through once the daemon is back, and
+  the center opens. In step 5 it ends with nothing shown (CMN-263).
+- **Debug tool:** `busctl --user call org.mate.Caminito.Notifications
+  /org/mate/Caminito/Notifications org.mate.Caminito.Notifications DoNotDisturb`, and
+  `busctl --user monitor org.mate.Caminito.Notifications` for its signals.

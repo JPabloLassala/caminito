@@ -1,7 +1,8 @@
 //! Caminito's bindings, read from `org.mate.Marco.global-keybindings` and
 //! `org.mate.Marco.window-keybindings` as Marco reads them (148), and with a mouse button
 //! where Marco reads none (184, ADR 0028). The Overview's, which Marco has no action
-//! for, is `org.mate.Caminito`'s (241). The accelerators other
+//! for, is `org.mate.Caminito`'s (241), as are the Notification center's and Do Not
+//! Disturb's (CMN-263). The accelerators other
 //! programs grab are `accelerators`' (98), and the modifier a click on a window is held
 //! with is `button_modifier`'s (162).
 
@@ -15,6 +16,7 @@ use smithay::input::keyboard::{Keysym, ModifiersState, xkb};
 
 use self::accelerators::{Accelerator, Trigger, parse};
 use crate::commands::Command;
+use crate::dbus::notifications_daemon::NotificationsAction;
 use crate::dbus::panel::PanelAction;
 use crate::settings::translate::{
     CAMINITO, MARCO_GLOBAL_KEYBINDINGS, MARCO_WINDOW_KEYBINDINGS, Problem,
@@ -58,6 +60,8 @@ pub(crate) enum Binding {
     Policy(Action),
     /// Something Caminito asks the panel for (95).
     Panel(PanelAction),
+    /// Something Caminito asks caminito-notifications for (CMN-263).
+    Notifications(NotificationsAction),
     /// A command to run (104).
     Command(Command),
     /// `rename-workspace`'s dialog (167).
@@ -109,6 +113,20 @@ pub(crate) const OVERVIEW_KEY: &str = "overview";
 
 /// `org.mate.Caminito`'s key for the Application overview's shortcut (CMN-185).
 pub(crate) const APPLICATION_OVERVIEW_KEY: &str = "application-overview";
+
+/// `org.mate.Caminito`'s key for the Notification center's shortcut (CMN-263).
+pub(crate) const NOTIFICATION_CENTER_KEY: &str = "notification-center";
+
+/// `org.mate.Caminito`'s key for Do Not Disturb's shortcut (CMN-263).
+pub(crate) const TOGGLE_DO_NOT_DISTURB_KEY: &str = "toggle-do-not-disturb";
+
+/// `org.mate.Caminito`'s keys that are bindings.
+pub(crate) const CAMINITO_KEYS: [&str; 4] = [
+    OVERVIEW_KEY,
+    APPLICATION_OVERVIEW_KEY,
+    NOTIFICATION_CENTER_KEY,
+    TOGGLE_DO_NOT_DISTURB_KEY,
+];
 
 /// An action Marco hasn't, whose key is `org.mate.Caminito`'s.
 const fn caminito(key: &'static str, default: &'static str, does: Does) -> Bindable {
@@ -186,7 +204,7 @@ const fn command(command: Command) -> Does {
 /// `run-command-area-screenshot` is master's (`8522ed1`), after the window screenshot as
 /// there; where the installed schema hasn't the key, it has master's default. The
 /// Overview's (241), which isn't Marco's, is after them all, so a combination of Marco's
-/// wins over it.
+/// wins over it, and so are the Notification center's and Do Not Disturb's (CMN-263).
 fn bindable() -> impl Iterator<Item = Bindable> {
     let switch_to_workspace = numbered(twelve!("switch-to-workspace-"), global, |n| {
         policy(Action::SwitchToWorkspace(n - 1))
@@ -498,6 +516,18 @@ fn bindable() -> impl Iterator<Item = Bindable> {
                 "disabled",
                 policy(Action::ApplicationOverview),
             ),
+            caminito(
+                NOTIFICATION_CENTER_KEY,
+                "<Super>n",
+                Does::Run(Binding::Notifications(NotificationsAction::OpenCenter)),
+            ),
+            caminito(
+                TOGGLE_DO_NOT_DISTURB_KEY,
+                "disabled",
+                Does::Run(Binding::Notifications(
+                    NotificationsAction::ToggleDoNotDisturb,
+                )),
+            ),
         ])
 }
 
@@ -535,7 +565,7 @@ impl Default for Bindings {
 impl Bindings {
     /// Builds the table from the keys' values, as `(schema, key, value)`: every key of
     /// Marco's two schemas, whether Caminito binds its action or not, so every value is
-    /// parsed, and the Overview's key of Caminito's own.
+    /// parsed, and the keys of Caminito's own that are bindings.
     /// An action Caminito binds whose key `keys` hasn't has Marco's default. A value that
     /// can't be bound binds nothing, and is a problem.
     pub(crate) fn from_keys<'a>(

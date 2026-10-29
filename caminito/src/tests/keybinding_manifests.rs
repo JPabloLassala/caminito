@@ -10,9 +10,10 @@ use std::fs;
 use crate::input::bindings::bound_keys;
 use crate::settings::translate::CAMINITO;
 
-const MANIFESTS: [&str; 4] = [
+const MANIFESTS: [&str; 5] = [
     "50-caminito-desktop-key.xml",
     "50-caminito-global-key.xml",
+    "50-caminito-notifications-key.xml",
     "50-caminito-overview-key.xml",
     "50-caminito-window-key.xml",
 ];

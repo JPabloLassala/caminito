@@ -123,6 +123,20 @@
       <description>The shortcut that opens the Application overview, which shows the windows of the focused window's application side by side, and closes it again. While the Overview is open it shows the application's windows alone, and the Overview's shortcut shows every window again. It is written as the overview key is. With "disabled" or the empty string, nothing opens the Application overview.</description>
     </key>
     <!--
+      The Notification center's shortcut and Do Not Disturb's (CMN-263), which Caminito
+      grabs and passes on to caminito-notifications's private API.
+    -->
+    <key name="notification-center" type="s">
+      <default>'&lt;Super&gt;n'</default>
+      <summary>Open the Notification center</summary>
+      <description>The shortcut that opens the Notification center, the Notifications applet's popup. It is written as the overview key is. With "disabled" or the empty string, nothing opens it.</description>
+    </key>
+    <key name="toggle-do-not-disturb" type="s">
+      <default>'disabled'</default>
+      <summary>Turn Do Not Disturb on or off</summary>
+      <description>The shortcut that turns Do Not Disturb off while it's on, and on until it's turned off while it's off. It is written as the overview key is. With "disabled" or the empty string, no shortcut does.</description>
+    </key>
+    <!--
       The Hot corners (CMN-183). They act on every output's corner of their kind, and are
       all off since MATE's top panel has its menu in the top-left corner.
     -->

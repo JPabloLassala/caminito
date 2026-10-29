@@ -328,7 +328,7 @@ fn decode(bytes: &[u8]) -> Option<Vec<HistoryEntry>> {
 }
 
 /// Writes `bytes` to `path`, through a temporary file so that a crash leaves the old one.
-fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 

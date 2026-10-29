@@ -8,8 +8,11 @@
 //! joins the known apps with its first notification.
 //!
 //! Every notification that isn't transient also enters the Notification history (CMN-259),
-//! which outlasts its bubble and the daemon, and `api` serves it to the applets. The time
-//! the history ages by comes from a [`Clock`].
+//! which outlasts its bubble and the daemon, and `api` serves it to the applets. While Do Not
+//! Disturb is on (CMN-263), a notification gets its entry but no bubble and no sound, unless
+//! it breaks through: its app's own setting says so, or it's critical and the setting for
+//! those does. Nothing is shown when it ends. The time the history ages by and Do Not Disturb
+//! ends at comes from a [`Clock`].
 //!
 //! The name is asked for with `REPLACE`: a daemon that D-Bus activation started while this
 //! one wasn't running, as mate-notification-daemon, gives it back at once if it allows its
@@ -26,6 +29,7 @@ use gio::glib::{self, Variant, VariantDict};
 use gio::prelude::*;
 
 use crate::DOMAIN;
+use crate::do_not_disturb::DoNotDisturb;
 use crate::history::{History, HistoryEntry, MAX_AGE};
 use crate::notification::{Arguments, DEFAULT_ACTION, Notification};
 use crate::private_api::{INTERFACE_NAME as PRIVATE_INTERFACE, PATH as PRIVATE_PATH};
@@ -266,10 +270,15 @@ impl Events {
     }
 }
 
-/// What tells the time the history ages by.
+/// What tells the time the history ages by and Do Not Disturb ends at.
 pub trait Clock {
     /// The time now, in seconds since the Unix epoch.
     fn now(&self) -> u64;
+
+    /// The zone "tomorrow morning" is in.
+    fn zone(&self) -> glib::TimeZone {
+        glib::TimeZone::local()
+    }
 }
 
 /// The system's clock.
@@ -283,20 +292,24 @@ impl Clock for SystemClock {
     }
 }
 
-/// What the Notification history is kept with.
+/// What the Notification history and Do Not Disturb are kept with.
 pub struct Config {
     /// The file the Notification history is kept in, under `$XDG_STATE_HOME/caminito/`.
     pub history_file: PathBuf,
-    /// The time the history's limits are kept by.
+    /// The file Do Not Disturb is kept in, beside the history's.
+    pub do_not_disturb_file: PathBuf,
+    /// The time the history's limits and Do Not Disturb's end are kept by.
     pub clock: Rc<dyn Clock>,
 }
 
-/// The history's calls of the private API, which [`crate::private_api`] routes to the server.
+/// The history's and Do Not Disturb's calls of the private API, which [`crate::private_api`]
+/// routes to the server.
 #[derive(Clone)]
 pub struct HistoryCalls(Weak<RefCell<State>>);
 
 impl HistoryCalls {
-    /// Answers `invocation`, a call of `method` of the private API that isn't the settings'.
+    /// Answers `invocation`, a call of `method` of the private API that isn't the settings' or
+    /// the Notification center's.
     pub fn handle(
         &self,
         method: &str,
@@ -341,6 +354,10 @@ struct State {
     history: History,
     /// Waits for the end of the oldest entry's week.
     expiry: Option<glib::JoinHandle<()>>,
+    do_not_disturb: DoNotDisturb,
+    do_not_disturb_file: PathBuf,
+    /// Waits for Do Not Disturb's end.
+    do_not_disturb_end: Option<glib::JoinHandle<()>>,
     last_id: u32,
     /// The notifications that have a bubble, shown or queued.
     notifications: HashMap<u32, Entry>,
@@ -373,6 +390,9 @@ impl Drop for Server {
         if let Some(expiry) = state.expiry.take() {
             expiry.abort();
         }
+        if let Some(end) = state.do_not_disturb_end.take() {
+            end.abort();
+        }
         for entry in state.notifications.values_mut() {
             entry.stop_timer();
         }
@@ -380,13 +400,14 @@ impl Drop for Server {
 }
 
 impl Server {
-    /// The history's part of the private API, for [`crate::private_api::PrivateApi`].
+    /// The history's and Do Not Disturb's part of the private API, for
+    /// [`crate::private_api::PrivateApi`].
     pub fn history_calls(&self) -> HistoryCalls {
         HistoryCalls(Rc::downgrade(&self.state))
     }
 
     /// Exports the server on `connection` and asks for the notification name. It follows
-    /// `settings`, and keeps the history `config` names.
+    /// `settings`, and keeps the history and Do Not Disturb where `config` says.
     pub fn new(
         connection: &gio::DBusConnection,
         bubbles: Rc<dyn Bubbles>,
@@ -394,7 +415,9 @@ impl Server {
         settings: Settings,
         config: Config,
     ) -> Result<Server, Error> {
-        let history = History::load(config.history_file, config.clock.now());
+        let now = config.clock.now();
+        let history = History::load(config.history_file, now);
+        let do_not_disturb = DoNotDisturb::load(&config.do_not_disturb_file, now);
         let state = Rc::new_cyclic(|this| {
             RefCell::new(State {
                 connection: connection.clone(),
@@ -406,6 +429,9 @@ impl Server {
                 last_id: history.max_id(),
                 history,
                 expiry: None,
+                do_not_disturb,
+                do_not_disturb_file: config.do_not_disturb_file,
+                do_not_disturb_end: None,
                 notifications: HashMap::new(),
                 shown: Vec::new(),
                 queued: VecDeque::new(),
@@ -428,6 +454,7 @@ impl Server {
             .build()
             .map_err(Error::Export)?;
         state.borrow_mut().schedule_expiry();
+        state.borrow_mut().schedule_do_not_disturb_end();
 
         let owner = gio::bus_own_name_on_connection(
             connection,
@@ -542,6 +569,12 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     }
 
     if app.delivery == Delivery::History {
+        return id;
+    }
+    guard.settle_do_not_disturb();
+    let breaks_through =
+        app.breaks_through || (notification.critical && guard.settings.critical_breaks_through());
+    if guard.do_not_disturb.is_on() && !breaks_through {
         return id;
     }
     // A replacement isn't a new notification, so it has no sound.
@@ -819,6 +852,58 @@ impl State {
                 }
             }),
         );
+    }
+
+    /// Turns Do Not Disturb off if its end has come, whenever its timer would have run.
+    fn settle_do_not_disturb(&mut self) {
+        if self.do_not_disturb.ended(self.clock.now()) {
+            self.set_do_not_disturb(DoNotDisturb::Off);
+        }
+    }
+
+    /// Sets Do Not Disturb to `to`. If that's a change, the file is written, the clients hear
+    /// of it, and its end is waited for again.
+    fn set_do_not_disturb(&mut self, to: DoNotDisturb) {
+        if to == self.do_not_disturb {
+            return;
+        }
+        self.do_not_disturb = to;
+        to.save(&self.do_not_disturb_file);
+        emit_on(
+            &self.connection,
+            PRIVATE_PATH,
+            PRIVATE_INTERFACE,
+            "DoNotDisturbChanged",
+            to.to_wire(),
+        );
+        self.schedule_do_not_disturb_end();
+    }
+
+    /// Waits for Do Not Disturb's end, at least a second and at most a day away, and then
+    /// checks the clock again, so that a clock that jumped is followed.
+    fn schedule_do_not_disturb_end(&mut self) {
+        if let Some(end) = self.do_not_disturb_end.take() {
+            end.abort();
+        }
+        let DoNotDisturb::On { end: Some(end) } = self.do_not_disturb else {
+            return;
+        };
+        let wait = end.saturating_sub(self.clock.now()).clamp(1, 24 * 60 * 60);
+        let this = self.this.clone();
+        self.do_not_disturb_end = Some(glib::MainContext::ref_thread_default().spawn_local(
+            async move {
+                glib::timeout_future(Duration::from_secs(wait)).await;
+                if let Some(state) = this.upgrade() {
+                    let mut guard = state.borrow_mut();
+                    // Its own handle, which a change would abort as it runs.
+                    guard.do_not_disturb_end = None;
+                    guard.settle_do_not_disturb();
+                    if guard.do_not_disturb_end.is_none() {
+                        guard.schedule_do_not_disturb_end();
+                    }
+                }
+            },
+        ));
     }
 
     /// The next id, which is never 0: that's `replaces_id`'s "none".

@@ -103,6 +103,11 @@ impl Clock for FakeClock {
     fn now(&self) -> u64 {
         self.0.get()
     }
+
+    /// UTC, so that the test's mornings are the same wherever it runs.
+    fn zone(&self) -> glib::TimeZone {
+        glib::TimeZone::utc()
+    }
 }
 
 /// What outlives a daemon: the directory of its history, and the time.
@@ -163,6 +168,11 @@ fn start_in(bus: &Bus, home: Rc<Home>) -> Daemon<'_> {
         settings::outside(&apps),
         Config {
             history_file: home.directory.path().join("caminito").join("history"),
+            do_not_disturb_file: home
+                .directory
+                .path()
+                .join("caminito")
+                .join("do-not-disturb"),
             clock: home.clock.clone(),
         },
     )
@@ -401,6 +411,18 @@ impl Daemon<'_> {
         let mut counts: Vec<_> = counts.into_iter().collect();
         counts.sort();
         counts
+    }
+
+    /// Do Not Disturb as the private API gives it: whether it's on, its end, its reason.
+    fn do_not_disturb(&self) -> (bool, u64, String) {
+        self.api("DoNotDisturb", ().to_variant())
+            .get::<(bool, u64, String)>()
+            .expect("DoNotDisturb answers its state")
+    }
+
+    /// Turns Do Not Disturb on `until` one of the durations, or `off`.
+    fn set_do_not_disturb(&self, until: &str) {
+        self.api("SetDoNotDisturb", (until,).to_variant());
     }
 
     /// Each private API signal so far, as its name and its arguments' text.
@@ -1634,5 +1656,215 @@ fn an_app_joins_the_known_apps_with_its_first_notification() {
         daemon.notify(notify("Second"));
 
         assert_eq!(daemon.apps.known_apps(), ["Test", "org.example.Mail"]);
+    });
+}
+
+// Do Not Disturb (CMN-263), set over the private API, with the fake clock. The test's time,
+// 1 000 000 s, is 13:46:40 on 12 January 1970 in UTC, the fake clock's zone.
+
+/// The fake clock's start.
+const NOW: u64 = 1_000_000;
+const HOUR: u64 = 60 * 60;
+
+#[test]
+fn do_not_disturb_for_an_hour_is_on_until_the_hour_ends() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        assert_eq!(daemon.do_not_disturb(), (false, 0, String::new()));
+
+        daemon.set_do_not_disturb("one-hour");
+
+        assert_eq!(
+            daemon.do_not_disturb(),
+            (true, NOW + HOUR, "manual".to_owned())
+        );
+        assert_eq!(
+            daemon.api_signals(),
+            [signal("DoNotDisturbChanged", "(true, 1003600, 'manual')")]
+        );
+        daemon.forget_signals();
+        daemon.home.clock.0.set(NOW + HOUR - 1);
+        assert!(daemon.do_not_disturb().0);
+        daemon.home.clock.0.set(NOW + HOUR);
+        assert_eq!(daemon.do_not_disturb(), (false, 0, String::new()));
+        assert_eq!(
+            daemon.api_signals(),
+            [signal("DoNotDisturbChanged", "(false, 0, '')")]
+        );
+    });
+}
+
+#[test]
+fn while_do_not_disturb_is_on_a_notification_has_no_bubble_and_no_sound_but_its_entry() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.set_do_not_disturb("one-hour");
+
+        daemon.notify(notify("Quiet"));
+
+        assert!(daemon.bubbles.ids().is_empty());
+        assert!(daemon.sounds.0.borrow().is_empty());
+        assert_eq!(daemon.summaries(), ["Quiet"]);
+    });
+}
+
+#[test]
+fn nothing_is_shown_when_do_not_disturb_ends() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.set_do_not_disturb("one-hour");
+        daemon.notify(notify("Quiet"));
+
+        daemon.home.clock.0.set(NOW + HOUR);
+        assert!(!daemon.do_not_disturb().0);
+        daemon.bus.run_for(QUIET);
+
+        assert!(daemon.bubbles.ids().is_empty());
+        assert!(daemon.sounds.0.borrow().is_empty());
+        // The next one has its bubble again.
+        let next = daemon.notify(notify("Loud"));
+        assert_eq!(daemon.bubbles.ids(), [next]);
+    });
+}
+
+#[test]
+fn a_critical_notification_breaks_through_unless_the_setting_says_otherwise() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.set_do_not_disturb("until-turned-off");
+
+        let critical = daemon.notify(notify("Battery low").hint("urgency", 2u8));
+        assert_eq!(daemon.bubbles.ids(), [critical]);
+        assert_eq!(daemon.sounds.0.borrow().len(), 1);
+
+        daemon
+            .settings
+            .set_boolean("critical-breaks-through", false)
+            .unwrap();
+        daemon.notify(notify("Battery dying").hint("urgency", 2u8));
+        assert_eq!(daemon.bubbles.ids(), [critical]);
+        assert_eq!(daemon.sounds.0.borrow().len(), 1);
+        assert_eq!(daemon.summaries(), ["Battery dying", "Battery low"]);
+    });
+}
+
+#[test]
+fn an_app_that_breaks_through_gets_its_bubble_and_its_sound() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon
+            .apps
+            .app("Phone")
+            .set_boolean("breaks-through", true)
+            .unwrap();
+        daemon.set_do_not_disturb("until-turned-off");
+
+        daemon.notify(notify("Mail"));
+        let call = daemon.notify(Notify {
+            app_name: "Phone",
+            ..notify("Ana is calling")
+        });
+
+        assert_eq!(daemon.bubbles.ids(), [call]);
+        assert_eq!(daemon.sounds.0.borrow().len(), 1);
+    });
+}
+
+#[test]
+fn do_not_disturb_ends_after_four_hours_tomorrow_morning_or_never() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let set = |until| {
+            daemon.set_do_not_disturb(until);
+            daemon.do_not_disturb()
+        };
+        assert_eq!(
+            set("four-hours"),
+            (true, NOW + 4 * HOUR, "manual".to_owned())
+        );
+        // 08:00 on 13 January 1970.
+        assert_eq!(
+            set("tomorrow-morning"),
+            (true, 1_065_600, "manual".to_owned())
+        );
+        assert_eq!(set("until-turned-off"), (true, 0, "manual".to_owned()));
+        daemon.home.clock.0.set(NOW + 100 * HOUR);
+        assert!(daemon.do_not_disturb().0);
+        assert_eq!(set("off"), (false, 0, String::new()));
+
+        let refused = daemon.try_api("SetDoNotDisturb", ("a-while",).to_variant());
+        assert!(refused.is_err());
+        assert!(!daemon.do_not_disturb().0);
+    });
+}
+
+#[test]
+fn toggling_turns_do_not_disturb_off_or_on_until_turned_off() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.set_do_not_disturb("one-hour");
+
+        daemon.api("ToggleDoNotDisturb", ().to_variant());
+        assert_eq!(daemon.do_not_disturb(), (false, 0, String::new()));
+        daemon.api("ToggleDoNotDisturb", ().to_variant());
+        assert_eq!(daemon.do_not_disturb(), (true, 0, "manual".to_owned()));
+    });
+}
+
+#[test]
+fn do_not_disturb_survives_a_restart_of_the_daemon() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.set_do_not_disturb("one-hour");
+        let home = daemon.home.clone();
+        drop(daemon);
+
+        let daemon = start_in(bus, home.clone());
+        assert_eq!(
+            daemon.do_not_disturb(),
+            (true, NOW + HOUR, "manual".to_owned())
+        );
+        daemon.notify(notify("Quiet"));
+        assert!(daemon.bubbles.ids().is_empty());
+        drop(daemon);
+
+        // One that ended while no daemon ran is off.
+        home.clock.0.set(NOW + HOUR);
+        let daemon = start_in(bus, home);
+        assert_eq!(daemon.do_not_disturb(), (false, 0, String::new()));
+    });
+}
+
+#[test]
+fn do_not_disturb_ends_when_its_time_comes_though_nobody_asks() {
+    bus::run(|bus| {
+        let home = Home::new();
+        let daemon = start_in(bus, home.clone());
+        daemon.set_do_not_disturb("one-hour");
+        drop(daemon);
+        // Started a second before the end, it waits a second.
+        home.clock.0.set(NOW + HOUR - 1);
+        let daemon = start_in(bus, home);
+        daemon.forget_signals();
+
+        daemon.home.clock.0.set(NOW + HOUR);
+        daemon.wait_for_api_signals(1);
+
+        assert_eq!(
+            daemon.api_signals(),
+            [signal("DoNotDisturbChanged", "(false, 0, '')")]
+        );
+    });
+}
+
+#[test]
+fn open_center_has_the_applet_open_the_notification_center() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+
+        daemon.api("OpenCenter", ().to_variant());
+        daemon.wait_for_api_signals(1);
+
+        assert_eq!(daemon.api_signals(), [signal("OpenCenterRequested", "()")]);
     });
 }

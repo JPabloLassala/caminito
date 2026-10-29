@@ -96,7 +96,7 @@ nt_state_age (gint64 time, gint64 now)
 }
 
 const char *const *
-nt_state_icon_names (void)
+nt_state_icon_names (gboolean do_not_disturb)
 {
   static const char *const names[] = {
     "notifications-symbolic",
@@ -104,8 +104,44 @@ nt_state_icon_names (void)
     "caminito-bell-symbolic",
     NULL,
   };
+  static const char *const struck[] = {
+    "notifications-disabled-symbolic",
+    "xsi-notifications-disabled-symbolic",
+    "caminito-bell-disabled-symbolic",
+    NULL,
+  };
 
-  return names;
+  return do_not_disturb ? struck : names;
+}
+
+/* t, in seconds since the epoch, in zone; NULL if GLib can't place it. */
+static GDateTime *
+in_zone (gint64 t, GTimeZone *zone)
+{
+  g_autoptr (GDateTime) utc = g_date_time_new_from_unix_utc (t);
+
+  return utc == NULL ? NULL : g_date_time_to_timezone (utc, zone);
+}
+
+char *
+nt_state_until (guint64 end, gint64 now, GTimeZone *zone)
+{
+  g_autoptr (GDateTime) at = NULL;
+  g_autoptr (GDateTime) today = NULL;
+  g_autofree char *time = NULL;
+
+  if (end == 0)
+    return g_strdup ("Until turned off");
+  at = in_zone ((gint64) MIN (end, (guint64) G_MAXINT64), zone);
+  today = in_zone (now, zone);
+  if (at == NULL || today == NULL)
+    return g_strdup ("On");
+  time = g_date_time_format (at, "%H:%M");
+  /* Its end is today or the next day, "tomorrow morning" being the furthest. */
+  if (g_date_time_get_year (at) == g_date_time_get_year (today)
+      && g_date_time_get_day_of_year (at) == g_date_time_get_day_of_year (today))
+    return g_strdup_printf ("Until %s", time);
+  return g_strdup_printf ("Until tomorrow, %s", time);
 }
 
 char *

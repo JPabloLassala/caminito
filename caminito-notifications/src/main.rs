@@ -87,10 +87,10 @@ fn main() -> glib::ExitCode {
             settings.global().clone(),
         ));
         let sounds = Rc::new(sound::Canberra::default());
+        let state = glib::user_state_dir().join("caminito");
         let history = Config {
-            history_file: glib::user_state_dir()
-                .join("caminito")
-                .join("notification-history"),
+            history_file: state.join("notification-history"),
+            do_not_disturb_file: state.join("do-not-disturb"),
             clock: Rc::new(SystemClock),
         };
         let server = match Server::new(&connection, bubbles, sounds, settings.clone(), history) {

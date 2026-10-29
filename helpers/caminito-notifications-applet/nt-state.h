@@ -1,6 +1,7 @@
 /*
  * What the Notifications applet shows (CMN-260): the Notification history's entries as the
- * daemon's private API lists them (ADR 0051), an entry's age, the icon and the tooltip.
+ * daemon's private API lists them (ADR 0051), an entry's age, the icon and the tooltip, and
+ * when Do Not Disturb ends (CMN-263).
  * Nothing here talks to the daemon, so that the tests can build any history by hand.
  */
 
@@ -52,10 +53,15 @@ GPtrArray         *nt_entries_from_list (GVariant *reply);
    seconds since the epoch. */
 char              *nt_state_age         (gint64 time,
                                          gint64 now);
-/* The bell's themed names: Breeze's, XApp's, then Caminito's own in hicolor. Bells only: a
-   theme is searched for every name before the themes it inherits from, and MATE's
-   preferences-system-notifications-symbolic, which Adwaita's bell is called too, is a speech
-   bubble. NULL-terminated, in static storage. */
-const char *const *nt_state_icon_names  (void);
+/* The bell's themed names: Breeze's, XApp's, then Caminito's own in hicolor, struck through
+   during Do Not Disturb. Bells only: a theme is searched for every name before the themes it
+   inherits from, and MATE's preferences-system-notifications-symbolic, which Adwaita's bell
+   is called too, is a speech bubble. NULL-terminated, in static storage. */
+const char *const *nt_state_icon_names  (gboolean do_not_disturb);
+/* "Until 14:30", "Until tomorrow, 02:13" or, for an end of 0, "Until turned off": when Do
+   Not Disturb ends, in seconds since the epoch, as it reads at now in zone. */
+char              *nt_state_until       (guint64    end,
+                                         gint64     now,
+                                         GTimeZone *zone);
 /* "No notifications", "1 notification", "3 notifications". */
 char              *nt_state_tooltip     (guint n_entries);

@@ -2,8 +2,9 @@
 //! `/org/mate/Caminito/Notifications`, on the name the program owns as a single-instance
 //! application. Its clients are the Notifications applet and the Dock applet, which ship in
 //! the same package, so it's unversioned. It opens the settings window (CMN-261) and serves
-//! the Notification history (CMN-259), whose calls the server answers; Do Not Disturb's
-//! (CMN-263) join it.
+//! the Notification history (CMN-259) and Do Not Disturb (CMN-263), whose calls the server
+//! answers, and passes a request for the Notification center on to the applet, which owns no
+//! name to be called at.
 
 use gio::glib::{self, Variant};
 
@@ -52,6 +53,30 @@ const INTERFACE: &str = r#"
     <method name="Counts">
       <arg type="a{su}" name="counts" direction="out"/>
     </method>
+    <!-- Do Not Disturb: whether it's on, when it ends in seconds since the epoch, or 0 while
+         it's on until turned off or it's off, and why it's on: "manual", or "" while it's
+         off. "schedule", "fullscreen" and "screencast" are CMN-264's. -->
+    <method name="DoNotDisturb">
+      <arg type="b" name="on" direction="out"/>
+      <arg type="t" name="end" direction="out"/>
+      <arg type="s" name="reason" direction="out"/>
+    </method>
+    <!-- Turns it on for "one-hour", "four-hours", "tomorrow-morning" (08:00 of the next
+         day, which turns at 04:00) or "until-turned-off", or turns it "off". -->
+    <method name="SetDoNotDisturb">
+      <arg type="s" name="until" direction="in"/>
+    </method>
+    <!-- Turns it off while it's on, and on until turned off while it's off. -->
+    <method name="ToggleDoNotDisturb"/>
+    <signal name="DoNotDisturbChanged">
+      <arg type="b" name="on"/>
+      <arg type="t" name="end"/>
+      <arg type="s" name="reason"/>
+    </signal>
+    <!-- Asks the Notifications applet to open the Notification center, as Super+N does
+         through Caminito: OpenCenterRequested tells it. -->
+    <method name="OpenCenter"/>
+    <signal name="OpenCenterRequested"/>
     <!-- The history changed: list it again. -->
     <signal name="HistoryChanged"/>
     <signal name="CountsChanged">
@@ -132,6 +157,15 @@ fn handle(
         "OpenSettings" => {
             let app = parameters.child_value(0);
             open_settings(app.str().filter(|app| !app.is_empty()));
+            invocation.return_value(None);
+        }
+        "OpenCenter" => {
+            let connection = invocation.connection();
+            if let Err(err) =
+                connection.emit_signal(None, PATH, INTERFACE_NAME, "OpenCenterRequested", None)
+            {
+                glib::g_warning!(crate::DOMAIN, "can't emit OpenCenterRequested: {err}");
+            }
             invocation.return_value(None);
         }
         _ => history.handle(method, parameters, invocation),

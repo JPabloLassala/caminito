@@ -3,7 +3,8 @@
 //! these calls here, since they need the server's state. An entry is a
 //! [`ENTRY_TYPE`](crate::history::ENTRY_TYPE) struct, newest first in `List`.
 //! `HistoryChanged` tells a client to list again, and `CountsChanged` carries each Notifying
-//! app's new count.
+//! app's new count. Do Not Disturb's calls (CMN-263) give its state and set it, and
+//! `DoNotDisturbChanged` carries its new state.
 
 use std::cell::RefCell;
 use std::rc::Weak;
@@ -12,6 +13,7 @@ use gio::glib::{self, Variant};
 use gio::prelude::*;
 
 use super::{Reason, State, close, close_all, invoke, reply};
+use crate::do_not_disturb::{DoNotDisturb, Until};
 use crate::history::ENTRY_TYPE;
 
 const INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
@@ -31,8 +33,10 @@ pub(super) fn handle(
         invocation.return_dbus_error("org.freedesktop.DBus.Error.Failed", "the server stopped");
         return;
     };
-    // What a week passed over isn't listed or counted, whenever the timer would have run.
+    // What a week passed over isn't listed or counted, and a Do Not Disturb that ended is
+    // off, whenever the timers would have run.
     state.borrow_mut().prune_history();
+    state.borrow_mut().settle_do_not_disturb();
     let refuse = |message: String| invocation.clone().return_dbus_error(INVALID_ARGS, &message);
     let id = || parameters.child_value(0).get::<u32>().unwrap_or(0);
     let text = |index| parameters.child_value(index).str().unwrap_or("").to_owned();
@@ -102,6 +106,36 @@ pub(super) fn handle(
                 Some(true) => {}
             }
             reply(&state, id, &text(1));
+            invocation.return_value(None);
+        }
+        "DoNotDisturb" => {
+            let state = state.borrow().do_not_disturb.to_wire();
+            invocation.return_value(Some(&state.to_variant()));
+        }
+        "SetDoNotDisturb" => {
+            let nick = text(0);
+            let mut guard = state.borrow_mut();
+            let to = if nick == "off" {
+                DoNotDisturb::Off
+            } else if let Some(until) = Until::of_nick(&nick) {
+                DoNotDisturb::On {
+                    end: until.end(guard.clock.now(), &guard.clock.zone()),
+                }
+            } else {
+                drop(guard);
+                return refuse(format!("Do Not Disturb has no duration {nick}"));
+            };
+            guard.set_do_not_disturb(to);
+            invocation.return_value(None);
+        }
+        "ToggleDoNotDisturb" => {
+            let mut guard = state.borrow_mut();
+            let to = if guard.do_not_disturb.is_on() {
+                DoNotDisturb::Off
+            } else {
+                DoNotDisturb::On { end: None }
+            };
+            guard.set_do_not_disturb(to);
             invocation.return_value(None);
         }
         _ => invocation.return_dbus_error(

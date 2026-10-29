@@ -19,11 +19,16 @@ struct _NtDaemon
   /* Set while the daemon has its name. */
   GDBusConnection *connection;
   guint            history_changed;
+  guint            do_not_disturb_changed;
+  guint            open_center_requested;
   GPtrArray       *entries;
   /* A List is current until the next one starts, or the daemon goes. */
   guint            generation;
   guint            refresh;
+  gboolean         do_not_disturb;
+  guint64          do_not_disturb_end;
   NtDaemonChanged  changed;
+  NtDaemonOpenCenter open_center;
   gpointer         data;
   guint            idle;
 };
@@ -134,6 +139,60 @@ on_history_changed (GDBusConnection *connection G_GNUC_UNUSED,
   queue_refresh (data);
 }
 
+/* parameters is DoNotDisturb's reply or DoNotDisturbChanged's arguments, which are alike. */
+static void
+take_do_not_disturb (NtDaemon *daemon, GVariant *parameters)
+{
+  g_variant_get (parameters, "(bt&s)", &daemon->do_not_disturb, &daemon->do_not_disturb_end,
+                 NULL);
+  queue_changed (daemon);
+}
+
+static void
+on_do_not_disturb_changed (GDBusConnection *connection G_GNUC_UNUSED,
+                           const char      *sender G_GNUC_UNUSED,
+                           const char      *path G_GNUC_UNUSED,
+                           const char      *interface G_GNUC_UNUSED,
+                           const char      *signal G_GNUC_UNUSED,
+                           GVariant        *parameters,
+                           gpointer         data)
+{
+  take_do_not_disturb (data, parameters);
+}
+
+static void
+on_open_center_requested (GDBusConnection *connection G_GNUC_UNUSED,
+                          const char      *sender G_GNUC_UNUSED,
+                          const char      *path G_GNUC_UNUSED,
+                          const char      *interface G_GNUC_UNUSED,
+                          const char      *signal G_GNUC_UNUSED,
+                          GVariant        *parameters G_GNUC_UNUSED,
+                          gpointer         data)
+{
+  NtDaemon *daemon = data;
+
+  daemon->open_center (daemon, daemon->data);
+}
+
+/* As on_listed: the daemon is only touched while the cancellable says it's there. The
+   reply and the daemon's signals come in the order it sent them, so a DoNotDisturbChanged
+   after the reply is newer, and wins. */
+static void
+on_do_not_disturb (GObject *source, GAsyncResult *result, gpointer data)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GVariant) reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result,
+                                                              &error);
+
+  if (reply == NULL)
+    {
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED) && !daemon_is_gone (error))
+        g_warning ("can't read Do Not Disturb: %s", error->message);
+      return;
+    }
+  take_do_not_disturb (data, reply);
+}
+
 static void
 unsubscribe (NtDaemon *daemon)
 {
@@ -141,6 +200,10 @@ unsubscribe (NtDaemon *daemon)
     return;
   g_dbus_connection_signal_unsubscribe (daemon->connection, daemon->history_changed);
   daemon->history_changed = 0;
+  g_dbus_connection_signal_unsubscribe (daemon->connection, daemon->do_not_disturb_changed);
+  daemon->do_not_disturb_changed = 0;
+  g_dbus_connection_signal_unsubscribe (daemon->connection, daemon->open_center_requested);
+  daemon->open_center_requested = 0;
   g_clear_object (&daemon->connection);
 }
 
@@ -157,6 +220,15 @@ on_name_appeared (GDBusConnection *connection,
   daemon->history_changed = g_dbus_connection_signal_subscribe (
     connection, DAEMON_NAME, DAEMON_INTERFACE, "HistoryChanged", DAEMON_PATH, NULL,
     G_DBUS_SIGNAL_FLAGS_NONE, on_history_changed, daemon, NULL);
+  daemon->do_not_disturb_changed = g_dbus_connection_signal_subscribe (
+    connection, DAEMON_NAME, DAEMON_INTERFACE, "DoNotDisturbChanged", DAEMON_PATH, NULL,
+    G_DBUS_SIGNAL_FLAGS_NONE, on_do_not_disturb_changed, daemon, NULL);
+  daemon->open_center_requested = g_dbus_connection_signal_subscribe (
+    connection, DAEMON_NAME, DAEMON_INTERFACE, "OpenCenterRequested", DAEMON_PATH, NULL,
+    G_DBUS_SIGNAL_FLAGS_NONE, on_open_center_requested, daemon, NULL);
+  g_dbus_connection_call (connection, DAEMON_NAME, DAEMON_PATH, DAEMON_INTERFACE, "DoNotDisturb",
+                          NULL, G_VARIANT_TYPE ("(bts)"), G_DBUS_CALL_FLAGS_NONE, -1,
+                          daemon->cancellable, on_do_not_disturb, daemon);
   queue_refresh (daemon);
   /* Running, before the history is read. */
   queue_changed (daemon);
@@ -174,6 +246,8 @@ on_name_vanished (GDBusConnection *connection G_GNUC_UNUSED,
   daemon->generation++;
   g_clear_handle_id (&daemon->refresh, g_source_remove);
   g_ptr_array_set_size (daemon->entries, 0);
+  daemon->do_not_disturb = FALSE;
+  daemon->do_not_disturb_end = 0;
   queue_changed (daemon);
 }
 
@@ -227,6 +301,25 @@ nt_daemon_invoke_action (NtDaemon *daemon, guint32 id, const char *key)
 }
 
 gboolean
+nt_daemon_do_not_disturb (NtDaemon *daemon, guint64 *end)
+{
+  *end = daemon->do_not_disturb_end;
+  return daemon->do_not_disturb;
+}
+
+void
+nt_daemon_set_do_not_disturb (NtDaemon *daemon, const char *until)
+{
+  call (daemon, "SetDoNotDisturb", g_variant_new ("(s)", until));
+}
+
+void
+nt_daemon_toggle_do_not_disturb (NtDaemon *daemon)
+{
+  call (daemon, "ToggleDoNotDisturb", NULL);
+}
+
+gboolean
 nt_daemon_running (NtDaemon *daemon)
 {
   return daemon->connection != NULL;
@@ -239,13 +332,14 @@ nt_daemon_entries (NtDaemon *daemon)
 }
 
 NtDaemon *
-nt_daemon_new (NtDaemonChanged changed, gpointer data)
+nt_daemon_new (NtDaemonChanged changed, NtDaemonOpenCenter open_center, gpointer data)
 {
   NtDaemon *daemon = g_new0 (NtDaemon, 1);
 
   daemon->cancellable = g_cancellable_new ();
   daemon->entries = g_ptr_array_new_with_free_func ((GDestroyNotify) nt_entry_free);
   daemon->changed = changed;
+  daemon->open_center = open_center;
   daemon->data = data;
   daemon->watch = g_bus_watch_name (G_BUS_TYPE_SESSION, DAEMON_NAME,
                                     G_BUS_NAME_WATCHER_FLAGS_NONE, on_name_appeared,

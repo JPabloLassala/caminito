@@ -406,6 +406,7 @@ impl State {
             Binding::Policy(action) => self.run_action(action, time),
             // The time a client would have for the event.
             Binding::Panel(action) => self.caminito.ask_panel(action, time.millis()),
+            Binding::Notifications(action) => self.caminito.ask_notifications(action),
             Binding::Command(command) => self.caminito.run_command(command),
             Binding::RenameWorkspace => self.caminito.rename_workspace(),
         }

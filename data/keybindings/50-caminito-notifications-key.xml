@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<KeyListEntries name="Notifications" wm_name="Caminito" package="marco" schema="org.mate.Caminito">
+  <KeyListEntry name="notification-center" description="Open the Notification center"/>
+  <KeyListEntry name="toggle-do-not-disturb" description="Turn Do Not Disturb on or off"/>
+</KeyListEntries>
