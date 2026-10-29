@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use caminito_notifications::DOMAIN;
-use caminito_notifications::server::{DEFAULT_TIMEOUT, Server};
+use caminito_notifications::server::{Config, DEFAULT_TIMEOUT, Server, SystemClock};
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
@@ -33,7 +33,14 @@ fn main() -> glib::ExitCode {
         };
         let bubbles = Rc::new(bubbles::GtkBubbles::new(application));
         let sounds = Rc::new(sound::Canberra::default());
-        match Server::new(&connection, bubbles, sounds, DEFAULT_TIMEOUT) {
+        let config = Config {
+            default_timeout: DEFAULT_TIMEOUT,
+            history_file: glib::user_state_dir()
+                .join("caminito")
+                .join("notification-history"),
+            clock: Rc::new(SystemClock),
+        };
+        match Server::new(&connection, bubbles, sounds, config) {
             Ok(started) => *server.borrow_mut() = Some(started),
             Err(err) => glib::g_warning!(DOMAIN, "{err}"),
         }

@@ -423,6 +423,7 @@ dependencies = [
  "gio",
  "gtk4",
  "gtk4-layer-shell",
+ "tempfile",
 ]
 
 [[package]]

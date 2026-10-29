@@ -22,11 +22,17 @@ const CRITICAL: u8 = 2;
 
 /// What the server keeps of a `Notify`.
 pub(crate) struct Notification {
+    /// The Notifying app's key: the `desktop-entry` hint, or else `app_name`.
+    pub(crate) app: String,
     pub(crate) bubble: Bubble,
     /// Whether it has the default action, which a click invokes.
     pub(crate) has_default: bool,
     /// Whether it stays after one of its actions is used (`resident`).
     pub(crate) resident: bool,
+    /// Whether it never enters the Notification history (`transient`).
+    pub(crate) transient: bool,
+    /// Whether it has a reply field (KDE's `x-kde-reply-placeholder-text`).
+    pub(crate) reply: bool,
     /// What plays as it arrives, if anything.
     pub(crate) sound: Option<Sound>,
     /// How long its bubble stays, or `None` for as long as the user leaves it.
@@ -50,7 +56,11 @@ impl Notification {
     pub(crate) fn new(arguments: Arguments<'_>, default_timeout: Duration) -> Notification {
         let hints = &arguments.hints;
         let critical = hint::<u8>(hints, "urgency") == Some(CRITICAL);
-        let entry = hint::<String>(hints, "desktop-entry").and_then(|entry| desktop_entry(&entry));
+        let entry_id = hint::<String>(hints, "desktop-entry")
+            .map(|id| id.trim_end_matches(".desktop").to_owned())
+            .filter(|id| !id.is_empty());
+        let entry = entry_id.as_deref().and_then(desktop_entry);
+        let app = entry_id.unwrap_or_else(|| arguments.app_name.to_owned());
         let app_name = match (arguments.app_name, &entry) {
             ("", Some(entry)) => entry.name.clone(),
             (name, _) => name.to_owned(),
@@ -81,9 +91,12 @@ impl Notification {
             actions,
         };
         Notification {
+            app,
             bubble,
             has_default,
             resident: hint::<bool>(hints, "resident").unwrap_or(false),
+            transient: hint::<bool>(hints, "transient").unwrap_or(false),
+            reply: hint::<String>(hints, "x-kde-reply-placeholder-text").is_some(),
             sound: sound(hints),
             timeout: timeout(arguments.expire_timeout, critical, default_timeout),
         }
@@ -132,7 +145,7 @@ fn image(hints: &VariantDict) -> Option<Image> {
 }
 
 /// The pixels of an `image-data` hint, `(iiibiiay)`.
-fn pixels(data: &Variant) -> Option<Pixels> {
+pub(crate) fn pixels(data: &Variant) -> Option<Pixels> {
     if data.type_().as_str() != "(iiibiiay)" {
         return None;
     }
@@ -151,7 +164,7 @@ fn pixels(data: &Variant) -> Option<Pixels> {
 
 /// An app icon or an image path: a file, as a path or a `file://` URI, or else an icon
 /// theme's name. Empty is none.
-fn icon(text: &str) -> Option<Icon> {
+pub(crate) fn icon(text: &str) -> Option<Icon> {
     if text.is_empty() {
         None
     } else if text.starts_with("file://") {
