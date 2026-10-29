@@ -12,7 +12,7 @@ pkgname=appmenu-gtk-module-caminito
 _pkgname=appmenu-gtk-module
 pkgver=25.04
 pkgrel=3
-pkgdesc="Application Menu GTK Module, with fixes for Wayland"
+pkgdesc="Application Menu GTK Module, with Caminito's patches"
 depends=(bash
          dconf
          gdk-pixbuf2
@@ -35,14 +35,13 @@ conflicts=("${_pkgname}")
 # in a GtkApplicationWindow, as pluma and atril have theirs, never showed its window while
 # nothing owned the registrar's name, which is while no applet is there (111). Under X11 the
 # module does what the stock one does. Each goes when the baseline has its fix.
-# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
-# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
-_patches="file://$(realpath -m "$startdir/../../patches/appmenu-gtk-module")"
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030), and
+# tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
 source=(
   git+https://gitlab.com/vala-panel-project/vala-panel-appmenu#tag=$pkgver
   80-appmenu-gtk-module.sh
-  "$_patches/0001-hijack-Set-a-plain-window-s-D-Bus-properties-once-it.patch"
-  "$_patches/0002-platform-Keep-a-GtkApplicationWindow-from-making-a-s.patch"
+  "0001-hijack-Set-a-plain-window-s-D-Bus-properties-once-it.patch"
+  "0002-platform-Keep-a-GtkApplicationWindow-from-making-a-s.patch"
 )
 sha256sums=('843b24f98f02feb8cbfdda26630018ae95f8ac4959de9deb88cf1a13506f845f'
             'e8aff88851145085e24989cc99da9f631c593b506d0224225f3eb347d16c6455'

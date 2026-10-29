@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2017 Victor Berger and Victoria Brekenfeld
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND MIT
+
 //! The tty backend: Caminito on a spare tty, driving the machine's monitors through DRM/KMS,
 //! with the devices libseat grants (08, 15, 55), and reading its input devices through
 //! libinput (56).

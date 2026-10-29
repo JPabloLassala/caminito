@@ -4,7 +4,7 @@ project(
   'caminito-gtk-palette',
   'c',
   version: '0.1.0',
-  license: 'GPL-2.0-or-later',
+  license: 'GPL-3.0-or-later',
   meson_version: '>= 1.0',
   default_options: ['warning_level=2', 'c_std=gnu11'],
 )

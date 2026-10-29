@@ -1,0 +1,1022 @@
+# name: macOS (Mac keyboard)
+# macOS's shortcuts on a Mac keyboard, or one in its Mac mode: Cmd, which is Super, does what
+# Ctrl does, Cmd+Right goes to the end of a line, Option, which is Alt, moves by words, and
+# terminals, browsers and other apps have shortcuts of their own.
+#
+# Converted by tools/toshy-to-remaps from Toshy's default-toshy-config/toshy_config.py, at
+# commit a07f6f69b0cac2d29eeb91d29d9a1128efb9bf09 of https://github.com/RedBearAK/toshy,
+# by RedBearAK. Toshy's config is based on Kinto's, https://github.com/rbreaves/kinto, by Ben
+# Reaves. Like Toshy, this file is under the GNU General Public License, version 3.
+#
+# Don't edit it: run the script again.
+
+[All applications]
+# Wordwise - not vscode
+Alt+Left = Ctrl+Left
+Alt+Right = Ctrl+Right
+Alt+Shift+Left = Ctrl+Shift+Left
+Alt+Shift+Right = Ctrl+Shift+Right
+Alt+Shift+G = Ctrl+Shift+G
+# Cmd+Dot not in terminals
+Super+period = Escape
+# GenGUI overrides: not Chromebook
+Alt+BackSpace = Ctrl+BackSpace
+# General GUI
+Shift+Super+bracketleft = Ctrl+Page_Up
+Shift+Super+bracketright = Ctrl+Page_Down
+Super+space = Alt+F1
+Super+F3 = Super+D
+Ctrl+Super+F = Alt+F10
+Super+Q = Alt+F4
+Alt+Tab = nothing
+Super+H = nothing
+Alt+Return = Insert
+Ctrl+A = Home
+Ctrl+E = End
+Ctrl+B = Left
+Ctrl+F = Right
+Ctrl+N = Down
+Ctrl+P = Up
+Ctrl+K = Shift+End, BackSpace
+Ctrl+D = Delete
+Super+Left = Home
+Super+Right = End
+Super+Up = Ctrl+Home
+Super+Down = Ctrl+End
+Shift+Super+Left = Shift+Home
+Shift+Super+Right = Shift+End
+Shift+Super+Up = Ctrl+Shift+Home
+Shift+Super+Down = Ctrl+Shift+End
+Alt+Shift+BackSpace = Ctrl+BackSpace
+Alt+Shift+Delete = Ctrl+Delete
+Alt+Delete = Ctrl+Delete
+Super+BackSpace = Shift+Home, BackSpace
+Ctrl+Super+F1 = Ctrl+Alt+F1
+Ctrl+Super+F2 = Ctrl+Alt+F2
+Ctrl+Super+F3 = Ctrl+Alt+F3
+Ctrl+Super+F4 = Ctrl+Alt+F4
+Ctrl+Super+F5 = Ctrl+Alt+F5
+Ctrl+Super+F6 = Ctrl+Alt+F6
+Ctrl+Super+F7 = Ctrl+Alt+F7
+# Cmd as Ctrl
+Super+A = Ctrl+A
+Shift+Super+A = Ctrl+Shift+A
+Super+B = Ctrl+B
+Shift+Super+B = Ctrl+Shift+B
+Super+C = Ctrl+C
+Shift+Super+C = Ctrl+Shift+C
+Super+D = Ctrl+D
+Shift+Super+D = Ctrl+Shift+D
+Super+E = Ctrl+E
+Shift+Super+E = Ctrl+Shift+E
+Super+F = Ctrl+F
+Shift+Super+F = Ctrl+Shift+F
+Super+G = Ctrl+G
+Shift+Super+G = Ctrl+Shift+G
+Shift+Super+H = Ctrl+Shift+H
+Super+I = Ctrl+I
+Shift+Super+I = Ctrl+Shift+I
+Super+J = Ctrl+J
+Shift+Super+J = Ctrl+Shift+J
+Super+K = Ctrl+K
+Shift+Super+K = Ctrl+Shift+K
+Super+L = Ctrl+L
+Shift+Super+L = Ctrl+Shift+L
+Super+M = Ctrl+M
+Shift+Super+M = Ctrl+Shift+M
+Super+N = Ctrl+N
+Shift+Super+N = Ctrl+Shift+N
+Super+O = Ctrl+O
+Shift+Super+O = Ctrl+Shift+O
+Super+P = Ctrl+P
+Shift+Super+P = Ctrl+Shift+P
+Shift+Super+Q = Ctrl+Shift+Q
+Super+R = Ctrl+R
+Shift+Super+R = Ctrl+Shift+R
+Super+S = Ctrl+S
+Shift+Super+S = Ctrl+Shift+S
+Super+T = Ctrl+T
+Shift+Super+T = Ctrl+Shift+T
+Super+U = Ctrl+U
+Shift+Super+U = Ctrl+Shift+U
+Super+V = Ctrl+V
+Shift+Super+V = Ctrl+Shift+V
+Super+W = Ctrl+W
+Shift+Super+W = Ctrl+Shift+W
+Super+X = Ctrl+X
+Shift+Super+X = Ctrl+Shift+X
+Super+Y = Ctrl+Y
+Shift+Super+Y = Ctrl+Shift+Y
+Super+Z = Ctrl+Z
+Shift+Super+Z = Ctrl+Shift+Z
+Super+0 = Ctrl+0
+Shift+Super+0 = Ctrl+Shift+0
+Super+1 = Ctrl+1
+Shift+Super+1 = Ctrl+Shift+1
+Super+2 = Ctrl+2
+Shift+Super+2 = Ctrl+Shift+2
+Super+3 = Ctrl+3
+Shift+Super+3 = Ctrl+Shift+3
+Super+4 = Ctrl+4
+Shift+Super+4 = Ctrl+Shift+4
+Super+5 = Ctrl+5
+Shift+Super+5 = Ctrl+Shift+5
+Super+6 = Ctrl+6
+Shift+Super+6 = Ctrl+Shift+6
+Super+7 = Ctrl+7
+Shift+Super+7 = Ctrl+Shift+7
+Super+8 = Ctrl+8
+Shift+Super+8 = Ctrl+Shift+8
+Super+9 = Ctrl+9
+Shift+Super+9 = Ctrl+Shift+9
+Super+minus = Ctrl+minus
+Shift+Super+minus = Ctrl+Shift+minus
+Super+equal = Ctrl+equal
+Shift+Super+equal = Ctrl+Shift+equal
+Super+bracketleft = Ctrl+bracketleft
+Super+bracketright = Ctrl+bracketright
+Super+backslash = Ctrl+backslash
+Shift+Super+backslash = Ctrl+Shift+backslash
+Super+semicolon = Ctrl+semicolon
+Shift+Super+semicolon = Ctrl+Shift+semicolon
+Super+apostrophe = Ctrl+apostrophe
+Shift+Super+apostrophe = Ctrl+Shift+apostrophe
+Super+comma = Ctrl+comma
+Shift+Super+comma = Ctrl+Shift+comma
+Shift+Super+period = Ctrl+Shift+period
+Super+slash = Ctrl+slash
+Shift+Super+slash = Ctrl+Shift+slash
+
+[Remote desktops] Anydesk anydesk Gnome-boxes gnome-boxes gnome-connections org.gnome.Boxes org.gnome.boxes org.remmina.Remmina org.remmina.remmina Nxplayer.bin nxplayer.bin remmina qemu-system-x86_64 qemu Spicy spicy Virt-manager virt-manager VirtualBox virtualbox xfreerdp Wfica wfica
+no remaps
+
+[Alacritty terminal] alacritty
+# Alacritty terminal
+Super+K = Ctrl+L
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Super+equal = Ctrl+Shift+equal
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Terminals] com.raggesilver.BlackBox com.raggesilver.blackbox cutefish-terminal dev.limux.linux dev.warp.Warp dev.warp.warp eterm gnome-terminal gnome-terminal-server guake kinto-gui.py Kgx kgx lxterminal mate-terminal MateTerminal mateterminal org.codeberg.dnkl.foot.desktop org.gnome.Console org.gnome.console org.gnome.Terminal org.gnome.terminal org.kde.yakuake org.wezfurlong.wezterm roxterm qterminal st sakura station tabby terminator termite Termius termius tilda tilix urxvt wezterm wezterm-gui xfce4-terminal xterm yakuake
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Super+equal = Ctrl+Shift+equal
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[COSMIC Terminal] com.system76.CosmicTerm com.system76.cosmicterm
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Contour terminal] contour
+# Contour terminal overrides
+Super+minus = Ctrl+Shift+minus
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Super+equal = Ctrl+Shift+equal
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Deepin Terminal] deepin-terminal
+# Deepin Terminal overrides
+Super+W = Alt+W
+Super+J = nothing
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Ghostty terminal] com.mitchellh.ghostty
+# Ghostty terminal overrides
+Super+D = Ctrl+Shift+O
+Shift+Super+D = Ctrl+Shift+E
+Alt+Super+I = Ctrl+Shift+I
+Super+K = Ctrl+L
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Hyper terminal] hyper
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+grave = Ctrl+Page_Up
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Elementary Terminal] io.elementary.terminal
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Super+equal = Ctrl+Shift+equal
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Kitty terminal] kitty
+# Kitty terminal - not tab nav
+Super+K = Ctrl+L
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Super+equal = Ctrl+Shift+equal
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Konsole] konsole org.kde.konsole
+# SIGINT Preventer
+Super+C = Ctrl+Insert
+# Konsole terminal - not tab nav
+Super+comma = Ctrl+Shift+comma
+Super+0 = Ctrl+Alt+0
+Super+K = Ctrl+Shift+K
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Super+equal = Ctrl+Shift+equal
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Terminals (org.gnome.Ptyxis)] org.gnome.Ptyxis org.gnome.ptyxis
+# SIGINT Preventer
+Super+C = Ctrl+Insert
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Super+equal = Ctrl+Shift+equal
+Super+W = Ctrl+Shift+W
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+V = Ctrl+Shift+V
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Terminology terminal] terminology
+# Terminology terminal
+Super+W = Ctrl+Shift+End
+Super+C = Alt+W
+Super+V = Alt+Return
+Super+0 = Ctrl+Alt+0
+Super+minus = Ctrl+Alt+minus
+Super+equal = Ctrl+Alt+equal
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Super+T = Ctrl+Shift+T
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+N = Ctrl+Shift+N
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[Wave terminal] Wave wave
+# Wave terminal
+Super+T = Alt+T
+Super+N = Alt+N
+Shift+Super+N = Alt+Shift+N
+Super+W = Alt+W
+Shift+Super+W = Alt+Shift+W
+# General Terminals
+Alt+BackSpace = Ctrl+W
+Alt+Delete = Escape, D
+Super+BackSpace = Ctrl+U
+Super+Delete = Ctrl+K
+Ctrl+Tab = Ctrl+Page_Down
+Ctrl+Shift+Tab = Ctrl+Page_Up
+Ctrl+grave = Ctrl+Page_Up
+Super+equal = Ctrl+Shift+equal
+Super+bracketleft = Ctrl+Shift+bracketleft
+Super+bracketright = Ctrl+Shift+bracketright
+Super+S = Ctrl+Shift+S
+Super+D = Ctrl+Shift+D
+Super+F = Ctrl+Shift+F
+Super+L = Ctrl+Shift+L
+Super+C = Ctrl+Shift+C
+Super+V = Ctrl+Shift+V
+Super+period = Ctrl+C
+# As pressed: All applications' rule isn't Toshy's here
+Ctrl+A = Ctrl+A
+Ctrl+E = Ctrl+E
+Ctrl+B = Ctrl+B
+Ctrl+F = Ctrl+F
+Ctrl+N = Ctrl+N
+Ctrl+P = Ctrl+P
+Ctrl+K = Ctrl+K
+Ctrl+D = Ctrl+D
+
+[VS Code] code code-oss cursor vscodium
+# VSCodes
+Super+period = Ctrl+period
+Super+C = Ctrl+Insert
+Alt+Super+C = Alt+C
+Alt+Super+W = Alt+W
+Alt+Super+R = Alt+R
+Alt+Super+L = Alt+L
+Alt+Super+P = Alt+P
+Super+Return = Ctrl+Alt+Return
+Alt+Super+Z = Alt+Z
+Alt+Super+Up = Alt+Shift+Up
+Alt+Super+Down = Alt+Shift+Down
+Ctrl+Shift+Right = Alt+Shift+Right
+Ctrl+Shift+Left = Alt+Shift+Left
+Ctrl+Shift+Super+Right = Alt+Shift+Right
+Ctrl+Shift+Super+Left = Alt+Shift+Left
+Alt+Left = Alt+F19, Ctrl+Left
+Alt+Right = Alt+F19, Ctrl+Right
+Alt+Shift+Left = Alt+F19, Ctrl+Shift+Left
+Alt+Shift+Right = Alt+F19, Ctrl+Shift+Right
+Alt+Shift+BackSpace = Alt+Shift+BackSpace
+Alt+Shift+Delete = Alt+Shift+Delete
+Super+BackSpace = Shift+Home, Delete
+Super+Delete = Shift+End, Delete
+Alt+Super+Left = Ctrl+Page_Up
+Alt+Super+Right = Ctrl+Page_Down
+Alt+Super+F = Ctrl+H
+Shift+Super+H = nothing
+Alt+Super+E = Ctrl+Shift+H
+F3 = nothing
+Super+G = F3
+Shift+F3 = nothing
+Shift+Super+G = Shift+F3
+# As pressed: All applications' rule isn't Toshy's here
+Alt+Shift+G = Alt+Shift+G
+
+[Brave Browser] Brave-browser brave-browser
+# Brave Browser Overrides
+Super+Q = Ctrl+Q
+# Chrome Browsers Overrides
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Super+Y = Ctrl+H
+Alt+Super+U = Ctrl+U
+Shift+Super+J = Ctrl+J
+# General Web Browsers
+Alt+Super+I = Ctrl+Shift+I
+Alt+Super+J = Ctrl+Shift+J
+Alt+Super+Left = Ctrl+Page_Up
+Alt+Super+Right = Ctrl+Page_Down
+
+[Chrome Browsers] Chromium chromium Chromium-browser chromium-browser Google-chrome google-chrome Io.github.ungoogled_software.ungoogled_chromium io.github.ungoogled_software.ungoogled_chromium microsoft-edge microsoft-edge-dev org.deepin.browser vivaldi-stable
+# Chrome Browsers Overrides
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Super+Y = Ctrl+H
+Alt+Super+U = Ctrl+U
+Shift+Super+J = Ctrl+J
+# General Web Browsers
+Alt+Super+I = Ctrl+Shift+I
+Alt+Super+J = Ctrl+Shift+J
+Alt+Super+Left = Ctrl+Page_Up
+Alt+Super+Right = Ctrl+Page_Down
+
+[Falkon browser] Falkon falkon org.kde.falkon
+# Overrides for Falkon browser
+Super+comma = Ctrl+Shift+comma
+# Chrome Browsers Overrides
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Super+Y = Ctrl+H
+Alt+Super+U = Ctrl+U
+Shift+Super+J = Ctrl+J
+# General Web Browsers
+Alt+Super+I = Ctrl+Shift+I
+Alt+Super+J = Ctrl+Shift+J
+Alt+Super+Left = Ctrl+Page_Up
+Alt+Super+Right = Ctrl+Page_Down
+
+[Firefox Browsers] firedragon Firefox firefox firefox-esr firefoxdeveloperedition firefox-nightly floorp LibreWolf librewolf Navigator navigator org.mozilla.firefox Waterfox waterfox zen-browser zen zen-alpha zen-beta zen-bin zen-twilight
+# Firefox Browsers Overrides
+Shift+Super+N = Ctrl+Shift+P
+Super+Delete = Shift+End, Delete
+Super+1 = Alt+1
+Super+2 = Alt+2
+Super+3 = Alt+3
+Super+4 = Alt+4
+Super+5 = Alt+5
+Super+6 = Alt+6
+Super+7 = Alt+7
+Super+8 = Alt+8
+Super+9 = Alt+9
+Shift+Super+minus = nothing
+Shift+Super+equal = nothing
+# General Web Browsers
+Super+Q = Ctrl+Q
+Alt+Super+I = Ctrl+Shift+I
+Alt+Super+J = Ctrl+Shift+J
+Alt+Super+Left = Ctrl+Page_Up
+Alt+Super+Right = Ctrl+Page_Down
+
+[Web browsers] Discord discord Epiphany epiphany org.gnome.Epiphany org.gnome.epiphany
+# General Web Browsers
+Super+Q = Ctrl+Q
+Alt+Super+I = Ctrl+Shift+I
+Alt+Super+J = Ctrl+Shift+J
+Alt+Super+Left = Ctrl+Page_Up
+Alt+Super+Right = Ctrl+Page_Down
+
+[Caja] caja
+# Overrides for Caja - Finder Mods
+Ctrl+Super+O = Ctrl+Shift+Return
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Super+comma = Alt+E, N
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Super+BackSpace = Delete
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[COSMIC Files] com.system76.CosmicFiles com.system76.cosmicfiles
+# Overrides for COSMIC Files - Finder Mods
+Super+I = space
+Alt+Return = space
+# General File Managers - Finder Mods
+Super+comma = Alt+E, N
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Ctrl+Super+O = Ctrl+Shift+O
+Super+BackSpace = Delete
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[DDE File Manager] dde-file-manager
+# Overrides for DDE File Manager - Finder Mods
+Super+comma = nothing
+Super+Up = Ctrl+Up
+# General File Managers - Finder Mods
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Ctrl+Super+O = Ctrl+Shift+O
+Super+BackSpace = Delete
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[Dolphin] dolphin org.kde.dolphin
+# Overrides for Dolphin - Finder Mods
+Super+R = F5
+Super+2 = Ctrl+3
+Super+3 = Ctrl+2
+Ctrl+Super+O = Ctrl+Shift+O
+Super+comma = Ctrl+Shift+comma
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Super+BackSpace = Delete
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[Pantheon] io.elementary.files
+# Overrides for Pantheon - Finder Mods
+Ctrl+Super+O = Shift+Return
+Super+comma = nothing
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Super+BackSpace = Delete
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[Krusader] krusader org.kde.krusader
+# Overrides for Krusader - Finder Mods
+Shift+Super+period = Alt+period
+Super+1 = nothing
+Super+2 = Alt+Shift+D
+Super+3 = Alt+Shift+B
+Super+4 = nothing
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Super+comma = Alt+E, N
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Ctrl+Super+O = Ctrl+Shift+O
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[Nautilus] nautilus org.gnome.nautilus
+# Overrides for Nautilus - Finder Mods
+Super+1 = Ctrl+2
+Super+2 = Ctrl+1
+Ctrl+Super+O = Ctrl+Return
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Super+BackSpace = Delete
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[Nemo] nemo
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Super+comma = Alt+E, N
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Ctrl+Super+O = Ctrl+Shift+O
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[PCManFM] pcmanfm
+# Overrides for PCManFM - Finder Mods
+Super+2 = Ctrl+4
+Super+BackSpace = Delete, space
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Super+comma = Alt+E, N
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Ctrl+Super+O = Ctrl+Shift+O
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[PCManFM-Qt] pcmanfm-qt
+# Overrides for PCManFM-Qt - Finder Mods
+Super+BackSpace = Delete
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Super+comma = Alt+E, N
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Ctrl+Super+O = Ctrl+Shift+O
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[Peony-Qt] peony-qt
+# Overrides for Peony-Qt - Finder Mods
+Super+comma = nothing
+Super+equal = Ctrl+Shift+equal
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Ctrl+Super+O = Ctrl+Shift+O
+Super+BackSpace = Delete
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[SpaceFM] spacefm
+# Overrides for SpaceFM - Finder Mods
+Super+F = nothing
+Super+BackSpace = Delete, space
+Super+comma = Alt+V, P
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Ctrl+Super+O = Ctrl+Shift+O
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[Thunar] thunar
+# Overrides for Thunar - Finder Mods
+Ctrl+Super+O = Ctrl+Shift+P
+Super+comma = Alt+E, E
+# General File Managers - Finder Mods
+Super+I = Alt+Return
+Shift+Super+period = Ctrl+H
+Super+bracketleft = Alt+Left
+Super+bracketright = Alt+Right
+Super+BackSpace = Delete
+Super+Delete = nothing
+Shift+Super+Return = Return
+
+[GNOME Text Editor] gnome-text-editor org.gnome.TextEditor org.gnome.texteditor
+# GNOME Text Editor
+Super+slash = nothing
+Alt+Super+F = Ctrl+H
+
+[KWrite text editor] org.kde.KWrite org.kde.kwrite kwrite
+# KWrite text editor
+Super+comma = Ctrl+Shift+comma
+Super+T = Ctrl+N
+Super+G = F3
+Shift+Super+G = Shift+F3
+Super+BackSpace = Ctrl+K
+
+[Transmission bittorrent client] Transmission-gtk transmission-gtk Transmission-qt transmission-qt com.transmissionbt.Transmission com.transmissionbt.transmission
+# Transmission bittorrent client
+Super+I = Alt+Return
+Super+comma = Alt+E, P
+
+[Kate Advanced Text Editor] org.kde.kate
+# Kate Advanced Text Editor
+Super+comma = Ctrl+Shift+comma
+Super+G = F3
+
+[Totem video player] Totem totem
+# Totem video player
+Super+period = Ctrl+Q
+
+[GNOME image viewer] eog
+# GNOME image viewer
+Super+I = Alt+Return
+
+[LibreOffice Writer] libreoffice-writer
+# LibreOffice Writer
+Super+comma = Alt+F12
+
+[Zotero] Zotero zotero
+# Zotero
+Alt+Shift+Super+I = Ctrl+Alt+Shift+I
+
+[Jetbrains] jetbrains-idea jetbrains-idea-ce jetbrains-pycharm jetbrains-pycharm-ce jetbrains-clion jetbrains-goland jetbrains-webstorm jetbrains-phpstorm jetbrains-rider jetbrains-rubymine jetbrains-datagrip jetbrains-rustrover jetbrains-studio
+# Jetbrains
+Super+0 = Alt+0
+Super+1 = Alt+1
+Super+2 = Alt+2
+Super+3 = Alt+3
+Super+4 = Alt+4
+Super+5 = Alt+5
+Super+6 = Alt+6
+Super+7 = Alt+7
+Super+8 = Alt+8
+Super+9 = Alt+9
+Super+comma = Ctrl+Alt+S
+Super+semicolon = Ctrl+Alt+Shift+S
+Alt+Super+R = F9
+Super+G = F3
+Shift+Super+G = Shift+F3
+Ctrl+G = Alt+J
+Ctrl+Super+G = Ctrl+Alt+Shift+J
+Ctrl+Shift+G = Alt+Shift+J
+Ctrl+J = Ctrl+Q
+F1 = Ctrl+Q
+Super+N = Alt+Insert
+Alt+Up = Ctrl+W
+Alt+Down = Ctrl+Shift+W
+Ctrl+Shift+Q = Alt+Q
+Super+BackSpace = Ctrl+Y
+Super+equal = Ctrl+KP_Add
+Super+minus = Ctrl+KP_Subtract
+Shift+Super+equal = Ctrl+Shift+KP_Add
+Shift+Super+minus = Ctrl+Shift+KP_Subtract
+Super+W = Ctrl+F4
+Super+Delete = Alt+Delete
+Ctrl+T = Ctrl+Alt+Shift+T
+Super+O = Ctrl+N
+Shift+Super+O = Ctrl+Shift+N
+Alt+Super+O = Ctrl+Alt+Shift+N
+Ctrl+Right = Alt+Right
+Ctrl+Left = Alt+Left
+Super+L = Ctrl+G
+Alt+space = Ctrl+Shift+I
+Super+Y = Ctrl+Shift+I
+Ctrl+Shift+Up = Alt+Up
+Ctrl+Shift+Down = Alt+Down
+Super+bracketleft = Alt+Shift+Left
+Super+bracketright = Alt+Shift+Right
+Super+Down = Ctrl+Return
+F3 = F11
+Alt+F3 = Ctrl+F11
+Super+F3 = Shift+F11
+Ctrl+Alt+R = Alt+Shift+F10
+Ctrl+Alt+D = Alt+Shift+F9
+Ctrl+R = Shift+F10
+Ctrl+D = Shift+F9
+Ctrl+Shift+R = Ctrl+Shift+F10
+Ctrl+Shift+D = Ctrl+Shift+F9
+Ctrl+V = Alt+grave
+
+[Sublime Text] sublime_text subl
+# Sublime Text overrides for not Chromebook/IBM
+Alt+F3 = nothing
+Ctrl+Super+G = Alt+F3
+# Sublime Text
+Ctrl+Super+Up = Alt+O
+Ctrl+Super+F = F11
+Alt+Super+V = Ctrl+K, Ctrl+V
+Alt+Super+Up = Ctrl+Up
+Alt+Super+Down = Ctrl+Down
+Ctrl+Shift+Up = Alt+Shift+Up
+Ctrl+Shift+Down = Alt+Shift+Down
+Super+Page_Down = nothing
+Super+Page_Up = nothing
+Shift+Super+bracketleft = Ctrl+Page_Down
+Shift+Super+bracketright = Ctrl+Page_Up
+Alt+Super+Right = Ctrl+Page_Down
+Alt+Super+Left = Ctrl+Page_Up
+Insert = nothing
+Alt+Super+O = Insert
+Alt+C = nothing
+Alt+Super+C = Alt+C
+Alt+Super+F = Ctrl+H
+Shift+Super+H = nothing
+Alt+Super+E = Ctrl+Shift+H
+F3 = nothing
+Super+G = F3
+Shift+F3 = nothing
+Shift+Super+G = Shift+F3
+Super+F3 = nothing
+Ctrl+Alt+G = Ctrl+F3
+Shift+Super+F3 = nothing
+Ctrl+Alt+Shift+G = Ctrl+Shift+F3
+Shift+Super+Up = nothing
+Ctrl+Alt+Up = Ctrl+Shift+Up
+Shift+Super+Down = nothing
+Ctrl+Alt+Down = Ctrl+Shift+Down
+Super+Pause = nothing
+Ctrl+C = Ctrl+Pause
+F9 = nothing
+F5 = F9
+Ctrl+F9 = nothing
+Ctrl+F5 = Super+F9
+Alt+Shift+1 = nothing
+Alt+Super+1 = Alt+Shift+1
+Alt+Shift+2 = nothing
+Alt+Super+2 = Alt+Shift+2
+Alt+Shift+3 = nothing
+Alt+Super+3 = Alt+Shift+3
+Alt+Shift+4 = nothing
+Alt+Super+4 = Alt+Shift+4
+Alt+Shift+8 = nothing
+Alt+Shift+Super+2 = Alt+Shift+8
+Alt+Shift+9 = nothing
+Alt+Shift+Super+3 = Alt+Shift+9
+Alt+Shift+5 = nothing
+Alt+Shift+Super+5 = Alt+Shift+5
+
+[Linux Mint xed text editor] xed
+# Linux Mint xed text editor
+Super+T = Ctrl+N

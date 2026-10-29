@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: 2000, 2003 Red Hat, Inc.
+// SPDX-FileCopyrightText: 2007-2008 Ryan Lortie <desrt@desrt.ca>
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND LGPL-2.1-or-later
+
 //! A tokenizer that accepts exactly what GLib's gmarkup accepts (04).
 //!
 //! Marco parses themes with GMarkup, which is laxer than XML: an attribute value ends at

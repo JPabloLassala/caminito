@@ -10,7 +10,6 @@ mod deadlines;
 pub mod debug;
 pub mod decoration;
 mod dialogs;
-mod dock_activation;
 mod handlers;
 pub mod helpers;
 mod hot_corner;

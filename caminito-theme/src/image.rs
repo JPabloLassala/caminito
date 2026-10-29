@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! Theme images and window icons, as Marco turns them into cairo sources
 //! (`theme.c:98-283`, `3354-3866`).
 //!

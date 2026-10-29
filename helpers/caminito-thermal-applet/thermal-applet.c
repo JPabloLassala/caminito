@@ -400,7 +400,7 @@ on_about (GtkAction *action G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
                          "comments", "The computer's temperatures and fan speeds. It only "
                                      "watches: it never sets a fan's speed.",
                          "logo-icon-name", logo,
-                         "license-type", GTK_LICENSE_GPL_2_0,
+                         "license-type", GTK_LICENSE_GPL_3_0,
                          NULL);
 }
 

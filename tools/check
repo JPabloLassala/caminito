@@ -28,18 +28,24 @@ if [ "${1-}" = --deps ]; then
   # gtk-layer-shell: the Dock's probe is a layer surface as the panel is, so its tests need it.
   # gvfs: the Dock's Trash is GIO's trash:///, which gvfs's trash daemon serves (CMN-220), as
   # it does Caja; the Dock's tests start it on a bus of their own. gtk4-layer-shell: the
-  # Notification bubbles' layer surface (CMN-258).
+  # Notification bubbles' layer surface (CMN-258). reuse: every file's licence and copyright
+  # (ADR 0051).
   sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
     systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
-    nodejs npm desktop-file-utils python-dbusmock libnm libxfce4windowing gtk-layer-shell gvfs
-    gtk4-layer-shell
+    nodejs npm desktop-file-utils python-dbusmock libnm libxfce4windowing gtk-layer-shell gvfs \
+    gtk4-layer-shell reuse
   rustup toolchain install
 fi
 
 step() {
   echo "==> $*"
 }
+
+# Every file has a known licence and copyright, from REUSE.toml or its own SPDX header
+# (ADR 0051).
+step reuse
+reuse lint
 
 step rustfmt
 cargo fmt --all --check
@@ -144,12 +150,6 @@ CAMINITO_WALLPAPERD=${CARGO_TARGET_DIR:-$PWD/target}/debug/caminito-wallpaperd \
 step "the Sound popup's wheel against caminito"
 CAMINITO_SOUND_WHEEL_PROBE=$PWD/target/meson/helpers/caminito-sound-applet/sd-wheel-probe \
   cargo test -p caminito tests::sound_popup_wheel -- --ignored
-
-# The Dock applet's copy of Caminito's protocol that names a window (CMN-243): meson can't
-# reach the original from the subproject.
-step "the Dock applet's copy of caminito-toplevel-identifier-v1"
-cmp caminito/resources/caminito-toplevel-identifier-v1.xml \
-  helpers/caminito-dock-applet/protocols/caminito-toplevel-identifier-v1.xml
 
 # The Dock applet's items and clicks end to end (CMN-219): its probe, the dock as a layer
 # surface on GDK's Wayland backend, against the headless fixture, with the real

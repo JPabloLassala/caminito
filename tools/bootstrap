@@ -41,6 +41,19 @@ for package in mate-session-manager-caminito mate-panel-caminito mate-settings-d
   caminito-git vala-panel-appmenu-mate-caminito appmenu-gtk-module-caminito caminito-vscode-git \
   caminito-desktop; do
   cd "$root/packaging/arch/$package"
+  # A patched package lists its patches by bare filename, as its AUR repo has them, so its
+  # component's series and Arch's build patches are copied here first (ADR 0030, ADR 0052).
+  # The component is the PKGBUILD's _pkgname, upstream's name. The old copies go first, so a
+  # patch taken out of the series doesn't stay.
+  component=$(sed -n 's/^_pkgname=//p' PKGBUILD)
+  patches=$root/packaging/patches/$component
+  if [[ -n $component && -d $patches ]]; then
+    rm -f ./*.patch
+    cp "$patches"/*.patch .
+    if [[ -d $patches/arch ]]; then
+      cp "$patches"/arch/*.patch .
+    fi
+  fi
   if ((!noskip)) && available=$(available_version) &&
     installed=$(pacman -Q "$package" 2>/dev/null) &&
     (($(vercmp "$available" "${installed#* }") <= 0)); then

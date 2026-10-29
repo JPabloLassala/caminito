@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! A port of Marco's `theme-parser.c`: the state machine that turns a theme file's
 //! markup into a [`Theme`], with every check Marco makes, so that a theme loads in Caminito
 //! exactly when it loads in Marco (07).

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! Drawing a frame as Marco draws it (`theme.c:3868-4586`, `4736-5230`): the draw ops,
 //! the pieces and the buttons, onto a cairo surface at an integer scale.
 //!

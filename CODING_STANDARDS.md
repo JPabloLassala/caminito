@@ -9,6 +9,7 @@ How Caminito's code is written. Reviews check a diff against this file, [CONTEXT
 - `[workspace.lints]` in [Cargo.toml](Cargo.toml) adds `clippy::undocumented_unsafe_blocks`. Every crate opts in with `lints.workspace = true`.
 - `caminito-policy`, `caminito-layout`, `caminito-version`, caminito-about, caminito-displays's library, caminito-wallpaper's library and dialog, caminito-behaviour, caminito-bluetooth, caminito-network and caminito-notifications's library are `#![forbid(unsafe_code)]`. caminito-notifications's binary calls libcanberra, as `caminito` does.
 - `cargo deny check` against [deny.toml](deny.toml) for licences and advisories.
+- `reuse lint`: every file has a licence and a copyright, from [REUSE.toml](REUSE.toml) or its own SPDX header, and each licence's text is in [LICENSES/](LICENSES/) (ADR 0051).
 
 ## Crates and modules
 
@@ -62,7 +63,7 @@ The layout is ticket 15's ([.scratch/issues/15-crate-and-module-architecture.md]
 - Comments say *why*, or name the constraint the code respects. They don't narrate *what* the code does.
 - Refer to a ticket by its number in parentheses, e.g. `(14)`, and to an ADR by its number. If a ticket's decision was changed on purpose, the comment says so.
 - Use CONTEXT.md's terms and avoid the ones it lists under *Avoid*. For example: compositor, never "Wayland window manager"; carried patch, never "fork".
-- When reference code is copied or adapted (niri, anvil, cosmic-comp, Marco), cite the source file and line.
+- Copy or adapt reference code only from a project whose licence allows GPL-3.0-or-later (niri, anvil, Marco, mate-screensaver), keep its notice, give the file SPDX lines with its original copyright, Caminito's and both licences (as `GPL-3.0-or-later AND MIT`), and cite the source file and line. From cosmic-comp, which is GPL-3.0-only, take behaviour only, never code (ADR 0051).
 
 ## Tests
 
@@ -83,7 +84,7 @@ Where each tier lives, per ticket 15's test seams:
 | The Wallpaper dialog's client of output management and its page against Caminito | `caminito/src/tests/caminito_wallpaper.rs`, through `Fixture` |
 | The real caminito-wallpaperd against Caminito | `caminito/src/tests/caminito_wallpaperd.rs`, through `Fixture`, ignored unless `CAMINITO_WALLPAPERD` names the drawer |
 | The Sound popup's wheel over a slider, on GDK's Wayland backend against Caminito (CMN-215) | `caminito/src/tests/sound_popup_wheel.rs`, through `Fixture`, ignored unless `CAMINITO_SOUND_WHEEL_PROBE` names the Sound applet's built `sd-wheel-probe` |
-| The Dock applet's items, clicks, menu and minimise target, its launch token, pulse, bounce and highlight, and its Trash over gvfs's `trash:///` on a session bus of each test's own, and its naming of a window by Caminito's ext identifier, on GDK's Wayland backend with libxfce4windowing against Caminito (CMN-219, CMN-220, CMN-221, CMN-243) | `caminito/src/tests/dock_applet.rs`, through `Fixture`, ignored unless `CAMINITO_DOCK_PROBE` names the Dock applet's built `dk-probe` |
+| The Dock applet's items, clicks, menu and minimise target, its launch token, pulse, bounce and highlight, and its Trash over gvfs's `trash:///` on a session bus of each test's own, on GDK's Wayland backend with libxfce4windowing against Caminito (CMN-219, CMN-220, CMN-221) | `caminito/src/tests/dock_applet.rs`, through `Fixture`, ignored unless `CAMINITO_DOCK_PROBE` names the Dock applet's built `dk-probe` |
 | Workspace Behaviour's Hot corners keys read, written and followed, against `data/`'s schema compiled by the test, over GSettings' memory backend | `caminito-behaviour/src/hot_corners/tests.rs` |
 | Workspace Behaviour's Key remaps keys read, written and followed, and what an app id gets from them, over the same compiled schema (`caminito-behaviour/src/testing.rs`) | `caminito-behaviour/src/key_remaps/tests.rs` |
 | Remap templates parsed, written and read back, listed from Caminito's and the user's directories in a temporary directory, saved and deleted | `caminito-behaviour/src/remap_templates/tests.rs` |

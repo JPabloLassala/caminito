@@ -13,5 +13,5 @@
 */vala-panel-appmenu/
 *.pkg.tar.*
 *.log
-# makepkg's copies of the patches in packaging/patches/ (ADR 0030)
+# tools/bootstrap's copies of the patches in packaging/patches/ (ADR 0030, ADR 0052)
 */*.patch

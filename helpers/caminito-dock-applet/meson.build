@@ -7,7 +7,7 @@ project(
   'caminito-dock-applet',
   'c',
   version: '0.1.0',
-  license: 'GPL-2.0-or-later',
+  license: 'GPL-3.0-or-later',
   meson_version: '>= 1.0',
   default_options: ['warning_level=2', 'c_std=gnu11'],
 )
@@ -125,78 +125,6 @@ activation = static_library(
   pic: true,
 )
 
-# A window's name for Caminito (CMN-243, ADR 0049): the dock binds ext-foreign-toplevel-list on
-# GDK's connection, and asks Caminito's caminito-toplevel-identifier-v1, with the wlr handle
-# libxfce4windowing gives a window, for the identifier to find the window's ext handle by. The
-# protocols' code is generated from their vendored XML; the wlr one only for the handle's
-# interface, which the Caminito request names.
-toplevel_sources = []
-foreach name : [
-  'caminito-toplevel-identifier-v1',
-  'ext-foreign-toplevel-list-v1',
-  'wlr-foreign-toplevel-management-unstable-v1',
-]
-  xml = files('protocols' / name + '.xml')
-  toplevel_sources += custom_target(
-    name + '-code',
-    input: xml,
-    output: name + '-protocol.c',
-    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
-  )
-  if name != 'wlr-foreign-toplevel-management-unstable-v1'
-    toplevel_sources += custom_target(
-      name + '-header',
-      input: xml,
-      output: name + '-client-protocol.h',
-      command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
-    )
-  endif
-endforeach
-toplevel = static_library(
-  'dk-toplevel',
-  'dk-toplevel.c',
-  toplevel_sources,
-  dependencies: [glib, gtk, wayland_client],
-  pic: true,
-)
-
-# A window's picture (CMN-251): an ext-image-copy-capture session on the window's
-# ext-foreign-toplevel-image-capture-source, on GDK's connection, from the ext handle the
-# lookup above gives. The protocols' code is generated from their vendored XML.
-capture_sources = []
-foreach name : ['ext-image-capture-source-v1', 'ext-image-copy-capture-v1']
-  xml = files('protocols' / name + '.xml')
-  capture_sources += custom_target(
-    name + '-code',
-    input: xml,
-    output: name + '-protocol.c',
-    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
-  )
-  capture_sources += custom_target(
-    name + '-header',
-    input: xml,
-    output: name + '-client-protocol.h',
-    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
-  )
-endforeach
-capture = static_library(
-  'dk-capture',
-  'dk-capture.c',
-  capture_sources,
-  # The capture source's code names ext_foreign_toplevel_handle_v1's interface, which the
-  # lookup's library has.
-  link_with: toplevel,
-  dependencies: [glib, gtk, wayland_client],
-  pic: true,
-)
-
-# Without a Wayland display, a capture fails at once and says so.
-test(
-  'capture',
-  executable('test-capture', 'test-capture.c', link_with: capture,
-             dependencies: [glib, gtk, wayland_client]),
-)
-
 # A Kept folder's folder (CMN-239): its icon, its contents and putting files in it, through GIO.
 folder = static_library('dk-folder', 'dk-folder.c', dependencies: [glib, gio], pic: true)
 
@@ -232,7 +160,7 @@ probe_args = layer_shell.found() ? ['-DHAVE_GTK_LAYER_SHELL'] : []
 executable(
   'dk-probe',
   'dk-probe.c',
-  link_with: [dock, capture, toplevel, activation, feedback, launcher, store, model, resolve, trash, folder],
+  link_with: [dock, activation, feedback, launcher, store, model, resolve, trash, folder],
   # The layer shell first: it has to be linked before libwayland-client.
   dependencies: [layer_shell, glib, gio_unix, gtk, xfw, wayland_client, m],
   c_args: probe_args,

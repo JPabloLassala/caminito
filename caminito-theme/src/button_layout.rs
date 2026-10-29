@@ -1,3 +1,10 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2002 Red Hat, Inc.
+// SPDX-FileCopyrightText: 2006 Elijah Newren
+// SPDX-FileCopyrightText: 2008 Thomas Thurman
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! Marco's `button-layout` setting, parsed as `prefs.c`'s `button_layout_handler` does.
 
 use crate::model::ButtonType;

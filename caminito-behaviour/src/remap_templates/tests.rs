@@ -224,10 +224,38 @@ fn the_macos_template_has_toshys_shortcuts_on_a_pc_keyboard() {
     assert!(remaps.groups[remote].no_remaps);
 }
 
+/// The macOS template for a Mac keyboard, where Cmd is Super and Option Alt (CMN-190).
+const MACOS_MAC: &str = include_str!("../../../data/remap-templates/macos-mac.remaps");
+
+#[test]
+fn the_mac_keyboard_template_has_toshys_shortcuts_with_cmd_on_super() {
+    let (name, remaps) = parse(MACOS_MAC).unwrap();
+    assert_eq!(name.as_deref(), Some("macOS (Mac keyboard)"));
+    let target = |scope, combination| {
+        let combination = Combination::parse(combination).unwrap();
+        let rule = remaps
+            .rules(scope)
+            .iter()
+            .find(|rule| rule.combination == combination);
+        rule.map(|rule| target_text(&rule.steps))
+    };
+    let all = Scope::AllApplications;
+    assert_eq!(target(all, "Super+T").as_deref(), Some("Ctrl+T"));
+    assert_eq!(target(all, "Super+Right").as_deref(), Some("End"));
+    assert_eq!(target(all, "Alt+Right").as_deref(), Some("Ctrl+Right"));
+    assert_eq!(target(all, "Alt+T"), None);
+    let terminals = remaps.group_of("mate-terminal").unwrap();
+    assert_eq!(
+        target(Scope::Group(terminals), "Super+C").as_deref(),
+        Some("Ctrl+Shift+C")
+    );
+}
+
 #[test]
 fn the_macos_template_is_listed_with_caminitos_with_no_problem() {
     let dirs = dirs();
     fs::write(dirs.shipped.join("macos-pc.remaps"), MACOS).unwrap();
+    fs::write(dirs.shipped.join("macos-mac.remaps"), MACOS_MAC).unwrap();
     let templates = Templates::new(dirs.shipped.clone(), dirs.user.clone());
     let (listed, problems) = templates.list();
     assert!(problems.is_empty(), "{problems:?}");
@@ -235,5 +263,10 @@ fn the_macos_template_is_listed_with_caminitos_with_no_problem() {
         listed
             .iter()
             .any(|t| t.name == "macOS (PC keyboard)" && t.shipped)
+    );
+    assert!(
+        listed
+            .iter()
+            .any(|t| t.name == "macOS (Mac keyboard)" && t.shipped)
     );
 }

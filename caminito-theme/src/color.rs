@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! Colour specs, parsed as Marco's `meta_color_spec_new_from_string` does (`theme.c:1389`).
 //!
 //! A spec is kept as a tree, and [`ColorSpec::render`] evaluates it against a variant of

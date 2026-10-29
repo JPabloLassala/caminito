@@ -2162,7 +2162,7 @@ session_env() {
      Run `caminito --version` and `pacman -Q caminito-git`.
   2. Open the control center and the panel's *System ▸ Preferences ▸ Hardware* menu, and open
      *About Caminito* from each.
-  3. Press each of the four links: *Marco*, *Smithay*, *GPL-2.0-or-later* and the repository.
+  3. Press each of the four links: *Marco*, *Smithay*, *GPL-3.0-or-later* and the repository.
   4. With the window open, open *About Caminito* again, or run `caminito-about`.
   5. Try to resize the window, and press Escape.
   6. Run `ls /usr/share/applications | grep -i caminito-about`. Log out, log into *MATE*, the
@@ -2174,9 +2174,9 @@ session_env() {
   *Hardware* with Caminito's logo, and opens the prototype's compact card (182): the logo on
   the left, *Caminito* in large bold type with the same version string after it on one line,
   *A Wayland compositor for the MATE desktop* under them, and two small dim lines, *Built on
-  Marco and Smithay. GPL-2.0-or-later.* and the repository. There is no Close button. In step
+  Marco and Smithay. GPL-3.0-or-later.* and the repository. There is no Close button. In step
   3 each link opens in the browser: Marco's and Smithay's repositories, the GNU page of the
-  GPL 2's text, and `https://github.com/JPabloLassala/caminito`. In step 4 the open window is
+  GPL 3's text, and `https://github.com/JPabloLassala/caminito`. In step 4 the open window is
   raised and there is still one. In step 5 the window doesn't resize, and Escape closes it. In
   step 6 `ls` prints nothing, and X11 MATE has no *About Caminito*. In step 7 both show the
   checkout's `r$(git rev-list --count HEAD).$(git rev-parse --short=7 HEAD)`.

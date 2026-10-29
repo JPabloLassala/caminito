@@ -142,7 +142,8 @@ where
 ///
 /// The frame is drawn whole into memory of the renderer's own and copied from there, since
 /// no renderer draws into a client's shm buffer. Written from Smithay's renderer traits:
-/// niri's and cosmic-comp's screencopy are GPL-3, so they weren't used (03).
+/// nothing was copied from niri's or cosmic-comp's screencopy (03). niri's code can be,
+/// with its notice; cosmic-comp's can't, because it is GPL-3.0-only (ADR 0051).
 pub(crate) fn copy<R, T>(
     renderer: &mut R,
     caminito: &Caminito,

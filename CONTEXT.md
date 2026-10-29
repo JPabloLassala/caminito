@@ -122,7 +122,7 @@ _Avoid_: profile, monitors file
 
 **Attach**:
 To place an output against the outline of the others, which is the only way an output is moved in a layout.
-_Avoid_: dock (that's the Dock applet), snap (that's the finer alignment of matching edges while attaching; centres don't snap)
+_Avoid_: dock (a look of the Icon Task Manager's panel), snap (that's the finer alignment of matching edges while attaching; centres don't snap)
 
 **Heal**:
 To make a layout contiguous again after a change that broke it: an output removed, added, turned off, or changed in size.
@@ -201,7 +201,7 @@ A view of each output's active workspace with its windows shrunk and set side by
 _Avoid_: exposé, present windows (KWin's older effect, with no workspaces), activities overview (GNOME's, which has a launcher), workspace switcher (the panel's pager)
 
 **Application overview**:
-The Overview opened for the focused window's Application: each output's active workspace shows only that application's windows. It's the Overview in every other way, and opens only when a window is focused. Opened from a Dock item, it shows that item's windows, which may be several applications'. It's Plasma's Window View for the current application.
+The Overview opened for the focused window's Application: each output's active workspace shows only that application's windows. It's the Overview in every other way, and opens only when a window is focused. It's Plasma's Window View for the current application.
 _Avoid_: app exposé (macOS's), present windows for the current application (KWin's older name), application switcher (that's `switch-group`'s Window switcher)
 
 **Hot corner**:
@@ -257,7 +257,7 @@ A named list of app ids that share their Key remaps, such as Terminals or Browse
 _Avoid_: app group, class list (Toshy's), group alone (that's Marco's `switch-group`)
 
 **Remap template**:
-A named, saved set of Key remaps, those for all applications and each Remap group's. Caminito comes with some, such as the macOS one, and the user saves their own; loading one replaces the Key remaps in use.
+A named, saved set of Key remaps, those for all applications and each Remap group's. Caminito comes with some, such as the macOS ones for a PC keyboard and for a Mac keyboard, and the user saves their own; loading one replaces the Key remaps in use.
 _Avoid_: preset, profile (suggests switching sets as you work), keymap (that's XKB's)
 
 **Capture**:
@@ -356,37 +356,25 @@ _Avoid_: sensors applet (MATE's own mate-sensors-applet), temperature applet, th
 One of the temperatures, two at most, that the Thermal applet shows in the panel, chosen by pinning it in the popup. By default they're the CPU's and, when there's a GPU, the GPU's.
 _Avoid_: main sensor, primary temperature, pinned sensor
 
-**Dock applet**:
-Caminito's mate-panel applet for the dock: a row of Dock items and the Trash, in a panel of its own, in the manner of Plasma's Icons-only Task Manager on a floating panel and of macOS's Dock.
-_Avoid_: dock program, Plank, mate-dock-applet (the X11 applet it isn't), window list (mate-panel's own applet, with one button per window), task manager
+**Icon Task Manager**:
+Caminito's mate-panel applet for an icon-only task manager: a row of Task items, then the Kept folders and the Trash. It can be in any panel; a panel of its own, floating and with intellihide, makes it look like a dock. It's Plasma's Icons-only Task Manager.
+_Avoid_: Dock applet (its old name), dock (a look the panel gives it, not the applet), Plank, mate-dock-applet (the X11 applet it isn't), window list (mate-panel's own applet, with one button per window), task manager alone
 
-**Dock item**:
-One icon of the Dock applet: a program, known by its desktop entry, with the windows of every Application whose app id resolves to it, so two processes of one program share one item. A window with no desktop entry has an item of its own, by its app id. Super+1 to Super+9 activate the first nine, as a click does: Caminito binds the keys and tells the applet (ADR 0050).
-_Avoid_: task, launcher (a mate-panel launcher is a different panel object), Application (one process's windows only), group
+**Task item**:
+One icon of the Icon Task Manager: a program, known by its desktop entry, with the windows of every Application whose app id resolves to it, so two processes of one program share one item. A window with no desktop entry has an item of its own, by its app id.
+_Avoid_: Dock item (its old name), task alone, launcher (a mate-panel launcher is a different panel object), Application (one process's windows only), group
 
-**Kept Dock item**:
-A Dock item the user has chosen to keep in the dock, which stays when the program has no window, until they remove it. The menu item is _Keep in Taskbar_.
-_Avoid_: pinned (pinning is the Sound applet's and the Thermal applet's), favourite, launcher
+**Kept task item**:
+A Task item the user has chosen to keep in the Icon Task Manager, which stays when the program has no window, until they remove it. The menu item is _Keep in Taskbar_.
+_Avoid_: Kept Dock item (its old name), pinned (pinning is the Sound applet's and the Thermal applet's), favourite, launcher
 
 **Kept folder**:
-A folder the user has chosen to keep in the Dock applet, after the Dock items, whose icon opens its contents. A bookmark or Home is kept as one. It isn't a Dock item: it has no program and no windows.
+A folder the user has chosen to keep in the Icon Task Manager, after the Task items, whose icon opens its contents. A bookmark or Home is kept as one. It isn't a Task item: it has no program and no windows.
 _Avoid_: stack (that's the stacking order of windows), folder stack (macOS's name), Dock folder, place (that's Caja's sidebar)
 
-**Minimised window item**:
-An icon of the Dock applet for one minimised window, after the separator, showing a picture of the window as it was minimised, with its program's icon on the corner. It is there while the window is minimised, on any workspace and output, and a click unminimises it. Its program's Dock item still has the window, but shows it only in its menu.
-_Avoid_: minimised item alone (a Dock item can have minimised windows), iconified window (X11's word), thumbnail (a window's picture in the Dock preview, the Overview and the window switcher)
-
-**Dock preview**:
-The popup that opens over a Dock item with windows when the pointer rests on it: a live thumbnail of each of the item's windows, on every workspace and output, with its title. A click on a thumbnail activates its window, and a middle-click or its close button closes it. An item with no window shows its name tooltip instead.
-_Avoid_: window preview, tooltip (that's the name an item with no window shows), peek, thumbnail alone (that's one window's picture in it)
-
-**Removable drive item**:
-An icon of the Dock applet for a mounted disk the user can eject or unmount, such as a USB disk, an SD card, a phone or a disc, after the separator. It is there while the disk is mounted. Internal disks and network shares have none.
-_Avoid_: volume (that's sound's), mount, device, place (that's Caja's sidebar)
-
 **Launcher entry**:
-What a program tells the Dock applet about its Dock item through Unity's `com.canonical.Unity.LauncherEntry` D-Bus signal: a count, shown as the Badge, a progress, shown as a bar across the icon, and whether it is urgent. It lasts until the program clears it, leaves the bus, or has no window left.
-_Avoid_: notification count (that's the Badge's other source), quicklist (the API's menu, which the Dock applet doesn't take)
+What a program tells the Icon Task Manager about its Task item through Unity's `com.canonical.Unity.LauncherEntry` D-Bus signal: a count, shown as the Badge, a progress, shown as a bar across the icon, and whether it is urgent. It lasts until the program clears it, leaves the bus, or has no window left.
+_Avoid_: notification count (that's the Badge's other source), quicklist (the API's menu, which the Icon Task Manager doesn't take)
 
 **Intellihide**:
 A panel's hiding off its edge whenever a window on its output's active workspace overlaps it, and coming back when none does or when the pointer rests at that edge. A panel with intellihide reserves no space. Caminito decides when it hides and slides it, not the panel.
@@ -481,5 +469,5 @@ A notification's summary, body and image in its bubble. With previews off, a bub
 _Avoid_: content, details, privacy mode
 
 **Badge**:
-The count on a Dock item's corner: its Launcher entry's count when the program sets one, and otherwise the number of its Notifying app's notifications in the Notification history, unless the user has turned that off for the app.
+The count on a Task item's corner: its Launcher entry's count when the program sets one, and otherwise the number of its Notifying app's notifications in the Notification history, unless the user has turned that off for the app.
 _Avoid_: notification count, unread count (notifications aren't read or unread), dot (that's the Notifications applet's)

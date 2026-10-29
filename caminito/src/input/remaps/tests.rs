@@ -161,9 +161,17 @@ fn no_groups_or_no_rules_are_no_remaps() {
 }
 
 #[test]
-fn every_rule_of_the_macos_template_is_one_caminito_remaps() {
-    // The template's rules, as caminito-behaviour writes them into `key-remaps` (CMN-190).
-    let template = include_str!("../../../../data/remap-templates/macos-pc.remaps");
+fn every_rule_of_the_macos_templates_is_one_caminito_remaps() {
+    // The templates' rules, as caminito-behaviour writes them into `key-remaps` (CMN-190).
+    for template in [
+        include_str!("../../../../data/remap-templates/macos-pc.remaps"),
+        include_str!("../../../../data/remap-templates/macos-mac.remaps"),
+    ] {
+        every_rule_is_one_caminito_remaps(template);
+    }
+}
+
+fn every_rule_is_one_caminito_remaps(template: &str) {
     let rules: Vec<(String, Vec<String>)> = template
         .lines()
         .filter(|line| !line.starts_with('#'))

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! What a loaded theme is made of, mirroring Marco's `theme.h`.
 //!
 //! Everything named in a theme is shared by reference, as in Marco: a style holds its

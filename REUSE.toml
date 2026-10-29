@@ -1,0 +1,280 @@
+version = 1
+SPDX-PackageName = "Caminito"
+SPDX-PackageSupplier = "Juan Pablo Lassala <jpablolassala@gmail.com>"
+SPDX-PackageDownloadLocation = "https://github.com/JPabloLassala/caminito"
+
+# Each path's licence and copyright (ADR 0051). Where annotations overlap, the last one wins,
+# so Caminito's own default comes first and the third parties' files follow it. The default
+# takes in the logo (data/icons/caminito.svg) and the thermometer icon. A file with an SPDX
+# header of its own (code from anvil, niri, Marco, GLib and mate-screensaver) is read from its
+# header.
+
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2025-2026 Juan Pablo Lassala"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Caminito's own protocol is MIT, as Wayland protocols are, so that any client can implement it.
+[[annotations]]
+path = "caminito/resources/caminito-intellihide-v1.xml"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Juan Pablo Lassala"
+SPDX-License-Identifier = "MIT"
+
+# The protocols vendored from other projects, with the notices in their files.
+[[annotations]]
+path = "caminito/resources/gtk-shell.xml"
+precedence = "closest"
+SPDX-FileCopyrightText = "The GTK developers"
+SPDX-License-Identifier = "LGPL-2.0-or-later"
+
+[[annotations]]
+path = "caminito/resources/xfce-foreign-toplevel-management-private-v1.xml"
+precedence = "closest"
+SPDX-FileCopyrightText = "2024 Brian Tarricone <brian@tarricone.org>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "helpers/caminito-dock-applet/protocols/xdg-activation-v1.xml"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+  "2020 Aleix Pol Gonzalez <aleixpol@kde.org>",
+  "2020 Carlos Garnacho <carlosg@gnome.org>",
+]
+SPDX-License-Identifier = "MIT"
+
+# mate-screensaver's unlock dialog. Its C files carry their headers. Caminito's changes are
+# GPL-3.0-or-later, as in every file adapted from another project.
+[[annotations]]
+path = "helpers/caminito-locker/lock-dialog-default.ui"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2012-2021 MATE Developers", "2025-2026 Juan Pablo Lassala"]
+SPDX-License-Identifier = "GPL-3.0-or-later AND GPL-2.0-or-later"
+
+# Converted from Toshy's config, which is based on Kinto's (ADR 0038). Toshy's licence has no
+# "or later".
+[[annotations]]
+path = "data/remap-templates/macos-pc.remaps"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+  "RedBearAK, the author of Toshy <https://github.com/RedBearAK/toshy>",
+  "Ben Reaves, the author of Kinto <https://github.com/rbreaves/kinto>",
+]
+SPDX-License-Identifier = "GPL-3.0-only"
+
+# VS Code's menu labels and commands, from its lastKnownMenubarData (ADR 0019).
+[[annotations]]
+path = "caminito-vscode/menu/table.json"
+precedence = "closest"
+SPDX-FileCopyrightText = "Microsoft Corporation"
+SPDX-License-Identifier = "MIT"
+
+# Matt Pocock's skills (see LICENSE-mattpocock-skills), with the developer's changes. The ship
+# skill is the developer's own.
+[[annotations]]
+path = ".claude/skills/**"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2026 Matt Pocock", "2026 Juan Pablo Lassala"]
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ".claude/skills/ship/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2025-2026 Juan Pablo Lassala"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# The golden themes and their frames as Marco draws them (tests/themes/README.md).
+[[annotations]]
+path = ["tests/themes/Menta/**", "tests/goldens/frames/Menta/**",
+        "tests/themes/BlackMATE/**", "tests/goldens/frames/BlackMATE/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = ["Wolfgang Ulbrich", "MATE Developers"]
+SPDX-License-Identifier = "LGPL-2.1-or-later"
+
+[[annotations]]
+path = ["tests/themes/HighContrast/**", "tests/goldens/frames/HighContrast/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = ["2002 Havoc Pennington", "MATE Developers"]
+SPDX-License-Identifier = "LGPL-2.1-or-later"
+
+[[annotations]]
+path = ["tests/themes/TraditionalOk/**", "tests/goldens/frames/TraditionalOk/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = ["2005-2007 Daniel Borgmann, Andrea Cimitan", "Wolfgang Ulbrich"]
+SPDX-License-Identifier = "LGPL-2.1-or-later"
+
+[[annotations]]
+path = ["tests/themes/ClearlooksRe/**", "tests/goldens/frames/ClearlooksRe/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = ["2005-2007 Daniel Borgmann, Andrea Cimitan", "2010 Perberos"]
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = ["tests/themes/Atlanta/**", "tests/goldens/frames/Atlanta/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2002 Havoc Pennington"
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = ["tests/themes/eOS/**", "tests/goldens/frames/eOS/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "Canonical Ltd."
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = ["tests/themes/Arc/**", "tests/goldens/frames/Arc/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = ["horst3180", "The arc-theme contributors <https://github.com/jnsh/arc-theme>"]
+SPDX-License-Identifier = "GPL-3.0-only"
+
+[[annotations]]
+path = ["tests/themes/Mint-Y/**", "tests/goldens/frames/Mint-Y/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "Linux Mint"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = ["tests/themes/Yaru/**", "tests/goldens/frames/Yaru/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2021-2022 Martin Wimpress"
+SPDX-License-Identifier = "GPL-3.0-only"
+
+# The golden font (tests/fonts/README.md).
+[[annotations]]
+path = ["tests/fonts/NotoSans-Bold.ttf", "tests/fonts/OFL.txt"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2022 The Noto Project Authors <https://github.com/notofonts/latin-greek-cyrillic>"
+SPDX-License-Identifier = "OFL-1.1"
+
+# The test schemas, vendored from MATE (tests/schemas/README.md). Caminito's own is a link to
+# data/.
+[[annotations]]
+path = ["tests/schemas/org.mate.*.gschema.xml", "tests/schemas/marco-master/*"]
+precedence = "closest"
+SPDX-FileCopyrightText = "MATE Developers"
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = "tests/schemas/org.mate.peripherals-keyboard-xkb.gschema.xml"
+precedence = "closest"
+SPDX-FileCopyrightText = "MATE Developers"
+SPDX-License-Identifier = "LGPL-2.0-or-later"
+
+# The tz database, which is in the public domain.
+[[annotations]]
+path = "tests/zoneinfo/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "LicenseRef-Public-Domain"
+
+# The Debian packaging of the patched packages, taken from Debian's, under the licence its
+# debian/copyright gives debian/* (the GPL where it's one of several).
+[[annotations]]
+path = [
+  "packaging/debian/caja/**",
+  "packaging/debian/marco/**",
+  "packaging/debian/mate-control-center/**",
+  "packaging/debian/mate-panel/**",
+  "packaging/debian/mate-power-manager/**",
+  "packaging/debian/mate-utils/**",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = [
+  "2011-2014 Stefano Karapetsas <stefano@karapetsas.com>",
+  "2014-2023 Mike Gabriel <sunweaver@debian.org>",
+  "2025-2026 Juan Pablo Lassala",
+]
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = "packaging/debian/mate-session-manager/**"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+  "2011-2014 Stefano Karapetsas <stefano@karapetsas.com>",
+  "2014-2015 Martin Wimpress <code@flexion.org>",
+  "2014-2023 Mike Gabriel <sunweaver@debian.org>",
+  "2025-2026 Juan Pablo Lassala",
+]
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = "packaging/debian/mate-settings-daemon/**"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+  "2011-2014 Stefano Karapetsas <stefano@karapetsas.com>",
+  "2014-2024 Mike Gabriel <sunweaver@debian.org>",
+  "2025-2026 Juan Pablo Lassala",
+]
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = "packaging/debian/vala-panel-appmenu/**"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+  "2015-2016 Konstantin Pugin <ria.freelander@gmail.com>",
+  "2017 Martin Wimpress <martin.wimpress@ubuntu.com>",
+  "2017-2025 Mike Gabriel <mike.gabriel@das-netzwerkteam.de>",
+  "2025-2026 Juan Pablo Lassala",
+]
+SPDX-License-Identifier = "LGPL-3.0-or-later"
+
+[[annotations]]
+path = "packaging/debian/appmenu-gtk-module/**"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+  "2011-2013 Canonical Ltd.",
+  "2017-2024 Mike Gabriel <mike.gabriel@das-netzwerkteam.de>",
+  "2025-2026 Juan Pablo Lassala",
+]
+SPDX-License-Identifier = "LGPL-3.0-only"
+
+# The PKGBUILDs of the patched packages, taken from Arch's and the AUR's, whose packaging is
+# 0BSD. The contributors are named in each PKGBUILD.
+[[annotations]]
+path = [
+  "packaging/arch/appmenu-gtk-module-caminito/**",
+  "packaging/arch/caja-caminito/**",
+  "packaging/arch/mate-control-center-caminito/**",
+  "packaging/arch/mate-panel-caminito/**",
+  "packaging/arch/mate-power-manager-caminito/**",
+  "packaging/arch/mate-session-manager-caminito/**",
+  "packaging/arch/mate-settings-daemon-caminito/**",
+  "packaging/arch/mate-utils-caminito/**",
+  "packaging/arch/vala-panel-appmenu-mate-caminito/**",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = ["Arch Linux contributors", "2025-2026 Juan Pablo Lassala"]
+SPDX-License-Identifier = "0BSD"
+
+# The Fedora specs of the patched packages, taken from Fedora's, whose spec files are MIT
+# under the Fedora Project Contributor Agreement. Fedora's patches are to MATE's code, so they
+# are under its licence.
+[[annotations]]
+path = [
+  "packaging/fedora/caja/**",
+  "packaging/fedora/marco/**",
+  "packaging/fedora/mate-control-center/**",
+  "packaging/fedora/mate-panel/**",
+  "packaging/fedora/mate-power-manager/**",
+  "packaging/fedora/mate-session-manager/**",
+  "packaging/fedora/mate-settings-daemon/**",
+  "packaging/fedora/mate-utils/**",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = ["Fedora Project contributors", "2025-2026 Juan Pablo Lassala"]
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "packaging/fedora/*/*.patch"
+precedence = "closest"
+SPDX-FileCopyrightText = ["MATE Developers", "Fedora Project contributors"]
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+# The carried patches (ADR 0030) are Caminito's changes to the patched packages. Their context
+# lines can hold upstream's notices, which REUSE reads as well.
+[[annotations]]
+path = "packaging/patches/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025-2026 Juan Pablo Lassala"
+SPDX-License-Identifier = "GPL-3.0-or-later"

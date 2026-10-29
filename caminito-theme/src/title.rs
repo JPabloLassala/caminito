@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2001 Havoc Pennington
+// SPDX-FileCopyrightText: 2003 Red Hat, Inc.
+// SPDX-FileCopyrightText: 2005-2006 Elijah Newren
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! The title's text, laid out as Marco's `meta_frames_ensure_layout` lays it out. Its
 //! text height sizes the titlebar, so geometry and drawing share this.
 

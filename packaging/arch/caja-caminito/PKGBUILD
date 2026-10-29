@@ -12,7 +12,7 @@ pkgname=caja-caminito
 _pkgname=caja
 pkgver=1.28.0
 pkgrel=5
-pkgdesc="File manager for the MATE desktop, with Caminito's carried patches"
+pkgdesc="Caja, the file manager for the MATE desktop, with Caminito's patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
 license=('GPL-2.0-or-later AND LGPL-2.0-or-later')
@@ -28,14 +28,13 @@ conflicts=("${_pkgname}" 'caja-gtk3')
 # goes on Caminito's primary output and follows it (81, 89). 0002: a right click on another
 # output pops up the desktop's menu (208). 0003: the desktop draws no wallpaper of its own, so
 # Caminito's shows through, and is what the panels leave of the output (CMN-182).
-# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
-# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
-_patches="file://$(realpath -m "$startdir/../../patches/caja")"
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030), and
+# tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
 source=("git+https://github.com/mate-desktop/caja.git#tag=v${pkgver}"
         git+https://github.com/mate-desktop/mate-submodules.git
-        "$_patches/0001-desktop-window-Put-the-desktop-on-Caminito-s-primary.patch"
-        "$_patches/0002-desktop-window-Pop-up-the-desktop-s-menu-on-Caminito.patch"
-        "$_patches/0003-desktop-window-Let-Caminito-s-wallpaper-show-through.patch")
+        "0001-desktop-window-Put-the-desktop-on-Caminito-s-primary.patch"
+        "0002-desktop-window-Pop-up-the-desktop-s-menu-on-Caminito.patch"
+        "0003-desktop-window-Let-Caminito-s-wallpaper-show-through.patch")
 sha256sums=('1d3387cdf0acc9d7c01a563143ab91e097e8201a183a0fcece37beb03e0009f6'
             'SKIP'
             'cb453b71e75751b2f302b8ef141a0710e6db76adfee8f9bf43d4fceda2458e90'

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2005-2006 Elijah Newren
+// SPDX-FileCopyrightText: 2025-2026 Juan Pablo Lassala
+// SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
+
 //! Edge resistance and snap-move (157): the edges a window being moved or resized stops at,
 //! or with Shift snaps to, ported from Marco's `edge-resistance.c`.
 //!

@@ -12,7 +12,7 @@ pkgname=mate-power-manager-caminito
 _pkgname=mate-power-manager
 pkgver=1.28.1
 pkgrel=1
-pkgdesc="Power management tool for the MATE desktop, with Caminito's carried patch"
+pkgdesc="MATE Power Manager, with Caminito's patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
 license=('GPL-2.0-or-later')
@@ -28,11 +28,10 @@ conflicts=("${_pkgname}")
 # 0001 is active only when MATE_WM_NAME=Caminito (ADR 0011): the keys are grabbed through
 # Caminito, since mate-power-manager runs on XWayland there and its own grabs see a key only
 # while an XWayland window has the keyboard (107, ADR 0014).
-# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
-# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
-_patches="file://$(realpath -m "$startdir/../../patches/mate-power-manager")"
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030), and
+# tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
 source=("git+https://github.com/mate-desktop/mate-power-manager.git#tag=v${pkgver}"
-        "$_patches/0001-button-Grab-the-keys-through-Caminito.patch")
+        "0001-button-Grab-the-keys-through-Caminito.patch")
 sha256sums=('b156ce0251f0ef883e69926a5ac0e82e2ae29b82f1e57c7d509295394e2c4fe0'
             '61c391b97a7dcd7b037845dd1d324148803b5c1ce13f44e8f2fe6c35326d966e')
 

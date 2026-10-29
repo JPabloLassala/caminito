@@ -12,9 +12,6 @@
 //! The Kept folders (CMN-239) are between the separator and the Trash. They need no gvfs: the
 //! folders are the test's own, and a move or a copy goes through GIO's local files.
 //!
-//! A window's picture (CMN-251) is the dock's own capture of it, through
-//! ext-image-copy-capture, which the probe takes of a window by its title.
-//!
 //! The app id to item resolution has its own tests without a panel, in
 //! `helpers/caminito-dock-applet/test-resolve.c` and `test-model.c`; what this adds is what
 //! the compositor does with the clicks: activating a window on another workspace, minimising
@@ -79,31 +76,6 @@ struct Item {
     /// The title of the item's most recent window.
     title: String,
 }
-
-/// A window's red, which its client draws it in once it was the fixture's colour.
-const RED: u32 = 0xffff_0000;
-
-/// A frame of a window as the dock captures it (CMN-251).
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Picture {
-    size: (i32, i32),
-    /// The centre pixel, as ARGB.
-    color: u32,
-}
-
-/// The dock's live capture of a window, as the probe has had it so far.
-#[derive(Debug, Clone, Copy)]
-struct Live {
-    frames: u32,
-    open: bool,
-    /// The last frame, if any.
-    last: Option<Picture>,
-    /// The `DkCaptureError` that ended the session, if one did.
-    error: Option<i32>,
-}
-
-/// `DK_CAPTURE_ERROR_STOPPED`: the compositor stopped the session.
-const CAPTURE_STOPPED: i32 = 1;
 
 /// The probe in a scratch directory with its log, its settings and its desktop entries.
 struct Probe {
@@ -359,83 +331,6 @@ impl Probe {
                 }
             })
             .collect()
-    }
-
-    /// What the dock's lookup of Caminito's name makes of each window libxfce4windowing
-    /// lists (CMN-243): the title, the identifier or none, and whether the ext handle with
-    /// that identifier was found.
-    fn identifiers(&mut self, f: &mut Fixture) -> Vec<(String, Option<String>, bool)> {
-        self.ask(f, "identifiers", "identifiers-end")
-            .iter()
-            .filter_map(|line| line.strip_prefix("toplevel "))
-            .map(|line| {
-                let (line, title) = line.split_once(" title=").unwrap();
-                let mut words = line.split(' ');
-                let identifier = words.next().unwrap();
-                let found = words.next().unwrap() == "1";
-                let identifier = (identifier != "-").then(|| identifier.to_owned());
-                (title.to_owned(), identifier, found)
-            })
-            .collect()
-    }
-
-    /// One frame of the window titled `title`, as the dock captures it, or why it can't.
-    fn capture(&mut self, f: &mut Fixture, title: &str) -> Result<Picture, String> {
-        let lines = self.ask(f, &format!("capture {title}"), "capture-end");
-        if let Some(error) = lines.iter().find_map(|l| l.strip_prefix("capture-error ")) {
-            return Err(error.to_owned());
-        }
-        let line = lines
-            .iter()
-            .find_map(|line| line.strip_prefix("capture "))
-            .unwrap_or_else(|| panic!("the probe answers with a frame: {lines:?}"));
-        let words: Vec<&str> = line.split(' ').collect();
-        Ok(Picture {
-            size: (words[0].parse().unwrap(), words[1].parse().unwrap()),
-            color: u32::from_str_radix(words[2], 16).unwrap(),
-        })
-    }
-
-    /// Opens the dock's live capture of the window titled `title`.
-    fn start_live(&mut self, f: &mut Fixture, title: &str) {
-        let lines = self.ask(f, &format!("live {title}"), "live-end");
-        assert!(lines.is_empty(), "the live capture starts: {lines:?}");
-    }
-
-    /// The live capture's frames so far.
-    fn live(&mut self, f: &mut Fixture) -> Live {
-        let lines = self.ask(f, "live-status", "live-end");
-        let line = lines
-            .iter()
-            .find_map(|line| line.strip_prefix("live "))
-            .unwrap_or_else(|| panic!("the probe answers with the live capture: {lines:?}"));
-        let fields: Vec<&str> = line
-            .split(' ')
-            .map(|word| word.split_once('=').unwrap().1)
-            .collect();
-        let frames = fields[0].parse().unwrap();
-        Live {
-            frames,
-            open: fields[1] == "1",
-            last: (frames > 0).then(|| Picture {
-                size: (fields[2].parse().unwrap(), fields[3].parse().unwrap()),
-                color: u32::from_str_radix(fields[4], 16).unwrap(),
-            }),
-            error: Some(fields[5].parse().unwrap()).filter(|&code| code >= 0),
-        }
-    }
-
-    /// Dispatches until the live capture satisfies `done`, and returns it.
-    #[track_caller]
-    fn wait_for_live(&mut self, f: &mut Fixture, done: impl Fn(&Live) -> bool) -> Live {
-        let mut found = None;
-        f.dispatch_until_mut(|f| {
-            let live = self.live(f);
-            let holds = done(&live);
-            found = holds.then_some(live);
-            holds
-        });
-        found.unwrap()
     }
 
     /// Dispatches until the dock's items satisfy `done`, and returns them.
@@ -1721,33 +1616,6 @@ fn cancelling_the_confirmation_leaves_the_trash_as_it_was() {
     assert!(d.probe.trash(&mut d.f).full, "the icon is still full");
 }
 
-#[test]
-#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
-fn two_windows_of_one_program_with_one_title_get_their_own_identifiers_and_ext_handles() {
-    let mut d = Desk::new();
-    let first = d.open("mate-terminal", "Terminal");
-    let second = d.open("mate-terminal", "Terminal");
-
-    let named = d.probe.identifiers(&mut d.f);
-
-    assert_eq!(named.len(), 2, "{named:?}");
-    let caminito = &d.f.state.caminito;
-    let mut expected = [first, second].map(|window| caminito.toplevel_identifier(d.f.pid(window)));
-    let mut found: Vec<_> = named
-        .iter()
-        .map(|(title, identifier, ext)| {
-            assert_eq!(title, "Terminal");
-            assert!(ext, "the ext handle with {identifier:?} is found");
-            identifier.clone()
-        })
-        .collect();
-    assert_ne!(found[0], found[1], "one identifier for two windows");
-    // Each window has the identifier the ext list gives it, whatever order they are listed in.
-    expected.sort();
-    found.sort();
-    assert_eq!(found, expected);
-}
-
 fn uris(folders: &[Folder]) -> Vec<String> {
     folders.iter().map(|folder| folder.uri.clone()).collect()
 }
@@ -1908,84 +1776,4 @@ fn a_kept_folder_that_is_gone_is_dimmed_says_so_on_a_click_and_comes_back_with_t
 
     std::fs::create_dir(&path).unwrap();
     d.wait_for_folders(|folders| folders.len() == 1 && !folders[0].gone);
-}
-
-/// The window's size with Caminito's frame, which a capture of it has.
-fn framed_size(f: &Fixture, window: ClientWindow) -> (i32, i32) {
-    let frame = f.visible_frame(window);
-    (frame.size.w, frame.size.h)
-}
-
-/// Has the window's client draw it in `color`, at the size `Desk::open` gives it.
-fn redraw(f: &mut Fixture, window: ClientWindow, color: u32) {
-    f.client(window.client())
-        .ack_and_commit_buffer(window.xdg(), (240, 160), color);
-    f.roundtrip(window.client());
-}
-
-#[test]
-#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
-fn the_dock_captures_a_window_in_the_colour_it_is_drawn_in() {
-    let mut d = Desk::new();
-    let window = d.open("mate-terminal", "Terminal");
-
-    let picture = d.probe.capture(&mut d.f, "Terminal");
-
-    let expected = Picture {
-        size: framed_size(&d.f, window),
-        color: WINDOW_COLOR,
-    };
-    assert_eq!(picture, Ok(expected));
-}
-
-#[test]
-#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
-fn a_live_capture_gets_the_window_redrawn_and_its_stop_ends_the_session() {
-    let mut d = Desk::new();
-    let window = d.open("mate-terminal", "Terminal");
-    let pid = d.f.pid(window);
-    d.probe.start_live(&mut d.f, "Terminal");
-    let first = d.probe.wait_for_live(&mut d.f, |live| live.frames > 0);
-    assert_eq!(first.last.map(|p| p.color), Some(WINDOW_COLOR));
-    assert_eq!(d.f.state.caminito.window_capture_sessions(pid), 1);
-
-    redraw(&mut d.f, window, RED);
-    let redrawn = d
-        .probe
-        .wait_for_live(&mut d.f, |live| live.last.is_some_and(|p| p.color == RED));
-    assert!(redrawn.open);
-    assert!(redrawn.frames > first.frames, "{redrawn:?}");
-
-    d.probe.ask(&mut d.f, "live-stop", "live-end");
-    assert_eq!(d.f.state.caminito.window_capture_sessions(pid), 0);
-}
-
-#[test]
-#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
-fn a_minimised_window_is_captured_as_it_was_last_drawn() {
-    let mut d = Desk::new();
-    let window = d.open("mate-terminal", "Terminal");
-    let pid = d.f.pid(window);
-    redraw(&mut d.f, window, RED);
-    d.f.client(window.client()).set_minimized(window.xdg());
-    d.f.dispatch_until(|f| f.state.caminito.policy.is_minimized(pid));
-
-    let picture = d.probe.capture(&mut d.f, "Terminal");
-
-    assert_eq!(picture.map(|p| p.color), Ok(RED));
-}
-
-#[test]
-#[ignore = "needs CAMINITO_DOCK_PROBE, the built dk-probe"]
-fn a_live_capture_of_a_window_that_closes_ends_with_an_error() {
-    let mut d = Desk::new();
-    let window = d.open("mate-terminal", "Terminal");
-    d.probe.start_live(&mut d.f, "Terminal");
-    d.probe.wait_for_live(&mut d.f, |live| live.frames > 0);
-
-    d.f.client(window.client()).destroy_window(window.xdg());
-    d.f.roundtrip(window.client());
-
-    let ended = d.probe.wait_for_live(&mut d.f, |live| !live.open);
-    assert_eq!(ended.error, Some(CAPTURE_STOPPED));
 }

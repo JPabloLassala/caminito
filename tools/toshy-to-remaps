@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Converts Toshy's macOS config into the macOS (PC keyboard) Remap template (CMN-190, ADR 0038).
+"""Converts Toshy's macOS config into the macOS Remap templates (CMN-190, ADR 0038).
 
     tools/toshy-to-remaps [--toshy FILE] [--check]
 
 It reads Toshy's default-toshy-config/toshy_config.py at TOSHY_COMMIT, from GitHub or from
-FILE, as data: it parses it with Python's ast module and never imports or runs it. It writes
-data/remap-templates/macos-pc.remaps, and prints what it left out of it, with the reason.
---check writes nothing, and fails if the committed file isn't what the conversion writes.
+FILE, as data: it parses it with Python's ast module and never imports or runs it. It writes a
+template for each of KEYBOARDS, data/remap-templates/macos-pc.remaps for a PC keyboard and
+macos-mac.remaps for a Mac keyboard, and prints what it left out of each, with the reason.
+--check writes nothing, and fails if a committed file isn't what the conversion writes.
 
 Toshy grabs the keyboard and rewrites its keys through modmaps, which turn one key into
-another, and keymaps, which turn a combination into others in the apps a `when` names. On a
-PC keyboard its modmap makes Alt (where Cmd sits) the right Ctrl, which its keymaps call RC,
-and the Super key Alt (where Option sits). Caminito has no modifier swap, so the conversion
-writes each rule in terms of the keys the user presses:
+another, and keymaps, which turn a combination into others in the apps a `when` names. Its
+modmap makes the key where Cmd sits the right Ctrl, which its keymaps call RC, and leaves the
+key where Option sits Alt: on a PC keyboard Cmd is Alt and Option Super, and on a Mac keyboard
+Cmd is Super and Option Alt. Caminito has no modifier swap, so the conversion writes each rule
+in terms of the keys the user presses:
 
-- Toshy's RC- is Alt, its Alt- is Super, and Mac's Control, the Ctrl key, is its Super- in
-  most apps and its LC- in terminals, where its modmap leaves Ctrl alone.
-- The Cmd modmap is written out as rules: Alt+X is Ctrl+X, and Alt+Shift+X Ctrl+Shift+X, for
+- Toshy's RC- is Cmd's key, its Alt- is Option's, and Mac's Control, the Ctrl key, is its
+  Super- in most apps and its LC- in terminals, where its modmap leaves Ctrl alone.
+- The Cmd modmap is written out as rules: Cmd+X is Ctrl+X, and Cmd+Shift+X Ctrl+Shift+X, for
   every letter, digit and punctuation key no keymap has a rule for.
 - For each app, the first keymap that has a rule for a combination gives it, as in Toshy.
   All applications are what an app no `when` names gets, and each set of app classes that
@@ -41,12 +43,40 @@ TOSHY_URL = (
 # The file's SHA-256 at TOSHY_COMMIT, so a copy given with --toshy is that commit's.
 TOSHY_SHA256 = "32edcae0b2f00a00b45cabdbc3ad3d4a082b72c0d42b79ea1b04362b4307452c"
 ROOT = Path(__file__).resolve().parent.parent
-OUTPUT = ROOT / "data/remap-templates/macos-pc.remaps"
 
-HEADER = f"""\
-# name: macOS (PC keyboard)
-# macOS's shortcuts on a PC keyboard: Alt, where Cmd sits, does what Ctrl does, Alt+Right goes
-# to the end of a line, and terminals, browsers and other apps have shortcuts of their own.
+# A keyboard a template is converted for: its file, its template's name and what the template
+# says it does, the keys where Mac's Cmd and Option sit, and the `when` name Toshy reads as
+# true for it.
+Keyboard = namedtuple("Keyboard", "output name summary cmd option context")
+
+KEYBOARDS = [
+    Keyboard(
+        output=ROOT / "data/remap-templates/macos-pc.remaps",
+        name="macOS (PC keyboard)",
+        summary=(
+            "macOS's shortcuts on a PC keyboard: Alt, where Cmd sits, does what Ctrl does,"
+            " Alt+Right goes\n# to the end of a line, and terminals, browsers and other apps have"
+            " shortcuts of their own."
+        ),
+        cmd="Alt", option="Super", context="ctx_kbd_is_windows",
+    ),
+    Keyboard(
+        output=ROOT / "data/remap-templates/macos-mac.remaps",
+        name="macOS (Mac keyboard)",
+        summary=(
+            "macOS's shortcuts on a Mac keyboard, or one in its Mac mode: Cmd, which is Super, does"
+            " what\n# Ctrl does, Cmd+Right goes to the end of a line, Option, which is Alt, moves by"
+            " words, and\n# terminals, browsers and other apps have shortcuts of their own."
+        ),
+        cmd="Super", option="Alt", context="ctx_kbd_is_apple",
+    ),
+]
+
+
+def header(keyboard):
+    return f"""\
+# name: {keyboard.name}
+# {keyboard.summary}
 #
 # Converted by tools/toshy-to-remaps from Toshy's default-toshy-config/toshy_config.py, at
 # commit {TOSHY_COMMIT} of https://github.com/RedBearAK/toshy,
@@ -56,27 +86,32 @@ HEADER = f"""\
 # Don't edit it: run the script again.
 """
 
+
 # Caminito's modifiers, in the order its templates write them.
 MODIFIERS = ("Ctrl", "Alt", "Shift", "Super")
 
-# The keys the user presses for each of Toshy's modifiers in a combination it matches, in most
-# apps (gui) and in terminals (term), on a PC keyboard: its modmaps turn Alt into RC, Super into
-# Alt, and Ctrl into Super in most apps and LC in terminals. C- is either Ctrl. A modifier no key
-# gives there has none, and its rules never match there.
-TRIGGER_MODIFIERS = {
-    "gui": {
-        "RC": ["Alt"], "C": ["Alt"], "Ctrl": ["Alt"], "LC": [],
-        "Alt": ["Super"], "LAlt": ["Super"], "RAlt": ["Super"],
-        "Super": ["Ctrl"], "Meta": ["Ctrl"], "Win": ["Ctrl"],
-        "Shift": ["Shift"], "Fn": [],
-    },
-    "term": {
-        "RC": ["Alt"], "C": ["Alt", "Ctrl"], "Ctrl": ["Alt", "Ctrl"], "LC": ["Ctrl"],
-        "Alt": ["Super"], "LAlt": ["Super"], "RAlt": ["Super"],
-        "Super": [], "Meta": [], "Win": [],
-        "Shift": ["Shift"], "Fn": [],
-    },
-}
+
+def trigger_modifiers(keyboard):
+    """The keys the user presses for each of Toshy's modifiers in a combination it matches, in
+    most apps (gui) and in terminals (term): its modmaps turn Cmd's key into RC, leave Option's
+    Alt, and turn Ctrl into Super in most apps and LC in terminals. C- is either Ctrl. A modifier
+    no key gives there has none, and its rules never match there."""
+    cmd, option = keyboard.cmd, keyboard.option
+    return {
+        "gui": {
+            "RC": [cmd], "C": [cmd], "Ctrl": [cmd], "LC": [],
+            "Alt": [option], "LAlt": [option], "RAlt": [option],
+            "Super": ["Ctrl"], "Meta": ["Ctrl"], "Win": ["Ctrl"],
+            "Shift": ["Shift"], "Fn": [],
+        },
+        "term": {
+            "RC": [cmd], "C": [cmd, "Ctrl"], "Ctrl": [cmd, "Ctrl"], "LC": ["Ctrl"],
+            "Alt": [option], "LAlt": [option], "RAlt": [option],
+            "Super": [], "Meta": [], "Win": [],
+            "Shift": ["Shift"], "Fn": [],
+        },
+    }
+
 
 # The modifier a client gets for each of Toshy's in what it sends.
 TARGET_MODIFIERS = {
@@ -120,9 +155,10 @@ SETTINGS = {
     "optspec_layout": "Disabled", "swap_spotlight_and_input": False,
 }
 
-# The names a `when` reads, on a PC keyboard. The app's own are worked out per app.
+# The names a `when` reads, with every keyboard's false: a Config makes its keyboard's true. The
+# app's own are worked out per app.
 CONTEXT = {
-    "ctx_kbd_is_windows": True, "ctx_kbd_is_apple": False,
+    "ctx_kbd_is_windows": False, "ctx_kbd_is_apple": False,
     "ctx_kbd_is_chromebook": False, "ctx_kbd_is_ibm": False,
     "ctx_caps_is_caps_and_cmd": False, "ctx_caps_is_esc_and_cmd": False,
     "ctx_caps_is_esc_and_lctrl": False, "ctx_caps_is_esc_and_lctrl_role_swap": False,
@@ -135,7 +171,7 @@ KINDS = {
     "tap-or-hold": "tap-or-hold and multi-tap keys: a Key remap is a combination pressed",
     "title": "matching by window title: a Remap group matches app ids alone",
     "device": "matching by device or Num Lock: Key remaps apply to every keyboard",
-    "keyboard": "matching by keyboard type: this template is the PC keyboard's",
+    "keyboard": "matching by keyboard type: this template is the {name}'s",
     "desktop": "per-desktop and per-distro rules: Caminito is the desktop",
     "bind": "bind: Caminito doesn't hold a modifier down across combinations",
     "sleep": "sleep: a sequence is sent with no delay",
@@ -144,8 +180,8 @@ KINDS = {
     "option": "options Toshy has off by default",
     "optspec": "the Option special characters: XKB's mac variants give them",
     "deadkeys": "dead keys: XKB's mac variants give them",
-    "modmap": "Toshy's Option and Control swaps, which no rule writes out: a combination of Super"
-    " or Ctrl with no rule reaches the app as it's pressed",
+    "modmap": "Toshy's Option and Control swaps, which no rule writes out: a combination of"
+    " {option} or Ctrl with no rule reaches the app as it's pressed",
     "pattern": "app classes matched by a pattern no app id is known for: a Remap group lists"
     " app ids",
     "space": "app classes with a space: a template's app ids are split at spaces",
@@ -222,19 +258,21 @@ def main():
         raise Unsupported(f"that toshy_config.py isn't the one at {TOSHY_COMMIT}")
     source = data.decode()
 
-    config = Config(source)
-    text = config.template()
-    print(config.report(), end="")
+    for keyboard in KEYBOARDS:
+        config = Config(source, keyboard)
+        text = config.template()
+        output = keyboard.output.relative_to(ROOT)
+        print(f"{output}, {keyboard.name}:\n")
+        print(config.report(), end="")
 
-    if args.check:
-        committed = OUTPUT.read_text() if OUTPUT.exists() else None
-        if committed != text:
-            output = OUTPUT.relative_to(ROOT)
-            sys.exit(f"toshy-to-remaps: {output} isn't what the conversion writes")
-        print(f"\n{OUTPUT.relative_to(ROOT)} is what the conversion writes.")
-    else:
-        OUTPUT.write_text(text)
-        print(f"\nWrote {OUTPUT.relative_to(ROOT)}.")
+        if args.check:
+            committed = keyboard.output.read_text() if keyboard.output.exists() else None
+            if committed != text:
+                sys.exit(f"toshy-to-remaps: {output} isn't what the conversion writes")
+            print(f"\n{output} is what the conversion writes.\n")
+        else:
+            keyboard.output.write_text(text)
+            print(f"\nWrote {output}.\n")
 
 
 # One of matchProps' alternatives: the patterns of the class, whether it's not_clas, and
@@ -309,7 +347,10 @@ class Keymap:
 class Config:
     """Toshy's config, read as data."""
 
-    def __init__(self, source):
+    def __init__(self, source, keyboard):
+        self.keyboard = keyboard
+        self.trigger_modifiers = trigger_modifiers(keyboard)
+        self.context_names = CONTEXT | {keyboard.context: True}
         self.tree = ast.parse(source)
         # Each module-level name's assignments, by line.
         self.assignments = {}
@@ -443,7 +484,7 @@ class Config:
         return "gui"
 
     def evaluate(self, node, app, any_keyboard=False):
-        """A `when`'s value for an app, or None for an app it names nowhere, on a PC keyboard or
+        """A `when`'s value for an app, or None for an app it names nowhere, on the keyboard or
         with any_keyboard on every keyboard at once."""
 
         def evaluate(node):
@@ -465,10 +506,10 @@ class Config:
                 return self.context(app) == "remote"
             if node.id.startswith("ctx_ovl_"):
                 return not node.id.startswith("ctx_ovl_user_flag_")
-            if node.id in CONTEXT:
+            if node.id in self.context_names:
                 if any_keyboard and node.id.startswith("ctx_kbd_"):
                     return True
-                return CONTEXT[node.id]
+                return self.context_names[node.id]
             if node.id in ("DESKTOP_ENV", "DE_MAJ_VER", "DISTRO_ID"):
                 raise LeftOut("desktop")
             if node.id in ("ac_Chr_main", "deadkeys_list"):
@@ -511,7 +552,7 @@ class Config:
 
     def applying(self):
         """Each keymap with the apps it applies to, after leaving out those that apply to none
-        on a PC keyboard."""
+        on the keyboard."""
         apps = [None] + self.candidates
         for keymap in self.keymaps:
             if keymap.call != "keymap" or not isinstance(keymap.when, ast.Lambda):
@@ -550,7 +591,7 @@ class Config:
         note(self.left_out[kind], keymap, what, rules)
 
     def modmap_left_out(self):
-        """Toshy's modmaps: the PC keyboard's Cmd is written out as rules, and the rest left out."""
+        """Toshy's modmaps: the keyboard's Cmd is written out as rules, and the rest left out."""
         for keymap in self.keymaps:
             if keymap.call == "keymap" or not isinstance(keymap.when, ast.Lambda):
                 continue
@@ -566,7 +607,7 @@ class Config:
             if not applies:
                 self.leave_out(self.kind_off(keymap), keymap)
                 continue
-            # The PC keyboard's: those that make a key Cmd, RIGHT_CTRL, are the rules written
+            # The keyboard's: those that make a key Cmd, RIGHT_CTRL, are the rules written
             # out, and the others swap Option and Control.
             for key, value in keymap.rules:
                 key, value = ast.unparse(key), ast.unparse(value)
@@ -579,9 +620,9 @@ class Config:
         *modifiers, key = text.split("-")
         held = [[]]
         for modifier in modifiers:
-            if modifier not in TRIGGER_MODIFIERS[context]:
+            if modifier not in self.trigger_modifiers[context]:
                 raise Unsupported(f"line {node.lineno}: the modifier {modifier}")
-            held = [h + [m] for h in held for m in TRIGGER_MODIFIERS[context][modifier]]
+            held = [h + [m] for h in held for m in self.trigger_modifiers[context][modifier]]
         return [combination(h, key_name(key, node)) for h in held]
 
     def combo_text(self, node):
@@ -663,7 +704,7 @@ class Config:
                         self.leave_out(left_out.kind, keymap, self.combo_text(key), rules=1)
         for key in TYPING_KEYS:
             for shift in ([], ["Shift"]):
-                trigger = combination(["Alt"] + shift, key)
+                trigger = combination([self.keyboard.cmd] + shift, key)
                 if trigger not in rules:
                     rules[trigger] = ([combination(["Ctrl"] + shift, key)], None)
         return rules
@@ -690,8 +731,9 @@ class Config:
                     if steps is not None and list(steps) != sends(everyone, trigger):
                         differ.append((trigger, tuple(steps), origin))
                 for trigger in everyone:
-                    if trigger not in own and [as_pressed(trigger)] != sends(everyone, trigger):
-                        differ.append((trigger, (as_pressed(trigger),), AS_PRESSED))
+                    pressed = as_pressed(trigger, self.keyboard)
+                    if trigger not in own and [pressed] != sends(everyone, trigger):
+                        differ.append((trigger, (pressed,), AS_PRESSED))
                 if not differ:
                     continue
                 key = tuple(differ)
@@ -708,7 +750,7 @@ class Config:
             names.add(name)
             sections.append((name, apps, key))
 
-        lines = [HEADER, "[All applications]"]
+        lines = [header(self.keyboard), "[All applications]"]
         lines += rule_lines(
             (t, s, o) for t, (s, o) in everyone.items() if s is not None and list(s) != [t]
         )
@@ -754,6 +796,7 @@ class Config:
             items = self.left_out[kind]
             count = f"{len(items)} app classes" if kind == "space" else rules(sum(items.values()))
             lines.append("")
+            why = why.format(name=self.keyboard.name, option=self.keyboard.option)
             lines.append(f"{why} ({count}):")
             lines += [f"  {item}" for item in items]
         return "\n".join(lines) + "\n"
@@ -799,10 +842,10 @@ def sends(rules, trigger):
     return [trigger] if steps is None else list(steps)
 
 
-def as_pressed(trigger):
+def as_pressed(trigger, keyboard):
     """What Toshy sends for a combination no rule takes in a group: Cmd's modmap's alone."""
     *modifiers, key = trigger.split("+")
-    return combination(["Ctrl" if m == "Alt" else m for m in modifiers], key)
+    return combination(["Ctrl" if m == keyboard.cmd else m for m in modifiers], key)
 
 
 def rule_lines(rules):

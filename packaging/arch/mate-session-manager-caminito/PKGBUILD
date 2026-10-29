@@ -14,7 +14,7 @@ _pkgname=mate-session-manager
 _commit=57a9178e766cd02176dc1c2d70cc48f963ee9fff
 pkgver=1.28.0.r23.g57a9178
 pkgrel=7
-pkgdesc="The MATE Session Handler, with Caminito's carried patches"
+pkgdesc="The MATE Session Handler, with Caminito's patches"
 arch=(x86_64)
 url='https://github.com/mate-desktop/mate-session-manager'
 license=(GPL-2.0-or-later)
@@ -62,16 +62,15 @@ provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
 # Every patch is active only when MATE_WM_NAME=Caminito (08, ADR 0004; 78, 206, CMN-195 and
 # CMN-214, ADR 0014).
-# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030).
-# makepkg finds a local source only beside the PKGBUILD, so they're file:// sources.
-_patches="file://$(realpath -m "$startdir/../../patches/mate-session-manager")"
+# The patches are kept once for every distribution, in packaging/patches/ (ADR 0030), and
+# tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
 source=(
   "git+https://github.com/mate-desktop/mate-session-manager.git#commit=$_commit"
   git+https://github.com/mate-desktop/mate-submodules.git
-  "$_patches/0001-main-Unset-GDK_BACKEND-under-Caminito.patch"
-  "$_patches/0002-main-Skip-the-windowmanager-required-component-under.patch"
-  "$_patches/0003-autostart-Skip-X11-only-entries-under-Caminito.patch"
-  "$_patches/0004-autostart-Start-mate-power-manager-and-tilda-on-X11-.patch"
+  "0001-main-Unset-GDK_BACKEND-under-Caminito.patch"
+  "0002-main-Skip-the-windowmanager-required-component-under.patch"
+  "0003-autostart-Skip-X11-only-entries-under-Caminito.patch"
+  "0004-autostart-Start-mate-power-manager-and-tilda-on-X11-.patch"
 )
 b2sums=(
   ef165f32eef80783df69906d7054bd51133099b10141a033a269c33086dd66a9f60315b6b10b95c72e1d25662a9d9870aba5c9546cb99865d6ba0b6716efa55b
