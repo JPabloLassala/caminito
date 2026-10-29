@@ -2,8 +2,8 @@
 //! `org.freedesktop.Notifications` (ADR 0051). It decides which bubbles are on screen, as many
 //! as fit (CMN-285), how long each stays, and which sound plays, and tells the apps what became
 //! of their notifications. A notification that doesn't fit gets no bubble, now or later, and
-//! counts in the bubbles' [`Header`] until the last of them closes. The binary draws the bubbles and plays the
-//! sounds, behind [`Bubbles`] and [`Sounds`]. It follows the notification settings (CMN-261)
+//! counts in the bubbles' [`Header`] until the last of them closes. The binary draws the
+//! bubbles and plays the sounds, behind [`Bubbles`] and [`Sounds`]. It follows the notification settings (CMN-261)
 //! as it goes: what a bubble shows as it opens, the sound as a notification arrives, and the
 //! default timeout.
 //!
@@ -384,8 +384,8 @@ struct State {
     /// The notifications that got no bubble since the first on screen opened, and whether
     /// each is critical, which the header counts.
     more: Vec<(u32, bool)>,
-    /// The header the bubbles were last given.
-    header: Header,
+    /// The header the bubbles were last given, if any.
+    header: Option<Header>,
     /// While the Notification center is open, what ends the watch on the client that said
     /// so, which closes it if the client leaves the bus. gio doesn't export the watch's type.
     center: Option<Box<dyn FnOnce()>>,
@@ -454,7 +454,7 @@ impl Server {
                 notifications: HashMap::new(),
                 shown: Vec::new(),
                 more: Vec::new(),
-                header: Header::default(),
+                header: None,
                 center: None,
                 this: this.clone(),
             })
@@ -584,7 +584,9 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
 
     // A replacement isn't a new notification, so it has no sound.
     let sound = notification.sound.clone().filter(|_| !replaced);
-    let (critical, transient) = (notification.critical, notification.transient);
+    let critical = notification.critical;
+    // A replacement of a counted one is counted again only if it doesn't fit either.
+    guard.more.retain(|&(more, _)| more != id);
     guard.notifications.insert(
         id,
         Entry {
@@ -599,10 +601,9 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     let center = guard.center.is_some();
     drop(guard);
     if center {
-        without_bubble(state, id, transient);
+        without_bubble(state, id, false);
     } else if !show_making_room(state, id, critical) {
-        without_bubble(state, id, transient);
-        count(state, id, critical, transient);
+        without_bubble(state, id, true);
     }
     sync_header(state);
     if let Some(sound) = sound {
@@ -655,20 +656,9 @@ fn show_making_room(state: &Rc<RefCell<State>>, id: u32, critical: bool) -> bool
             return false;
         };
         drop(guard);
-        let transient = is_transient(state, oldest);
         put_away(state, &[oldest]);
-        without_bubble(state, oldest, transient);
-        count(state, oldest, false, transient);
+        without_bubble(state, oldest, true);
     }
-}
-
-/// Whether the live notification `id` is transient.
-fn is_transient(state: &Rc<RefCell<State>>, id: u32) -> bool {
-    state
-        .borrow()
-        .notifications
-        .get(&id)
-        .is_some_and(|entry| entry.notification.transient)
 }
 
 /// Takes the bubbles of `ids` away without closing their notifications.
@@ -687,20 +677,20 @@ fn put_away(state: &Rc<RefCell<State>>, ids: &[u32]) {
     }
 }
 
-/// Leaves the notification `id`, whose bubble didn't open or was put away, to the history. A
-/// transient one isn't there, so it's closed as expired.
-fn without_bubble(state: &Rc<RefCell<State>>, id: u32, transient: bool) {
-    if transient {
+/// Leaves the notification `id`, whose bubble didn't open or was put away, to the history,
+/// where the header counts it if `counted`. A transient one isn't there, so it's closed as
+/// expired.
+fn without_bubble(state: &Rc<RefCell<State>>, id: u32, counted: bool) {
+    let mut guard = state.borrow_mut();
+    let Some(entry) = guard.notifications.remove(&id) else {
+        return;
+    };
+    if entry.notification.transient {
+        guard.notifications.insert(id, entry);
+        drop(guard);
         close(state, id, Reason::Expired);
-    } else {
-        state.borrow_mut().notifications.remove(&id);
-    }
-}
-
-/// Counts `id`, which got no bubble, in the header, unless it's transient and so gone.
-fn count(state: &Rc<RefCell<State>>, id: u32, critical: bool, transient: bool) {
-    if !transient {
-        state.borrow_mut().more.push((id, critical));
+    } else if counted {
+        guard.more.push((id, entry.notification.critical));
     }
 }
 
@@ -746,22 +736,22 @@ fn set_center_open(state: &Rc<RefCell<State>>, open: bool, sender: Option<&str>)
     drop(guard);
     put_away(state, &shown);
     for id in shown {
-        without_bubble(state, id, is_transient(state, id));
+        without_bubble(state, id, false);
     }
     sync_header(state);
 }
 
-/// Gives the bubbles the header, if it changed.
+/// Gives the bubbles the header, the first time and whenever it changes.
 fn sync_header(state: &Rc<RefCell<State>>) {
     let mut guard = state.borrow_mut();
     let header = Header {
         more: guard.more.len(),
         critical: guard.more.iter().any(|&(_, critical)| critical),
     };
-    if header == guard.header {
+    if guard.header == Some(header) {
         return;
     }
-    guard.header = header;
+    guard.header = Some(header);
     let bubbles = guard.bubbles.clone();
     drop(guard);
     let events = HeaderEvents {

@@ -1,10 +1,10 @@
 //! The Notification bubbles (CMN-258), in GTK4: one layer surface in the namespace
-//! `caminito-notification`, on the side of the corner the settings name (CMN-261), that holds the
-//! bubbles on screen, newest nearest the corner, under their header (CMN-285). A new bubble
+//! `caminito-notification`, on the side of the corner the settings name (CMN-261), that holds
+//! the bubbles on screen, newest nearest the corner, under their header (CMN-285). A new bubble
 //! moves them to the corner the settings name now. Its exclusive zone is 0, so it sits under
 //! the panel. It spans the output's height between the panel and the far edge, which is the
 //! room the bubbles have, and takes the pointer only where they and their header are. It
-//! it names no output, so Caminito puts it on the output under the pointer as it maps. It's
+//! names no output, so Caminito puts it on the output under the pointer as it maps. It's
 //! hidden while there's no bubble, and maps again where the pointer is for the next one; a
 //! bubble that opens while others show joins them on their output, as bubbles are on one
 //! output at a time in v1 (the spec's "Not in v1").
@@ -14,14 +14,13 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use caminito_notifications::server::{
     Bubble, Bubbles, Events, Header, HeaderEvents, Icon, Image, Pixels,
 };
 use caminito_notifications::settings::Corner;
 use gtk::prelude::*;
-use std::rc::Rc;
-
 use gtk::{cairo, gdk, gio, glib, pango};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 
@@ -183,10 +182,11 @@ impl GtkBubbles {
     }
 
     /// The height the header and the bubbles have: the window's, between the panel and the
-    /// output's far edge, or without a layer shell, the output's. `None` until it's known.
+    /// output's far edge, or the output's without a layer shell, or before the compositor has
+    /// sized the window that just mapped. `None` until the window has an output.
     fn room(&self) -> Option<i32> {
-        if self.layer {
-            return Some(self.window.height()).filter(|height| *height > 0);
+        if self.layer && self.window.height() > 0 {
+            return Some(self.window.height());
         }
         let surface = self.window.surface()?;
         let monitor = surface.display().monitor_at_surface(&surface)?;

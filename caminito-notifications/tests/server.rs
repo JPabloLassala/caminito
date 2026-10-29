@@ -867,6 +867,36 @@ fn clear_all_in_the_header_takes_the_bubbles_out_of_the_history_and_leaves_the_c
 }
 
 #[test]
+fn clear_all_in_the_header_works_while_every_notification_has_a_bubble() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.notify(notify("Only"));
+
+        daemon.bubbles.header_events().clear_all();
+
+        assert!(daemon.bubbles.ids().is_empty());
+        assert!(daemon.summaries().is_empty());
+    });
+}
+
+#[test]
+fn a_replacement_of_a_counted_notification_is_counted_once() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.bubbles.room.set(Some(1));
+        daemon.notify(notify("Shown"));
+        let counted = daemon.notify(notify("Counted"));
+
+        daemon.notify(Notify {
+            replaces: counted,
+            ..notify("Counted again")
+        });
+
+        assert_eq!(daemon.bubbles.header.get().more, 1);
+    });
+}
+
+#[test]
 fn a_critical_notification_takes_the_place_of_the_oldest_ordinary_bubble_or_gets_none() {
     bus::run(|bus| {
         let daemon = start(bus);

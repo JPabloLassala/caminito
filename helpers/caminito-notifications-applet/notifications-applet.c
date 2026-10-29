@@ -4,8 +4,8 @@
  * Notification center (nt-popup.c). It reads the history over caminito-notifications's
  * private API (nt-daemon.c), and hides itself while the daemon isn't on the bus, as under X11
  * MATE. Left-click toggles the popup, and the daemon can ask for it too (CMN-285); it hears
- * whether the popup is open, as there are no bubbles while it is. The struck-through bell and middle-click (CMN-263), and
- * the settings gear (CMN-261), come later.
+ * whether the popup is open, as there are no bubbles while it is. The struck-through bell and
+ * middle-click (CMN-263), and the settings gear (CMN-261), come later.
  */
 
 #include <mate-panel-applet.h>
