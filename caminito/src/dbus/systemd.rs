@@ -12,9 +12,9 @@
 //!
 //! The export then waits for the portal that takes the old one's place to answer (CMN-284).
 //! A GTK4 program reads the font and its DPI from the portal's Settings as it starts, and
-//! one that finds no portal there takes `~/.config/gtk-4.0/settings.ini`'s for good, which
-//! another desktop may have written: the notification daemon, which starts next, and what
-//! mate-session starts at login.
+//! one that finds no portal there takes them from `~/.config/gtk-4.0/settings.ini` for good,
+//! a file another desktop may have written. The notification daemon starts next, and
+//! mate-session's programs after it, so each would.
 //!
 //! These run off the event loop and log nothing: the `session` module logs what they
 //! return, from the event loop.
@@ -42,6 +42,8 @@ const NO_SUCH_UNIT: &str = "org.freedesktop.systemd1.NoSuchUnit";
 const PORTAL_NAME: &str = "org.freedesktop.portal.Desktop";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
 const SETTINGS: &str = "org.freedesktop.portal.Settings";
+/// The prefix of the bus's own errors, as for a service it couldn't start.
+const BUS_ERRORS: &str = "org.freedesktop.DBus.Error.";
 /// The setting the restarted portal is asked for: the font GTK4 takes.
 const FONT: (&str, &str) = ("org.gnome.desktop.interface", "font-name");
 
@@ -62,8 +64,12 @@ pub(crate) struct Exported {
 /// Why the portal may not have the Session's environment, or not be up yet.
 #[derive(Debug)]
 pub(crate) enum PortalError {
-    /// The bus or the manager failed the restart.
+    /// The bus wouldn't say who has the portal's name, or tell of its changes.
+    Watch(zbus::Error),
+    /// The manager failed the restart.
     Restart(zbus::Error),
+    /// The bus answered for the restarted portal, which it couldn't start.
+    Unreachable(zbus::Error),
     /// The restarted portal didn't answer within the wait.
     Unanswered(Duration),
 }
@@ -71,15 +77,21 @@ pub(crate) enum PortalError {
 impl fmt::Display for PortalError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            PortalError::Watch(err) => write!(f, "can't watch the portal's name: {err}"),
             PortalError::Restart(err) => {
                 write!(
                     f,
                     "can't restart the portal, which may have no display: {err}"
                 )
             }
+            PortalError::Unreachable(err) => write!(
+                f,
+                "can't reach the restarted portal, so what starts now may miss the Session's \
+                 font settings: {err}"
+            ),
             PortalError::Unanswered(wait) => write!(
                 f,
-                "the restarted portal didn't answer within {wait:?}, so what starts now may \
+                "can't hear from the restarted portal within {wait:?}, so what starts now may \
                  miss the Session's font settings"
             ),
         }
@@ -87,12 +99,6 @@ impl fmt::Display for PortalError {
 }
 
 impl std::error::Error for PortalError {}
-
-impl From<zbus::Error> for PortalError {
-    fn from(err: zbus::Error) -> Self {
-        PortalError::Restart(err)
-    }
-}
 
 /// Gives `variables` to the activation environment, and to systemd's user manager if it's
 /// on the bus, which then restarts the portal. It returns once each has answered, and the
@@ -156,15 +162,20 @@ async fn set_environment(
 /// that doesn't run is started by the bus when a client first asks for it, and a machine
 /// without xdg-desktop-portal has no unit to restart.
 async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result<(), PortalError> {
-    let bus = fdo::DBusProxy::new(connection).await?;
-    // Before the restart, so that the old portal's leaving can't be missed.
-    let mut changes = bus
-        .receive_name_owner_changed_with_args(&[(0, PORTAL_NAME)])
-        .await?;
-    let running = bus
-        .get_name_owner(BusName::from_static_str(PORTAL_NAME).map_err(zbus::Error::from)?)
-        .await
-        .ok();
+    let watch = async {
+        let bus = fdo::DBusProxy::new(connection).await?;
+        // Before the restart, so that the old portal's leaving can't be missed.
+        let changes = bus
+            .receive_name_owner_changed_with_args(&[(0, PORTAL_NAME)])
+            .await?;
+        let running = bus
+            .get_name_owner(BusName::from_static_str(PORTAL_NAME)?)
+            .await
+            .ok();
+        zbus::Result::Ok((bus, changes, running))
+    };
+    // The proxy stays with the stream, which needs its match rule kept.
+    let (_bus, mut changes, running) = watch.await.map_err(PortalError::Watch)?;
     let restarted = connection
         .call_method(
             Some(NAME),
@@ -176,7 +187,7 @@ async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result
         .await;
     match restarted {
         Err(zbus::Error::MethodError(name, ..)) if name == NO_SUCH_UNIT => return Ok(()),
-        restarted => restarted.map(drop)?,
+        restarted => restarted.map(drop).map_err(PortalError::Restart)?,
     }
     let Some(running) = running else {
         return Ok(());
@@ -192,9 +203,10 @@ async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result
                 break;
             }
         }
-        // The bus holds the call until the new portal has the name. Any answer, even an
-        // error for a key it doesn't have, is the portal's Settings at work.
-        let _ = connection
+        // The bus holds the call until the new portal has the name. Any answer of the
+        // portal's, even an error for a key it doesn't have, is its Settings at work; one
+        // of the bus's is a portal it couldn't start.
+        let read = connection
             .call_method(
                 Some(PORTAL_NAME),
                 PORTAL_PATH,
@@ -203,7 +215,15 @@ async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result
                 &FONT,
             )
             .await;
-        Ok(())
+        match read {
+            Err(zbus::Error::MethodError(name, detail, reply))
+                if name.as_str().starts_with(BUS_ERRORS) =>
+            {
+                let err = zbus::Error::MethodError(name, detail, reply);
+                Err(PortalError::Unreachable(err))
+            }
+            _ => Ok(()),
+        }
     };
     let timeout = async {
         async_io::Timer::after(wait).await;

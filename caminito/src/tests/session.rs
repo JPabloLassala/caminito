@@ -169,11 +169,17 @@ enum ManagerError {
     NoSuchUnit(String),
 }
 
+/// Keeps a stand-in's call of `method` with its `argument`, sorted, in `calls`, and
+/// whether `started` existed then.
+fn record(calls: &Calls, started: &Path, method: &'static str, mut argument: Vec<String>) {
+    argument.sort();
+    let started = started.exists();
+    calls.lock().unwrap().push((method, argument, started));
+}
+
 impl Manager {
-    fn called(&self, method: &'static str, mut argument: Vec<String>) {
-        argument.sort();
-        let started = self.started.exists();
-        self.calls.lock().unwrap().push((method, argument, started));
+    fn called(&self, method: &'static str, argument: Vec<String>) {
+        record(&self.calls, &self.started, method, argument);
     }
 }
 
@@ -284,13 +290,7 @@ struct Settings {
 #[zbus::interface(name = "org.freedesktop.portal.Settings")]
 impl Settings {
     fn read_one(&self, namespace: String, key: String) -> zvariant::Value<'static> {
-        let mut argument = vec![namespace, key];
-        argument.sort();
-        let started = self.started.exists();
-        self.calls
-            .lock()
-            .unwrap()
-            .push(("ReadOne", argument, started));
+        record(&self.calls, &self.started, "ReadOne", vec![namespace, key]);
         zvariant::Value::from("Sans 10")
     }
 }
@@ -571,7 +571,8 @@ fn the_command_and_the_notification_daemon_start_once_the_restarted_portal_answe
             .any(|call| call.0 == "TryRestartUnit")
     });
     // Nothing is to happen while the portal from before still has the name: GTK4 would
-    // read its font settings from nowhere (CMN-284).
+    // read its font settings from nowhere (CMN-284). A daemon and a command that didn't
+    // wait would have written their files well within this, as in the tests above.
     f.dispatch_for(Duration::from_millis(300));
     assert!(!scripts.exists("daemon"), "the daemon waits for the portal");
     assert!(
@@ -610,7 +611,7 @@ fn a_portal_that_isnt_replaced_holds_the_command_only_for_the_wait() {
     assert!(asked.elapsed() >= wait);
     let logs = logs.text();
     assert!(
-        logs.contains("the restarted portal didn't answer within 400ms"),
+        logs.contains("can't hear from the restarted portal within 400ms"),
         "{logs}"
     );
 }
