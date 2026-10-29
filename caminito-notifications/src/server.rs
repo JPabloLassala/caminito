@@ -464,7 +464,7 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         },
     );
     let sounds = guard.sounds.clone();
-    let sound = sound.filter(|_| guard.settings.boolean(settings::SOUND));
+    let sound = sound.filter(|_| settings::sound(&guard.settings));
     if guard.shown.len() < MAX_SHOWN {
         drop(guard);
         show(state, id);
@@ -587,12 +587,12 @@ impl State {
     /// and image while Previews are off, and without its app's icon while that's off.
     fn shown_bubble(&self, bubble: &Bubble) -> Bubble {
         let mut shown = bubble.clone();
-        if !self.settings.boolean(settings::PREVIEWS) {
+        if !settings::previews(&self.settings) {
             settings::NO_PREVIEW.clone_into(&mut shown.summary);
             shown.body.clear();
             shown.image = None;
         }
-        if !self.settings.boolean(settings::APP_ICON) {
+        if !settings::app_icon(&self.settings) {
             shown.app_icon = None;
         }
         shown

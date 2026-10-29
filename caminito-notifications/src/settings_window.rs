@@ -94,30 +94,20 @@ fn general(settings: &gio::Settings) -> gtk::Widget {
             &Delivery::ALL.map(|delivery| (delivery.nick(), delivery.label())),
         ),
     );
-    apps.attach(
-        &check(settings, settings::SOUND, "Play a sound"),
-        0,
-        1,
+    full_row(&apps, 1, &check(settings, settings::SOUND, "Play a sound"));
+    full_row(
+        &apps,
         2,
-        1,
-    );
-    apps.attach(
         &check(settings, settings::PREVIEWS, "Show previews in bubbles"),
-        0,
-        2,
-        2,
-        1,
     );
-    apps.attach(
+    full_row(
+        &apps,
+        3,
         &check(
             settings,
             settings::APP_ICON,
             "Show the app's icon in bubbles",
         ),
-        0,
-        3,
-        2,
-        1,
     );
 
     let bubbles = section(&page, "Bubbles");
@@ -139,16 +129,14 @@ fn general(settings: &gio::Settings) -> gtk::Widget {
     row(&bubbles, 1, "Stay for", &seconds);
 
     let quiet = section(&page, "Do Not Disturb");
-    quiet.attach(
+    full_row(
+        &quiet,
+        0,
         &check(
             settings,
             settings::CRITICAL_BREAKS_THROUGH,
             "Critical notifications break through",
         ),
-        0,
-        0,
-        2,
-        1,
     );
     let schedule = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     schedule.append(&check(
@@ -167,28 +155,24 @@ fn general(settings: &gio::Settings) -> gtk::Widget {
             .get()
             .build();
     }
-    quiet.attach(&schedule, 0, 1, 2, 1);
-    quiet.attach(
+    full_row(&quiet, 1, &schedule);
+    full_row(
+        &quiet,
+        2,
         &check(
             settings,
             settings::DO_NOT_DISTURB_WHILE_FULLSCREEN,
             "While a window is fullscreen",
         ),
-        0,
-        2,
-        2,
-        1,
     );
-    quiet.attach(
+    full_row(
+        &quiet,
+        3,
         &check(
             settings,
             settings::DO_NOT_DISTURB_WHILE_SCREENCASTING,
             "While the screen is shared or recorded",
         ),
-        0,
-        3,
-        2,
-        1,
     );
 
     page.upcast()
@@ -213,6 +197,11 @@ fn row(grid: &gtk::Grid, line: i32, label: &str, control: &impl IsA<gtk::Widget>
     let label = gtk::Label::builder().label(label).xalign(0.0).build();
     grid.attach(&label, 0, line, 1, 1);
     grid.attach(control, 1, line, 1, 1);
+}
+
+/// A control the width of `grid`, at `line`.
+fn full_row(grid: &gtk::Grid, line: i32, control: &impl IsA<gtk::Widget>) {
+    grid.attach(control, 0, line, 2, 1);
 }
 
 /// A check button bound to the boolean `key`.

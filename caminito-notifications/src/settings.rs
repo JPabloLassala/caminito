@@ -47,6 +47,21 @@ pub fn installed() -> Option<gio::Settings> {
     Some(gio::Settings::new(SCHEMA))
 }
 
+/// Whether a new notification plays its sound.
+pub(crate) fn sound(settings: &gio::Settings) -> bool {
+    settings.boolean(SOUND)
+}
+
+/// Whether a bubble shows its notification's summary, body and image.
+pub(crate) fn previews(settings: &gio::Settings) -> bool {
+    settings.boolean(PREVIEWS)
+}
+
+/// Whether a bubble shows its app's icon.
+pub(crate) fn app_icon(settings: &gio::Settings) -> bool {
+    settings.boolean(APP_ICON)
+}
+
 /// How long a bubble stays when its app leaves that to the daemon.
 pub(crate) fn timeout(settings: &gio::Settings) -> Duration {
     Duration::from_secs(settings.uint(TIMEOUT).into())
@@ -70,8 +85,8 @@ impl Delivery {
     /// What the user reads for it.
     pub fn label(self) -> &'static str {
         match self {
-            Delivery::Bubble => "Bubble and Notification center",
-            Delivery::History => "Notification center only",
+            Delivery::Bubble => "Bubble and history",
+            Delivery::History => "History only",
             Delivery::Off => "Off",
         }
     }

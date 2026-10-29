@@ -26,11 +26,14 @@ use settings_window::SettingsWindow;
 
 /// The application's action that opens the settings window.
 const OPEN_SETTINGS: &str = "settings";
+/// The option the control center's entry runs the program with, for the settings window.
+const SETTINGS_OPTION: &str = "settings";
 
-/// What the primary instance runs: the server and the private API.
+/// What the primary instance runs: the server, and the private API unless it can't be
+/// exported, which the bubbles don't need.
 struct Daemon {
     _server: Server,
-    _private_api: PrivateApi,
+    _private_api: Option<PrivateApi>,
 }
 
 fn main() -> glib::ExitCode {
@@ -38,7 +41,7 @@ fn main() -> glib::ExitCode {
         .application_id("org.mate.Caminito.Notifications")
         .build();
     application.add_main_option(
-        "settings",
+        SETTINGS_OPTION,
         glib::Char::from(0),
         glib::OptionFlags::NONE,
         glib::OptionArg::None,
@@ -96,21 +99,19 @@ fn main() -> glib::ExitCode {
                 }
             }
         });
-        match private_api {
-            Ok(private_api) => {
-                *daemon.borrow_mut() = Some(Daemon {
-                    _server: server,
-                    _private_api: private_api,
-                });
-            }
-            Err(err) => glib::g_warning!(DOMAIN, "{err}"),
-        }
+        let private_api = private_api
+            .inspect_err(|err| glib::g_warning!(DOMAIN, "{err}"))
+            .ok();
+        *daemon.borrow_mut() = Some(Daemon {
+            _server: server,
+            _private_api: private_api,
+        });
     });
 
     // `--settings` asks the primary instance for the window, which this is too when no
     // daemon runs yet.
     application.connect_handle_local_options(|application, options| {
-        if !options.contains("settings") {
+        if !options.contains(SETTINGS_OPTION) {
             return ControlFlow::Continue(());
         }
         if let Err(err) = application.register(gio::Cancellable::NONE) {
