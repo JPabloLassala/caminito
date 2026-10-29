@@ -22,6 +22,17 @@ pub struct App {
     pub icon: Option<Icon>,
 }
 
+impl App {
+    /// The app `key` names, with no desktop entry to tell its name or icon.
+    pub fn unnamed(key: &str) -> App {
+        App {
+            key: key.to_owned(),
+            name: key.to_owned(),
+            icon: None,
+        }
+    }
+}
+
 /// The apps of `known`, the known apps' keys, and the installed ones that say they send
 /// notifications, by their names.
 pub fn listed(known: &[String]) -> Vec<App> {
@@ -45,17 +56,12 @@ fn listed_in(dirs: &[PathBuf], known: &[String]) -> Vec<App> {
         .map(
             |key| match entries.iter().find(|entry| entry.app.key == *key) {
                 Some(entry) => entry.app.clone(),
-                None => App {
-                    key: key.clone(),
-                    name: key.clone(),
-                    icon: None,
-                },
+                None => App::unnamed(key),
             },
         )
         .collect();
     for entry in &entries {
-        let shown = !entry.no_display && declared.contains(&entry.app.key);
-        if shown && !apps.iter().any(|app| app.key == entry.app.key) {
+        if declared.contains(&entry.app.key) && !apps.iter().any(|app| app.key == entry.app.key) {
             apps.push(entry.app.clone());
         }
     }
@@ -66,7 +72,6 @@ fn listed_in(dirs: &[PathBuf], known: &[String]) -> Vec<App> {
 /// An installed desktop entry.
 struct Entry {
     app: App,
-    no_display: bool,
     uses_notifications: bool,
 }
 
@@ -96,7 +101,6 @@ fn entries(dirs: &[PathBuf]) -> Vec<Entry> {
                 name: name.to_string(),
                 icon: file.string(GROUP, "Icon").ok().and_then(|text| icon(&text)),
             },
-            no_display: file.boolean(GROUP, "NoDisplay").unwrap_or(false),
             uses_notifications: file
                 .boolean(GROUP, "X-GNOME-UsesNotifications")
                 .unwrap_or(false),
@@ -217,13 +221,14 @@ mod tests {
             names,
             [
                 ("chat", "chat"),
+                ("daemon", "Daemon"),
                 ("org.kde.kmail2", "KMail"),
                 ("mail", "My mail"),
                 ("Script", "Script"),
                 ("tool", "Tool"),
             ]
         );
-        assert_eq!(apps[2].icon, Some(Icon::Name("icon-My mail".to_owned())));
-        assert_eq!(apps[3].icon, None);
+        assert_eq!(apps[3].icon, Some(Icon::Name("icon-My mail".to_owned())));
+        assert_eq!(apps[4].icon, None);
     }
 }

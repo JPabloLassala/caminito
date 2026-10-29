@@ -9,14 +9,17 @@
 
 use std::time::Duration;
 
+use gio::glib;
 use gio::prelude::*;
+
+use crate::DOMAIN;
 
 /// The schema of the notification settings.
 pub const SCHEMA: &str = "org.mate.Caminito.notifications";
 /// The relocatable schema of a Notifying app's own settings.
 pub const APP_SCHEMA: &str = "org.mate.Caminito.notifications.app";
 /// Where the Notifying apps' paths are.
-pub const APPS_PATH: &str = "/org/mate/caminito/notifications/apps/";
+const APPS_PATH: &str = "/org/mate/caminito/notifications/apps/";
 
 /// The default Delivery, a [`Delivery`]'s nick.
 pub const DELIVERY: &str = "delivery";
@@ -83,13 +86,35 @@ pub struct Settings {
 /// What one Notifying app's notifications get, its own settings or the default's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppSettings {
+    /// What the app's notifications get.
     pub delivery: Delivery,
+    /// Whether they play a sound.
     pub sound: bool,
+    /// Whether their bubbles show their summary, body and image.
     pub previews: bool,
+    /// Whether their bubbles show the app's icon.
     pub app_icon: bool,
+    /// Whether they're grouped, in bubbles and the Notification center.
     pub group: bool,
+    /// Whether the app's Dock item shows its Badge.
     pub badge: bool,
+    /// Whether they break through Do Not Disturb.
     pub breaks_through: bool,
+}
+
+impl AppSettings {
+    /// The boolean `key` of [`APP_KEYS`], or `None` for Delivery or a key that isn't one.
+    pub fn flag(&self, key: &str) -> Option<bool> {
+        match key {
+            SOUND => Some(self.sound),
+            PREVIEWS => Some(self.previews),
+            APP_ICON => Some(self.app_icon),
+            GROUP => Some(self.group),
+            BADGE => Some(self.badge),
+            BREAKS_THROUGH => Some(self.breaks_through),
+            _ => None,
+        }
+    }
 }
 
 impl Settings {
@@ -156,8 +181,10 @@ impl Settings {
         let own = self.app(app);
         own.delay();
         for key in APP_KEYS {
-            if own.user_value(key).is_none() {
-                let _ = own.set_value(key, &self.global.value(key));
+            if own.user_value(key).is_none()
+                && let Err(err) = own.set_value(key, &self.global.value(key))
+            {
+                glib::g_warning!(DOMAIN, "can't set {app}'s {key}: {err}");
             }
         }
         own.apply();
@@ -189,7 +216,9 @@ impl Settings {
             return;
         }
         known.push(app.to_owned());
-        let _ = self.global.set_strv(KNOWN_APPS, known);
+        if let Err(err) = self.global.set_strv(KNOWN_APPS, known) {
+            glib::g_warning!(DOMAIN, "can't add {app} to the known apps: {err}");
+        }
     }
 
     /// How long a bubble stays when its app leaves that to the daemon.
@@ -202,7 +231,7 @@ impl Settings {
 /// byte other than an ASCII letter, a digit, `-` or `.` written as `_` and two lowercase hex
 /// digits, so that every key has a path of its own. The empty key, which a path can't hold,
 /// is a lone `_`, which no other key's is.
-pub fn app_path(app: &str) -> String {
+fn app_path(app: &str) -> String {
     let mut path = APPS_PATH.to_owned();
     if app.is_empty() {
         path.push('_');

@@ -420,11 +420,11 @@
     A Notifying app's own notification settings (CMN-262), relocatable, at
     /org/mate/caminito/notifications/apps/<app>/, where <app> is the app's key with each byte
     other than an ASCII letter, a digit, "-" or "." written as "_" and its two lowercase hex
-    digits: "Mail Beta" is at apps/Mail_20Beta/, and the empty key at apps/_/. Each key the path doesn't set is
-    org.mate.Caminito.notifications's of the same name, so an app without its own path follows
-    the default; the settings window sets all seven at the app's first change, and resets them
-    all for "Use the default". The defaults below are only the schema's: read the global key
-    for a key the path doesn't set.
+    digits: "Mail Beta" is at apps/Mail_20Beta/, and the empty key at apps/_/. Each key the
+    path doesn't set is org.mate.Caminito.notifications's of the same name, read one key at a
+    time; the defaults below are only the schema's. An app has its own settings while its path
+    sets any key, so a writer that gives it its own sets all seven at once, as the settings
+    window does at the app's first change, and resets all seven for "Use the default".
   -->
   <schema id="org.mate.Caminito.notifications.app">
     <key name="delivery" enum="org.mate.Caminito.NotificationDelivery">

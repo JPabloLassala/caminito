@@ -5,11 +5,11 @@
 //! table of the Notifying apps' own settings, the default first (CMN-262).
 
 use std::cell::{Cell, RefCell};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 
 use caminito_notifications::apps::{self, App};
 use caminito_notifications::server::Icon;
-use caminito_notifications::settings::{self, AppSettings, Corner, Delivery, Settings};
+use caminito_notifications::settings::{self, Corner, Delivery, Settings};
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 
@@ -28,7 +28,7 @@ const FLAGS: [(&str, &str, &str); 6] = [
     (settings::BADGE, "Badge", "Show a badge on its Dock item"),
     (
         settings::BREAKS_THROUGH,
-        "Breaks DND",
+        "Breaks through",
         "Break through Do Not Disturb",
     ),
 ];
@@ -513,11 +513,7 @@ impl AppsPage {
         let row = self.row_of_app(key).unwrap_or_else(|| {
             let listed = apps::listed(&[key.to_owned()]);
             let app = listed.into_iter().find(|app| app.key == key);
-            self.add(Some(app.unwrap_or_else(|| App {
-                key: key.to_owned(),
-                name: key.to_owned(),
-                icon: None,
-            })))
+            self.add(Some(app.unwrap_or_else(|| App::unnamed(key))))
         });
         self.search.set_text("");
         self.list.select_row(Some(&row.row));
@@ -530,11 +526,13 @@ impl AppsPage {
     /// Adds the row of `app`, or of the default for `None`.
     fn add(self: &Rc<Self>, app: Option<App>) -> Rc<Row> {
         let cells = cells(&self.columns);
-        let image = match app.as_ref().and_then(|app| app.icon.as_ref()) {
-            _ if app.is_none() => gtk::Image::from_icon_name("preferences-system-notifications"),
-            Some(Icon::Name(name)) => gtk::Image::from_icon_name(name),
-            Some(Icon::File(path)) => gtk::Image::from_file(path),
-            None => gtk::Image::from_icon_name("application-x-executable"),
+        let image = match &app {
+            None => gtk::Image::from_icon_name("preferences-system-notifications"),
+            Some(app) => match &app.icon {
+                Some(Icon::Name(name)) => gtk::Image::from_icon_name(name),
+                Some(Icon::File(path)) => gtk::Image::from_file(path),
+                None => gtk::Image::from_icon_name("application-x-executable"),
+            },
         };
         image.set_pixel_size(20);
         let name = gtk::Label::builder()
@@ -618,18 +616,19 @@ impl AppsPage {
                 else {
                     return;
                 };
-                set(
-                    &settings,
-                    &weak,
-                    settings::DELIVERY,
-                    delivery.nick().to_variant(),
-                );
+                if let Some(row) = weak.upgrade() {
+                    row.set(&settings, settings::DELIVERY, &delivery.nick().to_variant());
+                }
             }
         });
         for ((key, _, _), check) in FLAGS.iter().zip(&row.checks) {
             check.connect_toggled({
                 let (settings, weak) = (settings.clone(), weak.clone());
-                move |check| set(&settings, &weak, key, check.is_active().to_variant())
+                move |check| {
+                    if let Some(row) = weak.upgrade() {
+                        row.set(&settings, key, &check.is_active().to_variant());
+                    }
+                }
             });
         }
         row.reset.connect_clicked({
@@ -651,28 +650,26 @@ impl AppsPage {
     }
 }
 
-/// Writes `value` to `key` for the row `row`: the default's, or the app's own, which it
-/// first gets all of if it followed the default.
-fn set(settings: &Settings, row: &Weak<Row>, key: &str, value: glib::Variant) {
-    let Some(row) = row.upgrade() else {
-        return;
-    };
-    if row.syncing.get() {
-        return;
-    }
-    let written = match (&row.app, &row.own) {
-        (Some(app), Some(own)) => {
-            settings.make_own(&app.key);
-            own.set_value(key, &value)
-        }
-        _ => settings.global().set_value(key, &value),
-    };
-    if let Err(err) = written {
-        glib::g_warning!(caminito_notifications::DOMAIN, "can't set {key}: {err}");
-    }
-}
-
 impl Row {
+    /// Writes `value` to `key`: the default's, or the app's own, which it first gets all of if
+    /// it followed the default. What [`Row::sync`] shows isn't the user's change, and isn't
+    /// written.
+    fn set(&self, settings: &Settings, key: &str, value: &glib::Variant) {
+        if self.syncing.get() {
+            return;
+        }
+        let written = match (&self.app, &self.own) {
+            (Some(app), Some(own)) => {
+                settings.make_own(&app.key);
+                own.set_value(key, value)
+            }
+            _ => settings.global().set_value(key, value),
+        };
+        if let Err(err) = written {
+            glib::g_warning!(caminito_notifications::DOMAIN, "can't set {key}: {err}");
+        }
+    }
+
     /// Shows what the app gets, the default's for an app that follows it, with the settings
     /// its Delivery leaves without effect greyed out.
     fn sync(&self, settings: &Settings) {
@@ -688,7 +685,7 @@ impl Row {
             .unwrap_or(0);
         self.delivery.set_selected(position);
         for ((key, _, _), check) in FLAGS.iter().zip(&self.checks) {
-            check.set_active(flag(&values, key));
+            check.set_active(values.flag(key).unwrap_or_default());
             check.set_sensitive(settings::applies(values.delivery, key));
         }
         let own = self
@@ -699,18 +696,6 @@ impl Row {
         self.reset.set_opacity(if own { 1.0 } else { 0.0 });
         self.reset.set_sensitive(own);
         self.syncing.set(false);
-    }
-}
-
-/// The value of the boolean `key` of [`FLAGS`] in `values`.
-fn flag(values: &AppSettings, key: &str) -> bool {
-    match key {
-        settings::SOUND => values.sound,
-        settings::PREVIEWS => values.previews,
-        settings::APP_ICON => values.app_icon,
-        settings::GROUP => values.group,
-        settings::BADGE => values.badge,
-        _ => values.breaks_through,
     }
 }
 
