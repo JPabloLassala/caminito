@@ -6,7 +6,8 @@ It has the Notification history's part of org.mate.Caminito.Notifications as the
 Notifications applet uses it: List, Dismiss, ClearApp, ClearAll, InvokeAction, Reply, Counts
 and OpenSettings, with the HistoryChanged and CountsChanged signals. As in the daemon, an
 entry leaves the history when it's dismissed or one of its actions is used, unless it's
-resident, and List gives the newest first.
+resident, and List gives the newest first. It refuses what the daemon refuses: an entry that
+isn't there, and an action an entry hasn't, "default" without a default action.
 
 org.caminito.NotificationsMock is for a test or a check script:
 
@@ -116,6 +117,11 @@ def ClearAll(self):
 def InvokeAction(self, entry_id, key, token):
     self.log_lines.append(f'InvokeAction {int(entry_id)} {key} "{token}"')
     entry = _find(self, int(entry_id))
+    if not (key == "default" and entry["has_default"]) and key not in dict(entry["actions"]):
+        raise dbus.exceptions.DBusException(
+            f"notification {int(entry_id)} has no action {key}",
+            name="org.freedesktop.DBus.Error.InvalidArgs",
+        )
     if not entry["resident"]:
         _remove(self, {int(entry_id)})
 
@@ -124,7 +130,11 @@ def InvokeAction(self, entry_id, key, token):
 def Reply(self, entry_id, text):
     self.log_lines.append(f'Reply {int(entry_id)} "{text}"')
     _find(self, int(entry_id))
-    _remove(self, {int(entry_id)})
+    # Its entries have no reply field, as List says (CMN-266).
+    raise dbus.exceptions.DBusException(
+        f"notification {int(entry_id)} has no reply field",
+        name="org.freedesktop.DBus.Error.InvalidArgs",
+    )
 
 
 @dbus.service.method(MAIN_IFACE, in_signature="", out_signature="a{su}")

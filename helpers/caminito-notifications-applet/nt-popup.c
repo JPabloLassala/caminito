@@ -11,8 +11,8 @@
 /* The popup's width, and the tallest the list grows before it scrolls. */
 #define WIDTH        380
 #define LIST_HEIGHT  480
-#define APP_ICON     16
-#define IMAGE        48
+#define APP_ICON_SIZE 16
+#define IMAGE_SIZE   48
 /* The body's lines before it's cut short. */
 #define BODY_LINES   4
 
@@ -112,7 +112,7 @@ load_icon (const char *icon, int size)
   return pixbuf;
 }
 
-/* image-data's pixels as (iiibiiay), scaled to IMAGE each way at most, keeping their
+/* image-data's pixels as (iiibiiay), scaled to IMAGE_SIZE each way at most, keeping their
    shape; NULL if they don't add up. */
 static GdkPixbuf *
 load_pixels (GVariant *image)
@@ -127,7 +127,7 @@ load_pixels (GVariant *image)
   g_variant_get (image, "(iiibii@ay)", &width, &height, &rowstride, &alpha, &bits, &channels,
                  &data);
   if (width <= 0 || height <= 0 || bits != 8 || channels != (alpha ? 4 : 3)
-      || rowstride < width * channels
+      || (gsize) rowstride < (gsize) width * channels
       || g_variant_get_size (data) < (gsize) rowstride * (height - 1) + (gsize) width * channels)
     {
       g_debug ("can't draw a notification's image: its pixels don't add up");
@@ -136,7 +136,7 @@ load_pixels (GVariant *image)
   bytes = g_variant_get_data_as_bytes (data);
   pixbuf = gdk_pixbuf_new_from_bytes (bytes, GDK_COLORSPACE_RGB, alpha, bits, width, height,
                                       rowstride);
-  scale = (double) IMAGE / MAX (width, height);
+  scale = (double) IMAGE_SIZE / MAX (width, height);
   return gdk_pixbuf_scale_simple (pixbuf, MAX (1, (int) (width * scale)),
                                   MAX (1, (int) (height * scale)), GDK_INTERP_BILINEAR);
 }
@@ -204,7 +204,7 @@ app_icon (const NtEntry *entry)
   GtkWidget *icon;
 
   if (file != NULL)
-    pixbuf = load_icon (file, APP_ICON);
+    pixbuf = load_icon (file, APP_ICON_SIZE);
   if (pixbuf != NULL)
     return gtk_image_new_from_pixbuf (pixbuf);
   icon = gtk_image_new ();
@@ -218,7 +218,7 @@ app_icon (const NtEntry *entry)
   else
     gtk_image_set_from_icon_name (GTK_IMAGE (icon), "application-x-executable",
                                   GTK_ICON_SIZE_MENU);
-  gtk_image_set_pixel_size (GTK_IMAGE (icon), APP_ICON);
+  gtk_image_set_pixel_size (GTK_IMAGE (icon), APP_ICON_SIZE);
   return icon;
 }
 
@@ -251,7 +251,7 @@ image_of (const NtEntry *entry)
   if (entry->image_pixels != NULL)
     pixbuf = load_pixels (entry->image_pixels);
   else
-    pixbuf = load_icon (entry->image_icon, IMAGE);
+    pixbuf = load_icon (entry->image_icon, IMAGE_SIZE);
   image = gtk_image_new_from_pixbuf (pixbuf);
   gtk_widget_set_name (image, "image");
   gtk_widget_set_valign (image, GTK_ALIGN_START);

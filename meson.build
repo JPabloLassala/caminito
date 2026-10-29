@@ -144,9 +144,9 @@ install_data(
 # notification area (CMN-202), the Bluetooth applet beside it, the Power applet beside that
 # (CMN-100) and the Notifications applet beside the clock (CMN-260), and the override that
 # makes it the default. Like caminito-bluetooth's entries these are in the normal XDG
-# directories, not share/caminito/xdg/: the layout is right
-# under X11 MATE too, and the panel finds it by name in its own layouts directory. Only a user
-# with no panel settings gets it (the applets are in Add to Panel for the rest).
+# directories, not share/caminito/xdg/: the layout is right under X11 MATE too, and the panel
+# finds it by name in its own layouts directory. Only a user with no panel settings gets it (the
+# applets are in Add to Panel for the rest).
 # The package's hook compiles the override with the schemas.
 install_data(
   'data/caminito.layout',

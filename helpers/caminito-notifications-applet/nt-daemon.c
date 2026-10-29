@@ -185,8 +185,10 @@ on_called (GObject *source, GAsyncResult *result, gpointer data)
   g_autoptr (GVariant) reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result,
                                                               &error);
 
-  /* An entry gone in the meantime is refused: the next List hasn't it either. */
-  if (reply == NULL && !daemon_is_gone (error))
+  /* An entry gone in the meantime, by a second click or its app, is refused: the next List
+     hasn't it either. */
+  if (reply == NULL && !daemon_is_gone (error)
+      && !g_error_matches (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS))
     g_warning ("can't call %s on the notification daemon: %s", method, error->message);
 }
 
@@ -195,7 +197,8 @@ call (NtDaemon *daemon, const char *method, GVariant *parameters)
 {
   if (daemon->connection == NULL)
     {
-      g_variant_unref (g_variant_ref_sink (parameters));
+      if (parameters != NULL)
+        g_variant_unref (g_variant_ref_sink (parameters));
       return;
     }
   /* No cancellable: the call goes out even as the applet is freed. */

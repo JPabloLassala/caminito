@@ -32,7 +32,7 @@ static void
 update (Applet *applet)
 {
   const GPtrArray *entries = nt_daemon_entries (applet->daemon);
-  g_autofree char *tooltip = nt_state_tooltip (entries->len);
+  g_autofree char *tooltip = NULL;
 
   nt_popup_update (applet->content, entries, g_get_real_time () / G_USEC_PER_SEC);
   /* No daemon, no icon: the applet comes back with it. */
@@ -43,6 +43,7 @@ update (Applet *applet)
       return;
     }
   gtk_widget_set_visible (applet->dot, entries->len > 0);
+  tooltip = nt_state_tooltip (entries->len);
   gtk_widget_set_tooltip_text (GTK_WIDGET (applet->applet), tooltip);
   gtk_widget_show (GTK_WIDGET (applet->applet));
 }

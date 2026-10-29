@@ -61,21 +61,21 @@ GPtrArray *
 nt_entries_from_list (GVariant *reply)
 {
   g_autoptr (GVariant) entries = NULL;
-  GPtrArray *read;
+  GPtrArray *read_entries;
   GVariantIter iter;
   GVariant *child;
 
   if (!g_variant_is_of_type (reply, G_VARIANT_TYPE (NT_LIST_TYPE)))
     return NULL;
   entries = g_variant_get_child_value (reply, 0);
-  read = g_ptr_array_new_with_free_func ((GDestroyNotify) nt_entry_free);
+  read_entries = g_ptr_array_new_with_free_func ((GDestroyNotify) nt_entry_free);
   g_variant_iter_init (&iter, entries);
   while ((child = g_variant_iter_next_value (&iter)) != NULL)
     {
-      g_ptr_array_add (read, entry_from_variant (child));
+      g_ptr_array_add (read_entries, entry_from_variant (child));
       g_variant_unref (child);
     }
-  return read;
+  return read_entries;
 }
 
 char *

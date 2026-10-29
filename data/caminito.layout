@@ -1,8 +1,9 @@
 # Caminito's default panel layout (CMN-105): mate-panel's own default.layout, from the commit the
 # patched package is built from (58ac6c1), with the Network applet added to the top panel,
 # beside the notification area (CMN-202, ADR 0035, ADR 0041), the Bluetooth applet beside it,
-# and the Power applet beside that (CMN-100). The Notifications applet is between the Power applet
-# and the clock, right beside the clock (CMN-260, ADR 0051).
+# and the Power applet beside that (CMN-100). The Notifications applet is right beside the clock
+# (CMN-260, ADR 0051), so that the notification area, Network, Bluetooth and Power come between
+# it and the Power applet's end of the row.
 # 90_caminito.gschema.override makes it the default. Only a user with no panel settings gets it:
 # anyone else adds the applets with Add to Panel. The Thermal applet isn't in it: it's in Add to
 # Panel only (270).
