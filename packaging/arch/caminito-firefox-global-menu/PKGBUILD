@@ -1,0 +1,25 @@
+# Maintainer: jpablo <jpablolassala@gmail.com>
+
+# Firefox's menubar in the panel's global menu, set up for every profile (ADR 0053): two default
+# preferences, and an autoconfig file that keeps the empty Menu Bar toolbar hidden. It builds
+# nothing, so it's versioned by hand and not a -git package: its files are beside the PKGBUILD,
+# as its AUR repo has them (ADR 0052).
+pkgname=caminito-firefox-global-menu
+pkgver=1
+pkgrel=1
+pkgdesc="Caminito's global menu for Firefox"
+arch=(any)
+url='https://github.com/JPabloLassala/caminito'
+license=(GPL-3.0-or-later)
+# Firefox loads libdbusmenu if it's there, and serves no global menu without it.
+depends=(firefox libdbusmenu-glib libdbusmenu-gtk3)
+source=(caminito-firefox-global-menu.js caminito-firefox-global-menu.cfg)
+sha256sums=('8bbfff92f9877f47ebc0e4f2f7561517edd56a8b24ab502bdee687dbb85e952f'
+            '3ee767f340e19ff75e36dc58a7947bddd4f696005d42ee7858491a01a90668dd')
+
+package() {
+  # Firefox reads the preferences in defaults/pref, and the autoconfig file they name from its
+  # own directory.
+  install -Dm644 caminito-firefox-global-menu.js -t "$pkgdir/usr/lib/firefox/defaults/pref"
+  install -Dm644 caminito-firefox-global-menu.cfg -t "$pkgdir/usr/lib/firefox"
+}

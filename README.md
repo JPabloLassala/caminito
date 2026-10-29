@@ -363,9 +363,16 @@ panel, and the focused window's menubar is drawn there instead of in the window.
   that was already running when the applet was added keeps its menubar in its window until it's
   started again, and one that was running when the applet was removed has no menubar until
   it's started again.
-- **Firefox** has it off by default. Set both `widget.gtk.global-menu.enabled` and
-  `widget.gtk.global-menu.wayland.enabled` to `true` in `about:config`, and install
-  `libdbusmenu-glib` and `libdbusmenu-gtk3`, which Firefox loads if they're there. Like a Qt
+- **Firefox** has its menus in the panel once `caminito-firefox-global-menu` is installed
+  (build it from `packaging/arch/caminito-firefox-global-menu` as `caminito-git` is built). For
+  every profile, it turns on `widget.gtk.global-menu.enabled` and
+  `widget.gtk.global-menu.wayland.enabled`, which `about:config` can turn off again, and pulls in
+  `libdbusmenu-glib` and `libdbusmenu-gtk3`, which Firefox loads if they're there. It also keeps
+  the autohide Menu Bar toolbar hidden while the menus are in the panel: Firefox would otherwise
+  show it, empty, above the tabs when a menu is opened from the panel
+  ([ADR 0053](docs/adr/0053-firefox-s-global-menu-is-set-up-by-an-autoconfig-package.md)). It
+  does so through Firefox's autoconfig, of which Firefox reads one, so it can't be used beside
+  another `mozilla.cfg`. Without the package, set the two prefs to `true` yourself. Like a Qt
   app, a window follows the applet only from Firefox's next start.
 - **VS Code, VSCodium, Code - OSS and Cursor** have their menus in the panel on native Wayland
   with the custom title bar, the default, once `caminito-vscode-git` is installed (build it

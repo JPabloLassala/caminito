@@ -34,13 +34,13 @@ available_version() {
 }
 
 # In dependency order: each package is installed as it's built, so the next one builds
-# against it. The global menu's three packages, which nothing depends on, come after
+# against it. The global menu's four packages, which nothing depends on, come after
 # caminito-git: vala-panel-appmenu-mate-caminito links to mate-panel-caminito's applet library.
 # mate-applets-caminito links to it too, and only caminito-desktop depends on it.
 for package in mate-session-manager-caminito mate-panel-caminito mate-settings-daemon-caminito \
   mate-control-center-caminito caja-caminito mate-utils-caminito mate-power-manager-caminito \
   caminito-git vala-panel-appmenu-mate-caminito appmenu-gtk-module-caminito caminito-vscode-git \
-  mate-applets-caminito caminito-desktop; do
+  caminito-firefox-global-menu mate-applets-caminito caminito-desktop; do
   cd "$root/packaging/arch/$package"
   # A patched package lists its patches by bare filename, as its AUR repo has them, so its
   # component's series and Arch's build patches are copied here first (ADR 0030, ADR 0052).

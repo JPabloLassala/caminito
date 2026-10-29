@@ -1,7 +1,7 @@
 # 17. Caminito brokers the global menu, and a patched vala-panel-appmenu draws it
 
 Date: 2026-10-07
-Status: Accepted. Qualified on 2026-10-10 by ticket 111: classic GTK apps need the patched `appmenu-gtk-module-caminito`, not the stock module, and no gschema override.
+Status: Accepted. Qualified on 2026-10-10 by ticket 111: classic GTK apps need the patched `appmenu-gtk-module-caminito`, not the stock module, and no gschema override. Qualified on 2026-10-29 by ADR 0053: `caminito-firefox-global-menu` sets Firefox's two prefs, for a user who installs it.
 
 ## Context
 
