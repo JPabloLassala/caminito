@@ -2,9 +2,9 @@
  * The Notification center (CMN-260): the Notifications applet's popup, in the shared popup
  * window. The Notification history as a flat list, newest first, each entry with its app's
  * icon and name, its age, a close button, its summary, body and image, its action buttons
- * and its reply field (CMN-266); "No notifications" when it's empty; and "Clear all" at the bottom. Grouping by
- * app (CMN-265) and the Do Not Disturb row (CMN-263) come later. It draws NtEntries and calls
- * back for what the user does, so that it knows nothing of D-Bus.
+ * and its reply field (CMN-266); "No notifications" when it's empty; and "Clear all" at the
+ * bottom. Grouping by app (CMN-265) and the Do Not Disturb row (CMN-263) come later. It draws
+ * NtEntries and calls back for what the user does, so that it knows nothing of D-Bus.
  */
 
 #pragma once

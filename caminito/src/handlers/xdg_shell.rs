@@ -452,8 +452,8 @@ impl Caminito {
     /// with a serial it had since the keyboard entered it, which any of its input events
     /// gives it, or since the pointer entered it, for the click that focused it. A layer
     /// surface that never takes the keyboard, as a notification bubble, is clicked without
-    /// it: its client's token is tied to input with the pointer still on it and a serial no
-    /// older than the press (CMN-266).
+    /// it: its client's token is tied to input with the pointer on it since the press and a
+    /// serial no older than the press (CMN-266).
     fn is_from_input(&self, data: &XdgActivationTokenData) -> bool {
         let Some((serial, _)) = &data.serial else {
             return false;
@@ -472,11 +472,17 @@ impl Caminito {
         let has_pointer = pointer
             .current_focus()
             .is_some_and(|focus| asker(focus.wl_surface()));
+        // A press before the pointer last entered is an old click, and the entry a hover.
         let pressed_layer = self
             .layer_press
             .as_ref()
             .filter(|(client, _)| Some(client) == data.client_id.as_ref())
-            .map(|(_, press)| *press);
+            .map(|(_, press)| *press)
+            .filter(|press| {
+                pointer
+                    .last_enter()
+                    .is_some_and(|enter| press.is_no_older_than(&enter))
+            });
         has_keyboard && (since(keyboard.last_enter()) || has_pointer && since(pointer.last_enter()))
             || has_pointer && since(pressed_layer)
     }

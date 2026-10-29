@@ -15,7 +15,7 @@ A token is only honoured when it's tied to user input (165), which asked that it
 
 - **`org.mate.Caminito` gets `ActivateApplication(s app)`.** `app` is a Notifying app's key. Caminito activates the app's most recently focused window, minimised or on another workspace too, as a click on its Task item does: policy's `activate`, which switches the workspace, unminimises, raises and focuses. A window is the app's when its app id is `app` in any case, or when the desktop entry its app id resolves to has the ID `app`. An app with no window that ever had the focus is left as it is.
 - **The daemon calls it for a click without a default action,** without auto-start and without waiting, and closes the notification unless it's resident. Outside a Session there's no Caminito, and the click only closes it.
-- **A press on a layer surface ties its client's tokens to input.** Caminito keeps the client and the serial of the last press on a layer surface, and a token from that client with a serial no older than the press is tied to input while the client still has the pointer. A hover alone, or a token asked for once the pointer has gone, isn't.
+- **A press on a layer surface ties its client's tokens to input.** Caminito keeps the client and the serial of the last press on a layer surface, and a token from that client with a serial no older than the press is tied to input while the pointer has stayed on the client since the press. A hover alone, a token asked for once the pointer has gone, or one after it left and came back, isn't.
 
 ## Consequences
 

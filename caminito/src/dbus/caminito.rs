@@ -563,9 +563,11 @@ impl Caminito {
     /// Activates the most recently focused window of the app `app` names, if it has one: see
     /// `ActivateApplication`.
     fn activate_application(&mut self, app: &str) {
+        // Collected first: the desktop entries are looked up through the frame context, which
+        // needs `self` while policy's windows would still be borrowed.
         let candidates: Vec<(WindowId, String)> = self
             .policy
-            .by_recent_focus()
+            .all_by_recent_focus()
             .filter(|id| !self.policy.is_desktop_or_dock(*id))
             .filter_map(|id| Some((id, self.policy.window(id)?.app_id()?)))
             .collect();

@@ -2398,7 +2398,7 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Every window by when it last had focus, most recent first, minimised ones and those on
     /// other workspaces too. A window that never had the focus isn't among them.
-    pub fn by_recent_focus(&self) -> impl Iterator<Item = WindowId> + '_ {
+    pub fn all_by_recent_focus(&self) -> impl Iterator<Item = WindowId> + '_ {
         self.mru.iter().copied()
     }
 

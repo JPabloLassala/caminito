@@ -176,6 +176,33 @@ fn a_token_from_a_layer_surface_the_pointer_has_left_is_refused_under_strict() {
 }
 
 #[test]
+fn a_token_from_a_layer_surface_the_pointer_left_and_came_back_to_is_refused_under_strict() {
+    let mut f = fixture("smart");
+    let app = client(&mut f, 100);
+    let app_window = f.map(app, WindowSpec::plain((400, 300)));
+    let other = client(&mut f, 200);
+    let focused = f.map(other, WindowSpec::plain((400, 300)));
+    f.set_setting(
+        MARCO_GENERAL,
+        "focus-new-windows",
+        Value::Str("strict".into()),
+    );
+    let (daemon, middle) = bubble(&mut f, 300);
+    f.click(middle.0, middle.1);
+    f.roundtrip(daemon);
+
+    // A hover now, long after the press, isn't a click.
+    f.pointer_move(5.0, 5.0);
+    f.pointer_move(middle.0, middle.1);
+    f.roundtrip(daemon);
+    let token = token_from_client(&mut f, daemon);
+    activate(&mut f, &token, app_window);
+
+    assert!(has_focus(&f, focused));
+    assert!(dumped_urgent(&f, app_window));
+}
+
+#[test]
 fn a_token_from_a_window_that_is_not_focused_is_refused_under_strict() {
     let mut f = fixture("smart");
     let other = client(&mut f, 100);

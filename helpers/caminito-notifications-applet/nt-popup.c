@@ -309,7 +309,7 @@ entry_row (NtPopup *popup, const NtEntry *entry, gint64 now)
   g_autofree char *age_text = nt_state_age (entry->time, now);
   g_autoptr (PangoAttrList) bold = pango_attr_list_new ();
 
-  /* Without a default action, a click brings the app forward. */
+  /* Every row is activatable: without a default action, a click brings the app forward. */
   g_object_set_data (G_OBJECT (row), "nt-id", GUINT_TO_POINTER (entry->id));
   g_object_set (outer, "margin", 8, NULL);
 

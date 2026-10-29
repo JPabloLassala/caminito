@@ -58,8 +58,8 @@ fn it_brings_back_a_minimised_window_and_matches_the_app_id_in_any_case() {
     f.add_output((1920, 1080), 1.);
     let mail = map_of(&mut f, "org.gnome.Evolution", "Inbox");
     let other = map_of(&mut f, "pluma", "Notes");
-    f.state.caminito.policy.minimize(f.pid(mail));
-    f.dispatch();
+    f.client(mail.client()).set_minimized(mail.xdg());
+    f.roundtrip(mail.client());
     assert!(has_focus(&f, other));
     let bus = f.start_dbus();
 

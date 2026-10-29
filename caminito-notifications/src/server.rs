@@ -691,7 +691,7 @@ fn activate_app(connection: &gio::DBusConnection, app: &str) {
         gio::Cancellable::NONE,
         |result| {
             if let Err(err) = result {
-                glib::g_debug!(DOMAIN, "Caminito can't bring the app forward: {err}");
+                glib::g_debug!(DOMAIN, "can't ask Caminito to bring the app forward: {err}");
             }
         },
     );
