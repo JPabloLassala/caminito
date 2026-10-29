@@ -95,6 +95,15 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
+# The notification settings window's entry (CMN-261), "Notifications" in the control center, in
+# the same directory, so that only a Session lists it: caminito-notifications is a Session's
+# notification daemon (ADR 0051), and under X11 MATE mate-notification-daemon has its own.
+# Its categories put it under Look and Feel, beside Workspace Behaviour.
+install_data(
+  'data/caminito-notifications.desktop',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
+)
+
 # The Remap templates that come with Caminito (CMN-189), which caminito-behaviour's Key remaps
 # page lists and can't change or delete. macos-pc.remaps is converted from Toshy's config by
 # tools/toshy-to-remaps, and is GPL-3, as Toshy is (CMN-190).

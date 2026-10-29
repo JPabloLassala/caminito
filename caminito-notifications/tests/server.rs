@@ -4,6 +4,7 @@
 //! the user would: hovering it, clicking it, using an action or closing it.
 
 mod bus;
+mod settings;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -88,6 +89,9 @@ impl Sounds for FakeSounds {
 struct Daemon<'a> {
     bus: &'a Bus,
     _server: Server,
+    /// The server's settings, as `gsettings` would change them.
+    settings: gio::Settings,
+    _schemas: tempfile::TempDir,
     bubbles: Rc<FakeBubbles>,
     sounds: Rc<FakeSounds>,
     app: gio::DBusConnection,
@@ -97,10 +101,8 @@ struct Daemon<'a> {
 }
 
 fn start(bus: &Bus) -> Daemon<'_> {
-    start_with_timeout(bus, Duration::from_secs(60))
-}
-
-fn start_with_timeout(bus: &Bus, default_timeout: Duration) -> Daemon<'_> {
+    let schemas = tempfile::tempdir().unwrap();
+    let settings = settings::compiled(schemas.path());
     let connection = bus.connect();
     let bubbles = Rc::new(FakeBubbles::default());
     let sounds = Rc::new(FakeSounds::default());
@@ -108,7 +110,7 @@ fn start_with_timeout(bus: &Bus, default_timeout: Duration) -> Daemon<'_> {
         &connection,
         bubbles.clone(),
         sounds.clone(),
-        default_timeout,
+        settings::outside(&settings),
     )
     .expect("the server registers");
     bus.wait_for_owner(NAME, &connection);
@@ -133,6 +135,8 @@ fn start_with_timeout(bus: &Bus, default_timeout: Duration) -> Daemon<'_> {
     Daemon {
         bus,
         _server: server,
+        settings,
+        _schemas: schemas,
         bubbles,
         sounds,
         app,
@@ -401,9 +405,11 @@ fn an_app_closing_its_notification_takes_the_bubble_away() {
 }
 
 #[test]
-fn a_bubble_expires_after_the_apps_timeout_or_else_the_default() {
+fn a_bubble_expires_after_the_apps_timeout_or_else_the_timeout_setting() {
     bus::run(|bus| {
-        let daemon = start_with_timeout(bus, Duration::from_millis(200));
+        let daemon = start(bus);
+        // Changed while the daemon runs, as the settings window changes it.
+        daemon.settings.set_uint("timeout", 1).unwrap();
         let own = daemon.notify(Notify {
             timeout: 50,
             ..notify("Own")
@@ -428,7 +434,7 @@ fn a_bubble_expires_after_the_apps_timeout_or_else_the_default() {
 #[test]
 fn a_critical_notification_or_one_with_no_timeout_never_expires() {
     bus::run(|bus| {
-        let daemon = start_with_timeout(bus, Duration::from_millis(50));
+        let daemon = start(bus);
         let critical = daemon.notify(Notify {
             timeout: 50,
             ..notify("Battery low").hint("urgency", 2u8)
@@ -630,5 +636,97 @@ fn an_image_data_hints_pixels_are_the_bubbles_image_and_a_broken_one_is_none() {
         assert_eq!(&pixels.data[..], &data[..]);
         // Its second row isn't there.
         assert_eq!(daemon.bubbles.bubble(broken).image, None);
+    });
+}
+
+#[test]
+fn with_previews_off_a_bubble_shows_only_its_app_and_notification() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.settings.set_boolean("previews", false).unwrap();
+
+        let id = daemon.notify(Notify {
+            icon: "mail-unread",
+            body: "From Ann",
+            actions: vec!["reply", "Reply"],
+            ..notify("New mail").hint("image-path", "/tmp/photo.png")
+        });
+
+        assert_eq!(
+            daemon.bubbles.bubble(id),
+            Bubble {
+                app_name: "Test".to_owned(),
+                app_icon: Some(Icon::Name("mail-unread".to_owned())),
+                summary: "Notification".to_owned(),
+                body: String::new(),
+                image: None,
+                actions: vec![Action {
+                    key: "reply".to_owned(),
+                    label: "Reply".to_owned()
+                }],
+            }
+        );
+    });
+}
+
+#[test]
+fn with_the_app_icon_off_a_bubble_has_no_app_icon_but_keeps_its_image() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.settings.set_boolean("app-icon", false).unwrap();
+
+        let off = daemon.notify(Notify {
+            icon: "mail-unread",
+            ..notify("Off").hint("image-path", "/tmp/photo.png")
+        });
+        daemon.settings.set_boolean("app-icon", true).unwrap();
+        let on = daemon.notify(Notify {
+            icon: "mail-unread",
+            ..notify("On")
+        });
+
+        let off = daemon.bubbles.bubble(off);
+        assert_eq!(off.app_icon, None);
+        assert_eq!(
+            off.image,
+            Some(Image::Icon(Icon::File("/tmp/photo.png".into())))
+        );
+        assert_eq!(
+            daemon.bubbles.bubble(on).app_icon,
+            Some(Icon::Name("mail-unread".to_owned()))
+        );
+    });
+}
+
+#[test]
+fn with_sound_off_no_notification_plays_one() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.settings.set_boolean("sound", false).unwrap();
+
+        let id = daemon.notify(notify("Quiet").hint("sound-name", "bell"));
+        daemon.settings.set_boolean("sound", true).unwrap();
+        daemon.notify(notify("Loud").hint("sound-name", "bell"));
+
+        assert_eq!(daemon.bubbles.ids().len(), 2);
+        assert_eq!(daemon.bubbles.bubble(id).summary, "Quiet");
+        assert_eq!(*daemon.sounds.0.borrow(), [Sound::Name("bell".to_owned())]);
+    });
+}
+
+#[test]
+fn a_waiting_notification_follows_the_settings_as_its_bubble_opens() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let ids: Vec<u32> = ["1", "2", "3", "4"]
+            .into_iter()
+            .map(|summary| daemon.notify(notify(summary)))
+            .collect();
+
+        daemon.settings.set_boolean("previews", false).unwrap();
+        daemon.bubbles.events(ids[0]).dismiss();
+
+        assert_eq!(daemon.bubbles.bubble(ids[1]).summary, "2");
+        assert_eq!(daemon.bubbles.bubble(ids[3]).summary, "Notification");
     });
 }

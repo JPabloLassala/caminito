@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Notifications
+Comment=Choose how notifications show, sound and keep quiet
+Exec=caminito-notifications --settings
+Icon=preferences-system-notifications
+Terminal=false
+StartupNotify=true
+Categories=GTK;Settings;DesktopSettings;
+Keywords=mate-control-center;MATE;caminito;notifications;bubbles;do not disturb;sound;previews;
+OnlyShowIn=MATE;

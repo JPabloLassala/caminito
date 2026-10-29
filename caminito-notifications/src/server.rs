@@ -2,7 +2,9 @@
 //! `org.freedesktop.Notifications` (ADR 0051). It decides which bubbles are on screen, at most
 //! [`MAX_SHOWN`] with the rest queued, how long each stays, and which sound plays, and tells
 //! the apps what became of their notifications. The binary draws the bubbles and plays the
-//! sounds, behind [`Bubbles`] and [`Sounds`].
+//! sounds, behind [`Bubbles`] and [`Sounds`]. It follows the notification settings (CMN-261)
+//! as it goes: what a bubble shows as it opens, the sound as a notification arrives, and the
+//! default timeout.
 //!
 //! The name is asked for with `REPLACE`: a daemon that D-Bus activation started while this
 //! one wasn't running, as mate-notification-daemon, gives it back at once if it allows its
@@ -20,13 +22,11 @@ use gio::prelude::*;
 
 use crate::DOMAIN;
 use crate::notification::{Arguments, DEFAULT_ACTION, Notification};
+use crate::settings;
 
 /// The name the server owns.
 pub const NAME: &str = "org.freedesktop.Notifications";
 const PATH: &str = "/org/freedesktop/Notifications";
-
-/// How long a bubble stays when its app leaves that to the server (the spec's -1).
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(7);
 
 /// How many bubbles are on screen at once. The rest wait, oldest first.
 pub const MAX_SHOWN: usize = 3;
@@ -281,7 +281,7 @@ struct State {
     connection: gio::DBusConnection,
     bubbles: Rc<dyn Bubbles>,
     sounds: Rc<dyn Sounds>,
-    default_timeout: Duration,
+    settings: gio::Settings,
     last_id: u32,
     notifications: HashMap<u32, Entry>,
     /// The bubbles on screen, oldest first.
@@ -317,20 +317,20 @@ impl Drop for Server {
 }
 
 impl Server {
-    /// Exports the server on `connection` and asks for the notification name. A bubble
-    /// whose app leaves its timeout to the server stays for `default_timeout`.
+    /// Exports the server on `connection` and asks for the notification name. It follows
+    /// `settings`, which are `org.mate.Caminito.notifications`'s.
     pub fn new(
         connection: &gio::DBusConnection,
         bubbles: Rc<dyn Bubbles>,
         sounds: Rc<dyn Sounds>,
-        default_timeout: Duration,
+        settings: gio::Settings,
     ) -> Result<Server, Error> {
         let state = Rc::new_cyclic(|this| {
             RefCell::new(State {
                 connection: connection.clone(),
                 bubbles,
                 sounds,
-                default_timeout,
+                settings,
                 last_id: 0,
                 notifications: HashMap::new(),
                 shown: Vec::new(),
@@ -423,14 +423,19 @@ fn handle(
 }
 
 /// Takes a notification, in place of `replaces` if that's one the server has, and returns
-/// its id. A new one plays its sound, and gets a bubble if there's room, or waits for one.
+/// its id. A new one plays its sound, unless sounds are off, and gets a bubble if there's
+/// room, or waits for one.
 fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -> u32 {
     let mut guard = state.borrow_mut();
-    let notification = Notification::new(arguments, guard.default_timeout);
+    let notification = Notification::new(arguments, settings::timeout(&guard.settings));
     let timeout = notification.timeout;
 
-    if let Some(entry) = guard.notifications.get_mut(&replaces) {
-        let bubble = notification.bubble.clone();
+    if guard.notifications.contains_key(&replaces) {
+        let bubble = guard.shown_bubble(&notification.bubble);
+        let entry = guard
+            .notifications
+            .get_mut(&replaces)
+            .expect("the server has the notification it replaces");
         entry.notification = notification;
         // A replacement starts its time again.
         entry.stop_timer();
@@ -459,6 +464,7 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         },
     );
     let sounds = guard.sounds.clone();
+    let sound = sound.filter(|_| guard.settings.boolean(settings::SOUND));
     if guard.shown.len() < MAX_SHOWN {
         drop(guard);
         show(state, id);
@@ -478,7 +484,7 @@ fn show(state: &Rc<RefCell<State>>, id: u32) {
     let Some(entry) = guard.notifications.get(&id) else {
         return;
     };
-    let bubble = entry.notification.bubble.clone();
+    let bubble = guard.shown_bubble(&entry.notification.bubble);
     guard.shown.push(id);
     guard.start_timer(id);
     let bubbles = guard.bubbles.clone();
@@ -577,6 +583,21 @@ impl Entry {
 }
 
 impl State {
+    /// What the bubble of a notification that has `bubble` shows: without its summary, body
+    /// and image while Previews are off, and without its app's icon while that's off.
+    fn shown_bubble(&self, bubble: &Bubble) -> Bubble {
+        let mut shown = bubble.clone();
+        if !self.settings.boolean(settings::PREVIEWS) {
+            settings::NO_PREVIEW.clone_into(&mut shown.summary);
+            shown.body.clear();
+            shown.image = None;
+        }
+        if !self.settings.boolean(settings::APP_ICON) {
+            shown.app_icon = None;
+        }
+        shown
+    }
+
     /// The next id, which is never 0: that's `replaces_id`'s "none".
     fn next_id(&mut self) -> u32 {
         loop {

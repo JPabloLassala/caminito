@@ -3882,3 +3882,23 @@ They are the developer's to run.
   bubble (CMN-258, ADR 0051).
 - **Debug tool:** `busctl --user monitor org.freedesktop.Notifications`, for the calls and the
   signals.
+
+### The notification settings window in a real Session
+
+- **Milestone:** `notifications`.
+- **Steps:**
+  1. In *MATE on Caminito*, open the control center and choose *Notifications*, under Look and
+     Feel. Then run `busctl --user call org.mate.Caminito.Notifications
+     /org/mate/Caminito/Notifications org.mate.Caminito.Notifications OpenSettings s ''`.
+  2. Set *Corner* to *Bottom left*, and run `notify-send 'One'` and then `notify-send 'Two'`.
+  3. Clear *Show previews in bubbles* and run `notify-send -i mail-unread 'Secret' 'Body'`.
+  4. Clear *Show the app's icon in bubbles* and run `notify-send -i mail-unread 'No icon' x`.
+  5. Clear *Play a sound* and run `notify-send 'Quiet'`. Set *Stay for* to 2 seconds and run
+     `notify-send 'Short'`.
+  6. Run `gsettings list-recursively org.mate.Caminito.notifications`.
+- **Expected:** in step 1 one *Notifications* window opens, and the call raises it rather than
+  opening a second. In step 2 the bubbles are in the bottom-left corner of the output under the
+  pointer, *Two* nearest the corner. In step 3 the bubble shows the app's icon and name and
+  *Notification*, and nothing of *Secret* or *Body*. In step 4 the bubble has no icon. In step 5
+  no sound plays, and *Short* closes after about 2 seconds. In step 6 every setting is the
+  window's (CMN-261).

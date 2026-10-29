@@ -16,5 +16,9 @@ gtk = { workspace = true, features = ["v4_12"] }
 # The bubbles' layer surfaces.
 gtk4-layer-shell = "0.8.1"
 
+[dev-dependencies]
+# The settings' schema compiled from data/ into a directory of the test's own.
+tempfile = "3.27.0"
+
 [lints]
 workspace = true

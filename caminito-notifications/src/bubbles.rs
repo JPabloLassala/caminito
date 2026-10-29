@@ -1,6 +1,7 @@
 //! The Notification bubbles (CMN-258), in GTK4: one layer surface in the namespace
-//! `caminito-notification`, anchored to the top-right corner, that holds the bubbles on
-//! screen, newest nearest the corner. Its exclusive zone is 0, so it sits under the panel, and
+//! `caminito-notification`, anchored to the corner the settings name (CMN-261), that holds the
+//! bubbles on screen, newest nearest the corner. A new bubble moves them to the corner the
+//! settings name now. Its exclusive zone is 0, so it sits under the panel, and
 //! it names no output, so Caminito puts it on the output under the pointer as it maps. It's
 //! hidden while there's no bubble, and maps again where the pointer is for the next one; a
 //! bubble that opens while others show joins them on their output, as bubbles are on one
@@ -9,10 +10,11 @@
 //! The server decides what's on screen; this draws it, from the GTK theme, and tells the server
 //! what the user does through each bubble's [`Events`].
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use caminito_notifications::server::{Bubble, Bubbles, Events, Icon, Image, Pixels};
+use caminito_notifications::settings::Corner;
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib, pango};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
@@ -40,6 +42,11 @@ window.caminito-notifications { background: none; }
 /// The bubbles, in their layer surface.
 pub(crate) struct GtkBubbles {
     window: gtk::Window,
+    /// Whether the window is a layer surface, which only then has a corner.
+    layer: bool,
+    settings: gio::Settings,
+    /// The corner the bubbles are in.
+    corner: Cell<Corner>,
     /// The bubbles, newest first, which is nearest the corner.
     stack: gtk::Box,
     shown: RefCell<HashMap<u32, Shown>>,
@@ -53,7 +60,7 @@ struct Shown {
 }
 
 impl GtkBubbles {
-    pub(crate) fn new(application: &gtk::Application) -> Self {
+    pub(crate) fn new(application: &gtk::Application, settings: gio::Settings) -> Self {
         let window = gtk::Window::builder()
             .application(application)
             .decorated(false)
@@ -63,15 +70,15 @@ impl GtkBubbles {
         // The library asks GDK's Wayland display, which an X11 one isn't.
         let on_wayland = gdk::Display::default()
             .is_some_and(|display| display.type_().name() == "GdkWaylandDisplay");
-        if on_wayland && gtk4_layer_shell::is_supported() {
+        let layer = on_wayland && gtk4_layer_shell::is_supported();
+        if layer {
             window.init_layer_shell();
             window.set_namespace(Some(NAMESPACE));
             window.set_layer(Layer::Overlay);
             window.set_keyboard_mode(KeyboardMode::None);
-            window.set_anchor(Edge::Top, true);
-            window.set_anchor(Edge::Right, true);
-            window.set_margin(Edge::Top, GAP);
-            window.set_margin(Edge::Right, GAP);
+            for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
+                window.set_margin(edge, GAP);
+            }
         } else {
             glib::g_warning!(
                 caminito_notifications::DOMAIN,
@@ -90,11 +97,46 @@ impl GtkBubbles {
                 gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
             );
         }
-        GtkBubbles {
+        let corner = Corner::of(&settings);
+        let bubbles = GtkBubbles {
             window,
+            layer,
+            settings,
+            corner: Cell::new(corner),
             stack,
             shown: RefCell::default(),
+        };
+        bubbles.anchor(corner);
+        bubbles
+    }
+
+    /// Moves the bubbles to the corner the settings name, if they're elsewhere.
+    fn follow_corner(&self) {
+        let corner = Corner::of(&self.settings);
+        let was = self.corner.replace(corner);
+        if corner == was {
+            return;
         }
+        // The newest is nearest the corner, so the stack turns over between top and bottom.
+        if corner.is_top() != was.is_top() {
+            let mut child = self.stack.first_child();
+            while let Some(current) = child {
+                child = current.next_sibling();
+                self.stack
+                    .reorder_child_after(&current, None::<&gtk::Widget>);
+            }
+        }
+        self.anchor(corner);
+    }
+
+    fn anchor(&self, corner: Corner) {
+        if !self.layer {
+            return;
+        }
+        self.window.set_anchor(Edge::Top, corner.is_top());
+        self.window.set_anchor(Edge::Bottom, !corner.is_top());
+        self.window.set_anchor(Edge::Right, corner.is_right());
+        self.window.set_anchor(Edge::Left, !corner.is_right());
     }
 
     /// Shows the window when it has a bubble, and hides it, shrunk, when it has none.
@@ -113,7 +155,12 @@ impl Bubbles for GtkBubbles {
     fn show(&self, id: u32, bubble: &Bubble, events: Events) {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         fill(&root, bubble, &events);
-        self.stack.prepend(&root);
+        self.follow_corner();
+        if self.corner.get().is_top() {
+            self.stack.prepend(&root);
+        } else {
+            self.stack.append(&root);
+        }
         self.shown.borrow_mut().insert(id, Shown { root, events });
         self.present();
     }
