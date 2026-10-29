@@ -97,7 +97,6 @@ impl GtkBubbles {
         let window = gtk::Window::builder()
             .application(application)
             .decorated(false)
-            .resizable(false)
             .css_classes(["caminito-notifications"])
             .build();
         // The library asks GDK's Wayland display, which an X11 one isn't.

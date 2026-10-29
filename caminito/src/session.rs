@@ -85,10 +85,11 @@ const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";
 
 /// The session command's `XDG_DATA_DIRS`: Caminito's directory, then what Caminito `has`.
 ///
-/// It's the command's alone, and what the command starts inherits it. The bus and systemd
-/// aren't given it: systemd's user manager outlives the Session, and an X11 MATE login
-/// after it must find the capplet's own entry.
-fn data_dirs(has: Option<&OsStr>) -> OsString {
+/// It's the command's, and what the command starts inherits it, and the notification
+/// daemon's, whose Apps page names Caminito's own senders by their entries (CMN-268). The
+/// bus and systemd aren't given it: systemd's user manager outlives the Session, and an X11
+/// MATE login after it must find the capplet's own entry.
+pub(crate) fn data_dirs(has: Option<&OsStr>) -> OsString {
     let has = has.filter(|dirs| !dirs.is_empty());
     let mut dirs = OsString::from(DATA_DIR);
     dirs.push(":");

@@ -737,6 +737,13 @@ fn the_session_starts_the_notification_daemon_before_its_command_and_again_when_
     let environment = scripts.environment("daemon-environment");
     assert_eq!(environment["WAYLAND_DISPLAY"], SOCKET);
     assert_eq!(environment["MATE_WM_NAME"], "Caminito");
+    // Where the Apps page finds Caminito's own desktop entries, as Workspace Behaviour's
+    // (CMN-268).
+    let data_dirs = &environment["XDG_DATA_DIRS"];
+    assert!(
+        data_dirs.starts_with("/usr/share/caminito/xdg:"),
+        "{data_dirs}"
+    );
     // Killed, as a crash would, it's started again.
     let processes = || scripts.read("daemon-processes");
     let first: i32 = processes().trim().parse().unwrap();

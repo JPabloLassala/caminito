@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use smithay::reexports::calloop::LoopHandle;
 
 use crate::helpers::{Helper, HelperCommand, HelperEvent, RestartPolicy, StderrTarget};
+use crate::session::data_dirs;
 use crate::state::State;
 
 /// The daemon, and its helper once a Session started it.
@@ -49,6 +50,11 @@ impl Notifications {
         for (name, value) in environment {
             command = command.env(name, value);
         }
+        // As the command's, so that the Apps page finds Caminito's own entries (CMN-268).
+        command = command.env(
+            "XDG_DATA_DIRS",
+            data_dirs(std::env::var_os("XDG_DATA_DIRS").as_deref()),
+        );
         let mut helper = Helper::new(
             handle,
             command,
