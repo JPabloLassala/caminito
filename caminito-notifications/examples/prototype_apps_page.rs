@@ -3,8 +3,8 @@
 //!
 //!     cargo run -p caminito-notifications --example prototype_apps_page -- B
 //!
-//! A is a sidebar and a detail pane, B a table, C a list of expanders. The question is what
-//! the page should look like. Everything is in memory: nothing is read from or written to
+//! A is a sidebar and a detail pane, B a table, C a list of expanders. The question was what
+//! the page should look like, and the developer chose B, which it opens on. Everything is in memory: nothing is read from or written to
 //! `org.mate.Caminito.notifications`, and the General page is a placeholder. The state is
 //! printed under the page after every change.
 
@@ -17,22 +17,23 @@ use gtk::{gdk, gio, glib};
 
 const SPACING: i32 = 18;
 const VARIANTS: [(&str, &str); 3] = [("A", "Sidebar"), ("B", "Table"), ("C", "Expanders")];
-/// The five boolean settings: the long label, the column title, and the state's word.
-const FLAGS: [(&str, &str, &str); 5] = [
+/// The six boolean settings: the long label, the column title, and the state's word.
+const FLAGS: [(&str, &str, &str); 6] = [
     ("Play a sound", "Sound", "sound"),
     ("Show previews in bubbles", "Previews", "previews"),
     ("Show the app's icon in bubbles", "Icon", "icon"),
+    ("Group in the Notification center", "Group", "group"),
     ("Show a badge on its Dock item", "Badge", "badge"),
     ("Break through Do Not Disturb", "Breaks DND", "dnd"),
 ];
 /// Badge and Break through Do Not Disturb, which `org.mate.Caminito.notifications` has no
 /// default key for, so the Default entry can't change them.
-const NOT_IN_DEFAULT: [usize; 2] = [3, 4];
+const NOT_IN_DEFAULT: [usize; 2] = [4, 5];
 
 #[derive(Clone, Copy, PartialEq)]
 struct Prefs {
     delivery: Delivery,
-    flags: [bool; 5],
+    flags: [bool; 6],
 }
 
 struct App {
@@ -55,7 +56,7 @@ fn effective(model: &Model, index: usize) -> Prefs {
 fn applies(delivery: Delivery, k: usize) -> bool {
     match delivery {
         Delivery::Bubble => true,
-        Delivery::History => k == 3,
+        Delivery::History => k == 3 || k == 4,
         Delivery::Off => false,
     }
 }
@@ -63,7 +64,7 @@ fn applies(delivery: Delivery, k: usize) -> bool {
 fn summary(prefs: Prefs) -> String {
     let mut parts = vec![prefs.delivery.label().to_owned()];
     for (k, (_, _, word)) in FLAGS.iter().enumerate() {
-        let default = k != 4;
+        let default = k != 5;
         if applies(prefs.delivery, k) && prefs.flags[k] != default {
             parts.push(if prefs.flags[k] { (*word).to_owned() } else { format!("no {word}") });
         }
@@ -78,7 +79,7 @@ fn apps() -> Vec<App> {
         icon: gio::ThemedIcon::new("preferences-system-notifications").upcast(),
         own: Some(Prefs {
             delivery: Delivery::Bubble,
-            flags: [true, true, true, true, false],
+            flags: [true, true, true, true, true, false],
         }),
     }];
     // Ones that "have sent a notification", then the installed ones that say they send them.
@@ -114,7 +115,7 @@ fn apps() -> Vec<App> {
     if let Some(slack) = known.iter_mut().find(|app| app.id == "slack") {
         slack.own = Some(Prefs {
             delivery: Delivery::History,
-            flags: [false, true, true, true, false],
+            flags: [false, true, true, true, true, false],
         });
     }
     apps.extend(known);
@@ -348,7 +349,7 @@ fn matches(model: &Model, index: usize, query: &str) -> bool {
 
 fn status(model: &Model, index: usize) -> String {
     if index == 0 {
-        "What an app without its own settings gets. The General page has the same four.".into()
+        "What an app without its own settings gets. The General page has the same five.".into()
     } else if model.borrow()[index].own.is_some() {
         "Its own settings".into()
     } else {
@@ -515,7 +516,7 @@ fn table(model: &Model, on_change: &OnChange) -> gtk::Widget {
             grid.attach(check, k as i32 + 2, line, 1, 1);
             widgets.push(check.clone().upcast());
         }
-        grid.attach(&controls.reset, 7, line, 1, 1);
+        grid.attach(&controls.reset, 8, line, 1, 1);
         widgets.push(controls.reset.clone().upcast());
         rows.push(widgets);
         all.borrow_mut().push(controls);
@@ -734,7 +735,7 @@ fn main() -> glib::ExitCode {
                 .iter()
                 .position(|(key, _)| key.eq_ignore_ascii_case(arg.trim_start_matches("--variant=")))
         })
-        .unwrap_or(0);
+        .unwrap_or(1);
     let application = gtk::Application::builder()
         .application_id("org.mate.Caminito.Notifications.AppsPagePrototype")
         .build();

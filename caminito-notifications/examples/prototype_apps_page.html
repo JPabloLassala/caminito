@@ -33,6 +33,7 @@
   --own: #f1c66a; --own-bg: #3d3220; --off: #5d636d; color-scheme: dark;
 }
 html, body { background: var(--bg); color: var(--fg); }
+[hidden] { display: none !important; }
 body { font-family: var(--font-ui); font-size: 15px; line-height: 1.5; }
 .page {
   max-width: 1040px; margin: 0 auto; display: grid; gap: 28px;
@@ -133,12 +134,28 @@ td.app { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
 button.send { font: inherit; font-weight: 700; color: var(--accent-fg); background: var(--accent); border: 0; border-radius: 6px; padding: 7px 16px; cursor: pointer; }
 button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .desktop {
-  --desk: #2d4a5e; --desk-2: #1d3242; --bubble: rgb(36 39 44 / .94); --bubble-fg: #eef0f3; --bubble-muted: #aab2bf;
+  --desk: #2d4a5e; --desk-2: #1d3242; --bubble: rgb(36 39 44 / .94); --center: rgb(30 33 38); --bubble-fg: #eef0f3; --bubble-muted: #aab2bf;
   position: relative; height: 380px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line);
   background: linear-gradient(160deg, var(--desk), var(--desk-2)); color: var(--bubble-fg);
 }
 .panel { display: flex; align-items: center; justify-content: flex-end; gap: 14px; height: 30px; padding: 0 12px; background: rgb(0 0 0 / .45); font-size: 13px; }
-.panel .bell { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.panel .bell { position: relative; display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; background: transparent; border: 0; padding: 2px 6px; border-radius: 6px; cursor: pointer; }
+.panel .bell[aria-expanded="true"] { background: rgb(255 255 255 / .15); }
+.center { position: absolute; z-index: 5; top: 36px; right: 8px; width: min(360px, calc(100% - 16px)); max-height: calc(100% - 46px); overflow-y: auto; box-sizing: border-box; background: var(--center); color: var(--bubble-fg); border-radius: 12px; padding: 10px; display: grid; gap: 8px; align-content: start; box-shadow: 0 8px 24px rgb(0 0 0 / .4); }
+.center .c-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.center .c-dnd { color: var(--bubble-muted); }
+.center .c-group, .center .c-one { background: rgb(255 255 255 / .06); border-radius: 10px; padding: 8px; display: grid; gap: 6px; }
+.center .c-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--bubble-muted); }
+.center .c-head .t { flex: 1; min-width: 0; }
+.center .c-head .icon { width: 18px; height: 18px; border-radius: 4px; font-size: 10px; }
+.center .c-entry { display: grid; gap: 1px; font-size: 13px; position: relative; padding-right: 22px; }
+.center .c-entry + .c-entry { border-top: 1px solid rgb(255 255 255 / .08); padding-top: 6px; }
+.center .c-entry .s { font-weight: 700; font-size: 14px; }
+.center .c-entry .b, .center .c-entry .age { color: var(--bubble-muted); }
+.center .c-entry .age { font-size: 12px; }
+.center button.mini { font: inherit; font-size: 12px; color: var(--bubble-fg); background: rgb(255 255 255 / .1); border: 0; border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.center button.x2 { position: absolute; top: 0; right: 0; font: inherit; color: var(--bubble-muted); background: transparent; border: 0; cursor: pointer; font-size: 15px; line-height: 1; }
+.center .c-empty { color: var(--bubble-muted); font-size: 14px; padding: 18px 4px; text-align: center; }
 .panel .bell .dot { width: 7px; height: 7px; border-radius: 50%; background: #f0b44c; }
 .panel .bell.dnd { text-decoration: line-through; opacity: .75; }
 .panel .sound { opacity: 0; transition: opacity .2s; color: #f0b44c; }
@@ -187,13 +204,13 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   <header class="brief">
     <div class="eyebrow">Caminito · Notifications epic · CMN-262 prototype</div>
     <h1>The Apps page of the Notifications settings</h1>
-    <p>Three layouts for the page where each app gets its own notification settings. Pick a layout, change a setting, search, or set an app back to the default: the state below the window follows every change. Nothing here touches real settings.</p>
+    <p>The page where each app gets its own notification settings. The table (B) was chosen; A and C stay for comparison. Change a setting, search, or set an app back to the default, then send a test notification and open the bell to see the Notification center. Nothing here touches real settings.</p>
   </header>
 
   <section class="switcher" aria-label="Layout">
     <div class="seg" role="group" aria-label="Variant">
       <button type="button" id="v-a" data-v="0">A · Sidebar</button>
-      <button type="button" id="v-b" data-v="1">B · Table</button>
+      <button type="button" id="v-b" data-v="1">B · Table (chosen)</button>
       <button type="button" id="v-c" data-v="2">C · Expanders</button>
     </div>
     <span class="hint">← and → switch layouts when no field has focus</span>
@@ -220,10 +237,11 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
       <button type="button" class="plain" id="try-clear">Clear all</button>
     </div>
     <div class="desktop" id="desktop">
-      <div class="panel"><span class="sound" id="desk-sound" aria-hidden="true">♪ sound</span><span class="bell" id="desk-bell">🔔<span class="dot" id="desk-dot" hidden></span><span id="desk-count"></span></span><span>14:30</span></div>
+      <div class="panel"><span class="sound" id="desk-sound" aria-hidden="true">♪ sound</span><button type="button" class="bell" id="desk-bell" aria-expanded="false" aria-controls="desk-center" title="Notification center">🔔<span class="dot" id="desk-dot" hidden></span><span id="desk-count"></span></button><span>14:30</span></div>
       <div class="queued" id="desk-queued" hidden></div>
       <div class="bubbles" id="desk-bubbles" aria-live="polite"></div>
       <div class="dock" id="desk-dock"></div>
+      <div class="center" id="desk-center" hidden></div>
     </div>
     <ul class="log" id="try-log" aria-live="polite"></ul>
   </section>
@@ -234,12 +252,12 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   </section>
 
   <section class="questions">
-    <h2>Questions the spec leaves open</h2>
+    <h2>Still open</h2>
     <ol>
-      <li><strong>The Default entry has only four of the six settings.</strong>The global schema, <code>org.mate.Caminito.notifications</code>, has no key for a default Badge or a default "Break through Do Not Disturb", though CMN-262 says every entry has six. Here those two are greyed out on Default. Either the schema gets two more keys, or Default shows four.</li>
-      <li><strong>What following the default means.</strong>Here an app switches to its own settings as a whole: the first change copies all six, and "Use the default" puts them all back. The alternative is following the default one setting at a time, which means telling which keys of the per-app schema the user has set.</li>
-      <li><strong>Which settings mean anything under each Delivery.</strong>A guess: with "History only" just Badge stays editable, and with "Off" nothing does. Sound under "History only" is the one to argue about.</li>
+      <li><strong>Badge and Break through Do Not Disturb on the Default row.</strong>The global schema, <code>org.mate.Caminito.notifications</code>, has no default key for either, so here they're greyed out on the Default row. Either the schema gets the two keys, or the Default row shows five of the seven settings.</li>
+      <li><strong>What applies under each Delivery.</strong>CMN-262 settles that "History only" plays no sound. Here, under History only, just Group and Badge stay editable, and under Off nothing does.</li>
     </ol>
+    <p class="dim">Settled: an app follows the default as a whole until it has its own settings; grouping is on or off per app, with no grouping by conversation in v1; bubble stacking ignores it.</p>
   </section>
 </main>
 
@@ -250,40 +268,41 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     ["Play a sound", "Sound", "sound"],
     ["Show previews in bubbles", "Previews", "previews"],
     ["Show the app's icon in bubbles", "Icon", "icon"],
+    ["Group in the Notification center", "Group", "group"],
     ["Show a badge on its Dock item", "Badge", "badge"],
     ["Break through Do Not Disturb", "Breaks DND", "dnd"],
   ];
-  const NOT_IN_DEFAULT = [3, 4];
+  const NOT_IN_DEFAULT = [4, 5];
   const VARIANTS = [
     ["sidebar", "Apps on the left, the chosen one's settings on the right."],
-    ["table", "One row per app and one column per setting, everything visible at once."],
+    ["table", "Chosen. One row per app and one column per setting, everything visible at once."],
     ["expanders", "One line per app saying what it gets, opening onto its settings."],
   ];
 
   // Example apps; Slack starts with settings of its own.
   const apps = [
-    { id: "default", name: "Default", color: "#6b7280", letter: "★", own: { delivery: "bubble", flags: [true, true, true, true, false] } },
+    { id: "default", name: "Default", color: "#6b7280", letter: "★", own: { delivery: "bubble", flags: [true, true, true, true, true, false] } },
     { id: "caminito-accessx", name: "Accessibility keys", color: "#2f6fd6", letter: "A", own: null },
     { id: "firefox", name: "Firefox", color: "#e66000", letter: "F", own: null },
     { id: "caminito-network", name: "Network", color: "#4b7f52", letter: "N", own: null },
     { id: "org.signal.Signal", name: "Signal", color: "#3a76f0", letter: "S", own: null },
-    { id: "slack", name: "Slack", color: "#6b3a7a", letter: "S", own: { delivery: "history", flags: [false, true, true, true, false] } },
+    { id: "slack", name: "Slack", color: "#6b3a7a", letter: "S", own: { delivery: "history", flags: [false, true, true, true, true, false] } },
     { id: "org.mozilla.Thunderbird", name: "Thunderbird", color: "#1f5fa8", letter: "T", own: null },
     { id: "code", name: "Visual Studio Code", color: "#1f7ac2", letter: "V", own: null },
   ];
 
   const effective = i => apps[i].own || apps[0].own;
-  const applies = (delivery, k) => delivery === "bubble" ? true : delivery === "history" ? k === 3 : false;
+  const applies = (delivery, k) => delivery === "bubble" ? true : delivery === "history" ? (k === 3 || k === 4) : false;
   const label = d => DELIVERIES.find(x => x[0] === d)[1];
   const summary = p => {
     const parts = [label(p.delivery)];
     FLAGS.forEach(([, , word], k) => {
-      const usual = k !== 4;
+      const usual = k !== 5;
       if (applies(p.delivery, k) && p.flags[k] !== usual) parts.push(p.flags[k] ? word : "no " + word);
     });
     return parts.join(" · ");
   };
-  const status = i => i === 0 ? "What an app without its own settings gets. The General page has the same four."
+  const status = i => i === 0 ? "What an app without its own settings gets. The General page has the same five."
     : apps[i].own ? "Its own settings" : "Follows the default";
 
   let variant = 0, query = "", selected = 0;
@@ -433,7 +452,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   };
   window.addEventListener("hashchange", fromHash);
   const start = VARIANTS.findIndex(v => "#" + v[0] === location.hash);
-  variant = start >= 0 ? start : 0;
+  variant = start >= 0 ? start : 1;
   render();
 
   // Try it: what a notification gets under the settings above.
@@ -452,8 +471,10 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     github: { origin: "github.com", color: "#2b3137", letter: "G", summary: "JPabloLassala/camino", body: "CI passed on master", actions: ["View"] },
   };
   const TIMEOUT = 7000, MAX = 3;
-  const counts = {};
-  let historySize = 0, logLines = [], queue = [], visible = [];
+  // The Notification history: what the center shows and the badges count.
+  let history = [], nextId = 1, logLines = [], queue = [], visible = [];
+  const expanded = new Set();
+  const countOf = i => history.filter(h => h.i === i).length;
   const $ = id => document.getElementById(id);
   $("try-app").innerHTML = apps.slice(1).map((app, n) => `<option value="${n + 1}">${esc(app.name)}</option>`).join("");
 
@@ -472,15 +493,16 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   }
 
   function renderDesk() {
-    $("desk-dot").hidden = historySize === 0;
-    $("desk-count").textContent = historySize ? String(historySize) : "";
+    $("desk-dot").hidden = history.length === 0;
+    $("desk-count").textContent = history.length ? String(history.length) : "";
     $("desk-bell").classList.toggle("dnd", $("try-dnd").checked);
     $("desk-dock").innerHTML = apps.slice(1).map((app, n) => {
-      const i = n + 1, c = counts[app.id] || 0;
-      const badge = c && effective(i).flags[3] ? `<span class="count">${c}</span>` : "";
+      const i = n + 1, c = countOf(i);
+      const badge = c && effective(i).flags[4] ? `<span class="count">${c}</span>` : "";
       return `<span class="item" title="${esc(app.name)}">${icon(app)}${badge}</span>`;
     }).join("");
     const q = $("desk-queued"); q.hidden = queue.length === 0; q.textContent = `${queue.length} waiting`;
+    if (!$("desk-center").hidden) $("desk-center").innerHTML = centerHtml();
     $("try-log").innerHTML = logLines.slice(0, 6).map(([chip, cls, text]) => `<li><span class="chip ${cls}">${chip}</span><span>${esc(text)}</span></li>`).join("");
   }
   function log(chip, cls, text) { logLines.unshift([chip, cls, text]); renderDesk(); }
@@ -541,25 +563,78 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   $("try-send").addEventListener("click", () => {
     const i = +$("try-app").value, app = apps[i], prefs = effective(i);
     const critical = $("try-urgency").value === "critical", dnd = $("try-dnd").checked;
+    const site = app.id === "firefox" ? $("try-site").value : "";
     if (prefs.delivery === "off") { log("Off", "", `${app.name}: nothing shown and not kept.`); return; }
-    historySize += 1; counts[app.id] = (counts[app.id] || 0) + 1;
-    const badge = prefs.flags[3] ? " Its Dock item shows the count." : " Badge off, so no count on its Dock item.";
+    history.push({ id: nextId++, i, site, time: Date.now() });
+    const badge = prefs.flags[4] ? " Its Dock item shows the count." : " Badge off, so no count on its Dock item.";
     if (prefs.delivery === "history") { log("History only", "", `${app.name}: no bubble, added to the Notification center.${badge}`); return; }
-    const why = critical && $("try-crit").checked ? "critical" : prefs.flags[0 + 4] ? "the app breaks through" : null;
+    const why = critical && $("try-crit").checked ? "critical" : prefs.flags[5] ? "the app breaks through" : null;
     if (dnd && !why) { log("Do Not Disturb", "", `${app.name}: no bubble and no sound, added to the Notification center.${badge}`); return; }
     const notes = [];
     if (dnd) notes.push(`broke through Do Not Disturb (${why})`);
     notes.push(prefs.flags[0] ? "with sound" : "silent");
     if (!prefs.flags[1]) notes.push("previews off");
     if (!prefs.flags[2]) notes.push("no app icon");
-    const site = app.id === "firefox" ? $("try-site").value : "";
     if (site) notes.unshift(`from the ${SITES[site].origin} tab`);
     log("Bubble", "bubble-shown", `${app.name}: ${notes.join(", ")}.${badge}`);
     showBubble({ i, prefs, critical, site });
   });
   $("try-clear").addEventListener("click", () => {
-    historySize = 0; Object.keys(counts).forEach(k => delete counts[k]);
+    history = []; expanded.clear();
     queue = []; visible.forEach(el => el.remove()); visible = []; logLines = [];
+    renderDesk();
+  });
+  const SHOWN = 2;
+  function age(time) {
+    const m = Math.floor((Date.now() - time) / 60000);
+    return m < 1 ? "now" : `${m} min ago`;
+  }
+  function textOf(h) {
+    if (h.site) return [SITES[h.site].summary, SITES[h.site].body];
+    const [summary, body] = SAMPLES[apps[h.i].id];
+    return [summary, body];
+  }
+  function entryHtml(h) {
+    const [summary, body] = textOf(h);
+    return `<div class="c-entry"><span class="s">${esc(summary)}</span><span class="b">${esc(body)}</span><span class="age">${age(h.time)}</span>
+      <button type="button" class="x2" data-dismiss="${h.id}" aria-label="Dismiss">×</button></div>`;
+  }
+  function headHtml(i, extra) {
+    return `<div class="c-head">${icon(apps[i])}<span class="t">${esc(apps[i].name)}</span>${extra}</div>`;
+  }
+  function centerHtml() {
+    const dnd = $("try-dnd").checked;
+    const top = `<div class="c-row"><span class="c-dnd">${dnd ? "Do Not Disturb is on" : "Do Not Disturb is off"}</span>${history.length ? '<button type="button" class="mini" data-clear-all>Clear all</button>' : ""}</div>`;
+    if (!history.length) return top + '<div class="c-empty">No notifications</div>';
+    // Grouped apps are one unit each; an ungrouped app's notifications are a unit each.
+    const units = [], groups = new Map();
+    history.forEach(h => {
+      if (effective(h.i).flags[3]) {
+        if (!groups.has(h.i)) groups.set(h.i, { i: h.i, items: [] });
+        groups.get(h.i).items.push(h);
+      } else units.push({ one: h, time: h.time });
+    });
+    groups.forEach(g => { g.items.sort((a, b) => b.time - a.time); g.time = g.items[0].time; units.push(g); });
+    units.sort((a, b) => b.time - a.time);
+    return top + units.map(u => {
+      if (u.one) return `<div class="c-one">${headHtml(u.one.i, '<span>Not grouped</span>')}${entryHtml(u.one)}</div>`;
+      const open = expanded.has(u.i), shown = open ? u.items : u.items.slice(0, SHOWN), more = u.items.length - shown.length;
+      return `<div class="c-group">${headHtml(u.i, `<span>${u.items.length}</span><button type="button" class="mini" data-clear-app="${u.i}" aria-label="Clear ${esc(apps[u.i].name)}">Clear</button>`)}
+        ${shown.map(entryHtml).join("")}
+        ${more > 0 ? `<button type="button" class="mini" data-more="${u.i}">${more} more</button>` : open && u.items.length > SHOWN ? `<button type="button" class="mini" data-more="${u.i}">Show less</button>` : ""}</div>`;
+    }).join("");
+  }
+  $("desk-bell").addEventListener("click", () => {
+    const c = $("desk-center"); c.hidden = !c.hidden;
+    $("desk-bell").setAttribute("aria-expanded", String(!c.hidden));
+    renderDesk();
+  });
+  $("desk-center").addEventListener("click", e => {
+    const t = e.target.closest("button"); if (!t) return;
+    if (t.dataset.dismiss) history = history.filter(h => h.id !== +t.dataset.dismiss);
+    else if (t.dataset.clearApp) history = history.filter(h => h.i !== +t.dataset.clearApp);
+    else if (t.hasAttribute("data-clear-all")) history = [];
+    else if (t.dataset.more) { const i = +t.dataset.more; expanded.has(i) ? expanded.delete(i) : expanded.add(i); }
     renderDesk();
   });
   $("try-dnd").addEventListener("change", renderDesk);
