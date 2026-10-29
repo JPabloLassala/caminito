@@ -1,7 +1,7 @@
 # 30. Carried patches are kept once, for every distribution
 
 Date: 2026-10-11
-Status: Accepted. Qualifies ADR 0011, whose patches lived beside each PKGBUILD.
+Status: Accepted. Qualifies ADR 0011, whose patches lived beside each PKGBUILD. Qualified by ADR 0052: the PKGBUILDs list their patches by bare filename, copied beside them at build time.
 
 ## Context
 
