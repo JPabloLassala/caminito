@@ -18,7 +18,8 @@ use std::time::{Duration, Instant};
 use caminito_test_client::dbus::session;
 use zbus::blocking::Connection;
 use zbus::blocking::fdo::DBusProxy;
-use zbus::zvariant::OwnedObjectPath;
+use zbus::fdo::RequestNameFlags;
+use zbus::zvariant::{self, OwnedObjectPath};
 
 use super::fixture::{Bus, Fixture, Logs};
 use crate::decoration::palette::PaletteSource;
@@ -28,6 +29,9 @@ use crate::settings::Value;
 use crate::settings::translate::MOUSE;
 
 const SYSTEMD: &str = "org.freedesktop.systemd1";
+
+/// xdg-desktop-portal's name, which a portal stand-in takes on the tests' bus.
+const PORTAL: &str = "org.freedesktop.portal.Desktop";
 
 /// The socket name the tests' Sessions export. No test client connects by it.
 const SOCKET: &str = "wayland-caminito-test";
@@ -106,7 +110,7 @@ fn write_environment(name: &str) -> String {
 }
 
 /// Caminito on the tests' bus with its names, as a Session has them (62), and with no
-/// `org.freedesktop.systemd1` left on the bus by the test before.
+/// `org.freedesktop.systemd1` or portal left on the bus by the test before.
 fn fixture() -> Fixture {
     fixture_with_settings(Vec::new())
 }
@@ -117,7 +121,11 @@ fn fixture_with_settings(settings: Vec<(&'static str, String, Value)>) -> Fixtur
     let bus = session().unwrap();
     let bus = DBusProxy::new(&bus).unwrap();
     // The bus frees a name some time after its owner's connection closes.
-    f.dispatch_until(|_| !bus.name_has_owner(SYSTEMD.try_into().unwrap()).unwrap());
+    f.dispatch_until(|_| {
+        [SYSTEMD, PORTAL]
+            .iter()
+            .all(|name| !bus.name_has_owner((*name).try_into().unwrap()).unwrap())
+    });
     f
 }
 
@@ -248,6 +256,74 @@ impl Systemd {
             .build()
             .unwrap();
         Systemd { calls, connection }
+    }
+
+    fn calls(&self) -> Vec<(&'static str, Vec<String>, bool)> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+/// A stand-in for xdg-desktop-portal's Settings on the tests' bus. For each `ReadOne` it
+/// keeps its namespace and key, and whether `started` existed then.
+struct Portal {
+    calls: Calls,
+    connection: Connection,
+}
+
+impl Drop for Portal {
+    fn drop(&mut self) {
+        let _ = self.connection.release_name(PORTAL);
+    }
+}
+
+struct Settings {
+    calls: Calls,
+    started: PathBuf,
+}
+
+#[zbus::interface(name = "org.freedesktop.portal.Settings")]
+impl Settings {
+    fn read_one(&self, namespace: String, key: String) -> zvariant::Value<'static> {
+        let mut argument = vec![namespace, key];
+        argument.sort();
+        let started = self.started.exists();
+        self.calls
+            .lock()
+            .unwrap()
+            .push(("ReadOne", argument, started));
+        zvariant::Value::from("Sans 10")
+    }
+}
+
+impl Portal {
+    /// The portal from before the Session, which systemd's restart replaces.
+    fn running(started: PathBuf) -> Self {
+        Self::with(started, RequestNameFlags::AllowReplacement)
+    }
+
+    /// The restarted portal, which takes the name from the one that `running` made. It
+    /// takes it at once, so the name is never without an owner and the bus never
+    /// activates the machine's own portal.
+    fn restarted(started: PathBuf) -> Self {
+        Self::with(started, RequestNameFlags::ReplaceExisting)
+    }
+
+    fn with(started: PathBuf, flags: RequestNameFlags) -> Self {
+        let calls = Calls::default();
+        let settings = Settings {
+            calls: calls.clone(),
+            started,
+        };
+        let connection = zbus::blocking::connection::Builder::session()
+            .unwrap()
+            .serve_at("/org/freedesktop/portal/desktop", settings)
+            .unwrap()
+            .build()
+            .unwrap();
+        connection
+            .request_name_with_flags(PORTAL, flags | RequestNameFlags::DoNotQueue)
+            .unwrap();
+        Portal { calls, connection }
     }
 
     fn calls(&self) -> Vec<(&'static str, Vec<String>, bool)> {
@@ -475,6 +551,68 @@ fn the_portal_is_restarted_once_systemd_has_the_environment_and_before_the_comma
     ];
     assert_eq!(calls[0].0, "SetEnvironment", "{calls:?}");
     assert_eq!(calls[1], ("TryRestartUnit", restart.to_vec(), false));
+}
+
+#[test]
+fn the_command_and_the_notification_daemon_start_once_the_restarted_portal_answers() {
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let systemd = Systemd::new(scripts.path("started"));
+    let running = Portal::running(scripts.path("started"));
+    let daemon = scripts.write("notifications", &format!("touch \"$dir/daemon\"\n{WAIT}"));
+    f.state.caminito.notifications.program = Some(daemon);
+    let command = scripts.session_command(&format!("touch \"$dir/started\"\n{WAIT}"));
+
+    start(&mut f, command);
+    f.dispatch_until(|_| {
+        systemd
+            .calls()
+            .iter()
+            .any(|call| call.0 == "TryRestartUnit")
+    });
+    // Nothing is to happen while the portal from before still has the name: GTK4 would
+    // read its font settings from nowhere (CMN-284).
+    f.dispatch_for(Duration::from_millis(300));
+    assert!(!scripts.exists("daemon"), "the daemon waits for the portal");
+    assert!(
+        !scripts.exists("started"),
+        "the command waits for the portal"
+    );
+
+    let restarted = Portal::restarted(scripts.path("started"));
+    f.dispatch_until(|_| scripts.exists("started") && scripts.exists("daemon"));
+
+    let read = vec![
+        "font-name".to_owned(),
+        "org.gnome.desktop.interface".to_owned(),
+    ];
+    assert_eq!(restarted.calls(), [("ReadOne", read, false)]);
+    assert_eq!(running.calls(), []);
+}
+
+#[test]
+fn a_portal_that_isnt_replaced_holds_the_command_only_for_the_wait() {
+    let logs = Logs::capture();
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let _systemd = Systemd::new(scripts.path("started"));
+    let _running = Portal::running(scripts.path("started"));
+    let command = scripts.session_command(&format!("touch \"$dir/started\"\n{WAIT}"));
+    // The 5 s of a real Session would be most of the test run.
+    let wait = Duration::from_millis(400);
+
+    f.state.caminito.start_session(command, SOCKET.into());
+    f.state.caminito.set_portal_wait(wait);
+    let asked = Instant::now();
+    f.start_xwayland();
+    f.dispatch_until(|_| scripts.exists("started"));
+
+    assert!(asked.elapsed() >= wait);
+    let logs = logs.text();
+    assert!(
+        logs.contains("the restarted portal didn't answer within 400ms"),
+        "{logs}"
+    );
 }
 
 #[test]

@@ -6,7 +6,8 @@
 //! pass waits for Xwayland to be ready, or to be given up on. Then the environment goes
 //! into `Caminito::environment`, and from there to the D-Bus activation environment and to
 //! systemd's user manager (`dbus::systemd`), which then restarts the portal (232), and only
-//! once the bus has answered is the command spawned, with `GDK_BACKEND=x11` for itself alone.
+//! once the bus has answered, and the restarted portal or its wait is over (CMN-284), is the
+//! command spawned, with `GDK_BACKEND=x11` for itself alone.
 //! caminito-notifications starts just before it, and caminito-wallpaperd with it, as helpers
 //! (ADR 0051, 210).
 //!
@@ -237,6 +238,8 @@ pub(crate) struct Session {
     sigchld: Option<(signal_hook::SigId, RegistrationToken)>,
     /// `WAIT`, which a test makes shorter.
     wait: Duration,
+    /// `systemd::PORTAL_WAIT`, which a test makes shorter.
+    portal_wait: Duration,
 }
 
 enum Phase {
@@ -302,6 +305,7 @@ impl Caminito {
             unset_error: None,
             sigchld: None,
             wait: WAIT,
+            portal_wait: systemd::PORTAL_WAIT,
         });
     }
 
@@ -394,9 +398,10 @@ impl Caminito {
         }
         let connection = dbus.connection().clone();
         let events = session.events.clone();
+        let portal_wait = session.portal_wait;
         let task = dbus.connection().executor().spawn(
             async move {
-                let exported = systemd::export(&connection, &variables).await;
+                let exported = systemd::export(&connection, &variables, portal_wait).await;
                 let _ = events.send(Event::Exported(Box::new(exported)));
             },
             "session environment",
@@ -425,7 +430,7 @@ impl Caminito {
                     Err(err) => tracing::warn!("can't export the environment to systemd: {err}"),
                 }
                 if let Err(err) = exported.portal {
-                    tracing::warn!("can't restart the portal, which may have no display: {err}");
+                    tracing::warn!("{err}");
                 }
                 if quit {
                     self.end_session(FAILURE);
@@ -709,6 +714,11 @@ impl Caminito {
     #[cfg(test)]
     pub(crate) fn set_session_wait(&mut self, wait: Duration) {
         self.session.as_mut().expect("a Session runs").wait = wait;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_portal_wait(&mut self, wait: Duration) {
+        self.session.as_mut().expect("a Session runs").portal_wait = wait;
     }
 }
 

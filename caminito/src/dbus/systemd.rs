@@ -10,11 +10,20 @@
 //! login, that portal is still there at the next one, and what it launches for a client, a
 //! browser for a link, has no display.
 //!
+//! The export then waits for the portal that takes the old one's place to answer (CMN-284).
+//! A GTK4 program reads the font and its DPI from the portal's Settings as it starts, and
+//! one that finds no portal there takes `~/.config/gtk-4.0/settings.ini`'s for good, which
+//! another desktop may have written: the notification daemon, which starts next, and what
+//! mate-session starts at login.
+//!
 //! These run off the event loop and log nothing: the `session` module logs what they
 //! return, from the event loop.
 
 use std::collections::HashMap;
+use std::fmt;
+use std::time::Duration;
 
+use zbus::export::ordered_stream::OrderedStreamExt;
 use zbus::fdo;
 use zbus::names::BusName;
 
@@ -29,6 +38,16 @@ const PORTAL: &str = "xdg-desktop-portal.service";
 /// The manager's error for a unit it has no file for.
 const NO_SUCH_UNIT: &str = "org.freedesktop.systemd1.NoSuchUnit";
 
+/// The portal's name on the bus, and its Settings, where GTK4 reads the font from.
+const PORTAL_NAME: &str = "org.freedesktop.portal.Desktop";
+const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
+const SETTINGS: &str = "org.freedesktop.portal.Settings";
+/// The setting the restarted portal is asked for: the font GTK4 takes.
+const FONT: (&str, &str) = ("org.gnome.desktop.interface", "font-name");
+
+/// How long the restarted portal has to answer before the Session starts without it.
+pub(crate) const PORTAL_WAIT: Duration = Duration::from_secs(5);
+
 /// What became of an export.
 pub(crate) struct Exported {
     /// The bus's `UpdateActivationEnvironment`.
@@ -36,20 +55,57 @@ pub(crate) struct Exported {
     /// The manager's `SetEnvironment`: whether it was there to call.
     pub(crate) systemd: zbus::Result<bool>,
     /// The manager's `TryRestartUnit` of the portal, which is asked only once the manager
-    /// has the environment.
-    pub(crate) portal: zbus::Result<()>,
+    /// has the environment, and the restarted portal's answer.
+    pub(crate) portal: Result<(), PortalError>,
+}
+
+/// Why the portal may not have the Session's environment, or not be up yet.
+#[derive(Debug)]
+pub(crate) enum PortalError {
+    /// The bus or the manager failed the restart.
+    Restart(zbus::Error),
+    /// The restarted portal didn't answer within the wait.
+    Unanswered(Duration),
+}
+
+impl fmt::Display for PortalError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PortalError::Restart(err) => {
+                write!(
+                    f,
+                    "can't restart the portal, which may have no display: {err}"
+                )
+            }
+            PortalError::Unanswered(wait) => write!(
+                f,
+                "the restarted portal didn't answer within {wait:?}, so what starts now may \
+                 miss the Session's font settings"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for PortalError {}
+
+impl From<zbus::Error> for PortalError {
+    fn from(err: zbus::Error) -> Self {
+        PortalError::Restart(err)
+    }
 }
 
 /// Gives `variables` to the activation environment, and to systemd's user manager if it's
-/// on the bus, which then restarts the portal. It returns once each has answered.
+/// on the bus, which then restarts the portal. It returns once each has answered, and the
+/// restarted portal too, or `portal_wait` after the restart.
 pub(crate) async fn export(
     connection: &zbus::Connection,
     variables: &[(String, String)],
+    portal_wait: Duration,
 ) -> Exported {
     let activation = update_activation_environment(connection, variables).await;
     let systemd = set_environment(connection, variables).await;
     let portal = match systemd {
-        Ok(true) => restart_portal(connection).await,
+        Ok(true) => restart_portal(connection, portal_wait).await,
         _ => Ok(()),
     };
     Exported {
@@ -96,9 +152,19 @@ async fn set_environment(
 }
 
 /// Restarts the portal if it runs, for it to start again with the environment the manager
-/// now has. One that doesn't run is started by the bus when a client first asks for it, and
-/// a machine without xdg-desktop-portal has no unit to restart.
-async fn restart_portal(connection: &zbus::Connection) -> zbus::Result<()> {
+/// now has, and returns once the one that takes its place answers, or after `wait`. One
+/// that doesn't run is started by the bus when a client first asks for it, and a machine
+/// without xdg-desktop-portal has no unit to restart.
+async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result<(), PortalError> {
+    let bus = fdo::DBusProxy::new(connection).await?;
+    // Before the restart, so that the old portal's leaving can't be missed.
+    let mut changes = bus
+        .receive_name_owner_changed_with_args(&[(0, PORTAL_NAME)])
+        .await?;
+    let running = bus
+        .get_name_owner(BusName::from_static_str(PORTAL_NAME).map_err(zbus::Error::from)?)
+        .await
+        .ok();
     let restarted = connection
         .call_method(
             Some(NAME),
@@ -109,9 +175,41 @@ async fn restart_portal(connection: &zbus::Connection) -> zbus::Result<()> {
         )
         .await;
     match restarted {
-        Err(zbus::Error::MethodError(name, ..)) if name == NO_SUCH_UNIT => Ok(()),
-        restarted => restarted.map(drop),
+        Err(zbus::Error::MethodError(name, ..)) if name == NO_SUCH_UNIT => return Ok(()),
+        restarted => restarted.map(drop)?,
     }
+    let Some(running) = running else {
+        return Ok(());
+    };
+    let answered = async {
+        while let Some(change) = changes.next().await {
+            let left = change.args().is_ok_and(|args| {
+                args.old_owner()
+                    .as_ref()
+                    .is_some_and(|old| old.as_str() == running.as_str())
+            });
+            if left {
+                break;
+            }
+        }
+        // The bus holds the call until the new portal has the name. Any answer, even an
+        // error for a key it doesn't have, is the portal's Settings at work.
+        let _ = connection
+            .call_method(
+                Some(PORTAL_NAME),
+                PORTAL_PATH,
+                Some(SETTINGS),
+                "ReadOne",
+                &FONT,
+            )
+            .await;
+        Ok(())
+    };
+    let timeout = async {
+        async_io::Timer::after(wait).await;
+        Err(PortalError::Unanswered(wait))
+    };
+    futures_lite::future::or(answered, timeout).await
 }
 
 /// Has systemd's user manager forget `names`, over a connection of its own, made from

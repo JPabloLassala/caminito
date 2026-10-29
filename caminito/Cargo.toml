@@ -8,6 +8,9 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+# The wait for the restarted portal (CMN-284), on zbus's executor: zbus's own timer and
+# combinator, as zbus already depends on them.
+async-io = "2.6.0"
 caminito-layout = { path = "../caminito-layout" }
 caminito-policy = { path = "../caminito-policy" }
 caminito-theme = { path = "../caminito-theme" }
@@ -17,6 +20,7 @@ caminito-version = { path = "../caminito-version" }
 # slice (137). Smithay's drm already depends on it.
 drm-ffi = "0.9.1"
 futures-channel.workspace = true
+futures-lite = "2.6.1"
 gio = "0.22.10"
 libc = "0.2.189"
 # process: SIGTERM to the helpers and to the session command (61), and Force Quit's SIGKILL

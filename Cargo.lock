@@ -328,6 +328,7 @@ dependencies = [
 name = "caminito"
 version = "0.1.0"
 dependencies = [
+ "async-io",
  "caminito-displays",
  "caminito-layout",
  "caminito-policy",
@@ -337,6 +338,7 @@ dependencies = [
  "caminito-wallpaper",
  "drm-ffi",
  "futures-channel",
+ "futures-lite",
  "gio",
  "insta",
  "libc",
