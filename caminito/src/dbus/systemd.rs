@@ -10,7 +10,8 @@
 //! login, that portal is still there at the next one, and what it launches for a client, a
 //! browser for a link, has no display.
 //!
-//! The export then waits for the portal that takes the old one's place to answer (CMN-284).
+//! The export then waits for the portal that takes the old one's place to answer with the
+//! font (CMN-284, CMN-287).
 //! A GTK4 program reads the font and its DPI from the portal's Settings as it starts, and
 //! one that finds no portal there takes them from `~/.config/gtk-4.0/settings.ini` for good,
 //! a file another desktop may have written. The notification daemon starts next, and
@@ -21,6 +22,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use zbus::export::ordered_stream::OrderedStreamExt;
@@ -35,7 +37,12 @@ const INTERFACE: &str = "org.freedesktop.systemd1.Manager";
 /// xdg-desktop-portal's unit. Its backends aren't restarted: the ones a MATE login has
 /// (`mate-portals.conf`) exit without a display, so none is left from before.
 const PORTAL: &str = "xdg-desktop-portal.service";
-/// The manager's error for a unit it has no file for.
+/// The units of the backends `mate-portals.conf` names, whose failures systemd forgets
+/// before the restart. One that exited again and again as the last Session's display went
+/// has hit systemd's start limit, and the restarted portal would have no Settings until
+/// the limit's interval is over (CMN-287).
+const BACKENDS: &[&str] = &["xdg-desktop-portal-gtk.service"];
+/// The manager's error for a unit it has no file for, or hasn't loaded.
 const NO_SUCH_UNIT: &str = "org.freedesktop.systemd1.NoSuchUnit";
 
 /// The portal's name on the bus, and its Settings, where GTK4 reads the font from.
@@ -49,6 +56,8 @@ const FONT: (&str, &str) = ("org.gnome.desktop.interface", "font-name");
 
 /// How long the restarted portal has to answer before the Session starts without it.
 pub(crate) const PORTAL_WAIT: Duration = Duration::from_secs(5);
+/// How long the restarted portal has before it's asked again for the font it didn't have.
+const READ_AGAIN: Duration = Duration::from_millis(100);
 
 /// What became of an export.
 pub(crate) struct Exported {
@@ -72,6 +81,8 @@ pub(crate) enum PortalError {
     Unreachable(zbus::Error),
     /// The restarted portal didn't answer within the wait.
     Unanswered(Duration),
+    /// The restarted portal answered, but had no font within the wait.
+    Unset(Duration),
 }
 
 impl fmt::Display for PortalError {
@@ -93,6 +104,11 @@ impl fmt::Display for PortalError {
                 f,
                 "can't hear from the restarted portal within {wait:?}, so what starts now may \
                  miss the Session's font settings"
+            ),
+            PortalError::Unset(wait) => write!(
+                f,
+                "can't read the font from the restarted portal within {wait:?}, so what starts \
+                 now may miss the Session's font settings"
             ),
         }
     }
@@ -176,6 +192,22 @@ async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result
     };
     // The proxy stays with the stream, which needs its match rule kept.
     let (_bus, mut changes, running) = watch.await.map_err(PortalError::Watch)?;
+    for backend in BACKENDS {
+        let reset = connection
+            .call_method(
+                Some(NAME),
+                PATH,
+                Some(INTERFACE),
+                "ResetFailedUnit",
+                &(backend,),
+            )
+            .await;
+        match reset {
+            // A backend that hasn't run since the manager started has no unit loaded.
+            Err(zbus::Error::MethodError(name, ..)) if name == NO_SUCH_UNIT => {}
+            reset => reset.map(drop).map_err(PortalError::Restart)?,
+        }
+    }
     let restarted = connection
         .call_method(
             Some(NAME),
@@ -192,6 +224,8 @@ async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result
     let Some(running) = running else {
         return Ok(());
     };
+    // Whether the restarted portal has answered without the font.
+    let unset = AtomicBool::new(false);
     let answered = async {
         while let Some(change) = changes.next().await {
             let left = change.args().is_ok_and(|args| {
@@ -203,31 +237,42 @@ async fn restart_portal(connection: &zbus::Connection, wait: Duration) -> Result
                 break;
             }
         }
-        // The bus holds the call until the new portal has the name. Any answer of the
-        // portal's, even an error for a key it doesn't have, is its Settings at work; one
-        // of the bus's is a portal it couldn't start.
-        let read = connection
-            .call_method(
-                Some(PORTAL_NAME),
-                PORTAL_PATH,
-                Some(SETTINGS),
-                "ReadOne",
-                &FONT,
-            )
-            .await;
-        match read {
-            Err(zbus::Error::MethodError(name, detail, reply))
-                if name.as_str().starts_with(BUS_ERRORS) =>
-            {
-                let err = zbus::Error::MethodError(name, detail, reply);
-                Err(PortalError::Unreachable(err))
+        // The bus holds the call until the new portal has the name. The portal's error, for
+        // a setting no backend has, is a portal whose Settings backend isn't up yet, as
+        // after a logout in which systemd stopped starting it (CMN-287): it's asked again.
+        // One of the bus's is a portal it couldn't start.
+        loop {
+            let read = connection
+                .call_method(
+                    Some(PORTAL_NAME),
+                    PORTAL_PATH,
+                    Some(SETTINGS),
+                    "ReadOne",
+                    &FONT,
+                )
+                .await;
+            match read {
+                Ok(_) => return Ok(()),
+                Err(zbus::Error::MethodError(name, detail, reply))
+                    if name.as_str().starts_with(BUS_ERRORS) =>
+                {
+                    let err = zbus::Error::MethodError(name, detail, reply);
+                    return Err(PortalError::Unreachable(err));
+                }
+                Err(_) => {
+                    unset.store(true, Ordering::Relaxed);
+                    async_io::Timer::after(READ_AGAIN).await;
+                }
             }
-            _ => Ok(()),
         }
     };
     let timeout = async {
         async_io::Timer::after(wait).await;
-        Err(PortalError::Unanswered(wait))
+        if unset.load(Ordering::Relaxed) {
+            Err(PortalError::Unset(wait))
+        } else {
+            Err(PortalError::Unanswered(wait))
+        }
     };
     futures_lite::future::or(answered, timeout).await
 }

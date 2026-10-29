@@ -156,7 +156,7 @@ struct Manager {
     started: PathBuf,
     /// How many more calls of `UnsetEnvironment` are never answered.
     unanswered: AtomicU32,
-    /// Whether it has the portal's unit, as a machine with xdg-desktop-portal installed.
+    /// Whether it has the portal's units, as a machine with xdg-desktop-portal installed.
     has_portal: bool,
 }
 
@@ -187,6 +187,14 @@ impl Manager {
 impl Manager {
     fn set_environment(&self, assignments: Vec<String>) {
         self.called("SetEnvironment", assignments);
+    }
+
+    fn reset_failed_unit(&self, name: String) -> Result<(), ManagerError> {
+        if !self.has_portal {
+            return Err(ManagerError::NoSuchUnit(format!("Unit {name} not loaded.")));
+        }
+        self.called("ResetFailedUnit", vec![name]);
+        Ok(())
     }
 
     fn try_restart_unit(
@@ -285,34 +293,66 @@ impl Drop for Portal {
 struct Settings {
     calls: Calls,
     started: PathBuf,
+    /// How many more calls of `ReadOne` find no setting, as before a backend is up.
+    unset: AtomicU32,
+}
+
+/// The portal's own errors, by the names it gives them on the bus.
+#[derive(Debug, zbus::DBusError)]
+#[zbus(prefix = "org.freedesktop.portal.Error")]
+enum SettingsError {
+    #[zbus(error)]
+    ZBus(zbus::Error),
+    NotFound(String),
 }
 
 #[zbus::interface(name = "org.freedesktop.portal.Settings")]
 impl Settings {
-    fn read_one(&self, namespace: String, key: String) -> zvariant::Value<'static> {
+    fn read_one(
+        &self,
+        namespace: String,
+        key: String,
+    ) -> Result<zvariant::OwnedValue, SettingsError> {
         record(&self.calls, &self.started, "ReadOne", vec![namespace, key]);
-        zvariant::Value::from("Sans 10")
+        let unset = |left: u32| left.checked_sub(1);
+        if self
+            .unset
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, unset)
+            .is_ok()
+        {
+            return Err(SettingsError::NotFound(
+                "Requested setting not found".into(),
+            ));
+        }
+        Ok(zvariant::Value::from("Sans 10").try_into().unwrap())
     }
 }
 
 impl Portal {
     /// The portal from before the Session, which systemd's restart replaces.
     fn running(started: PathBuf) -> Self {
-        Self::with(started, RequestNameFlags::AllowReplacement)
+        Self::with(started, RequestNameFlags::AllowReplacement, 0)
     }
 
     /// The restarted portal, which takes the name from the one that `running` made. It
     /// takes it at once, so the name is never without an owner and the bus never
     /// activates the machine's own portal.
     fn restarted(started: PathBuf) -> Self {
-        Self::with(started, RequestNameFlags::ReplaceExisting)
+        Self::restarted_without_the_font(started, 0)
     }
 
-    fn with(started: PathBuf, flags: RequestNameFlags) -> Self {
+    /// The restarted portal, whose first `unset` calls of `ReadOne` find no setting, as one
+    /// whose Settings backend systemd hasn't started yet (CMN-287).
+    fn restarted_without_the_font(started: PathBuf, unset: u32) -> Self {
+        Self::with(started, RequestNameFlags::ReplaceExisting, unset)
+    }
+
+    fn with(started: PathBuf, flags: RequestNameFlags, unset: u32) -> Self {
         let calls = Calls::default();
         let settings = Settings {
             calls: calls.clone(),
             started,
+            unset: unset.into(),
         };
         let connection = zbus::blocking::connection::Builder::session()
             .unwrap()
@@ -503,11 +543,12 @@ fn systemd_is_given_the_environment_before_the_command_starts_and_forgets_it_on_
     let calls = systemd.calls();
     let [
         (set, assignments, false),
+        ("ResetFailedUnit", _, false),
         ("TryRestartUnit", _, false),
         (unset, names, true),
     ] = &calls[..]
     else {
-        panic!("two calls before the command and one after it: {calls:?}");
+        panic!("three calls before the command and one after it: {calls:?}");
     };
     assert_eq!((*set, *unset), ("SetEnvironment", "UnsetEnvironment"));
     for name in EXPORTED {
@@ -550,7 +591,25 @@ fn the_portal_is_restarted_once_systemd_has_the_environment_and_before_the_comma
         "xdg-desktop-portal.service".to_owned(),
     ];
     assert_eq!(calls[0].0, "SetEnvironment", "{calls:?}");
-    assert_eq!(calls[1], ("TryRestartUnit", restart.to_vec(), false));
+    assert_eq!(calls[2], ("TryRestartUnit", restart.to_vec(), false));
+}
+
+#[test]
+fn systemd_forgets_the_portal_backends_failures_before_the_portal_is_restarted() {
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let systemd = Systemd::new(scripts.path("started"));
+    let command = scripts.session_command("touch \"$dir/started\"");
+
+    start(&mut f, command);
+    f.dispatch_until(|f| f.state.caminito.session_exit().is_some());
+
+    // A backend that failed as the last Session ended may have hit systemd's start limit,
+    // and then the restarted portal has no Settings for a while (CMN-287).
+    let calls = systemd.calls();
+    let reset = vec!["xdg-desktop-portal-gtk.service".to_owned()];
+    assert_eq!(calls[1], ("ResetFailedUnit", reset, false), "{calls:?}");
+    assert_eq!(calls[2].0, "TryRestartUnit", "{calls:?}");
 }
 
 #[test]
@@ -589,6 +648,73 @@ fn the_command_and_the_notification_daemon_start_once_the_restarted_portal_answe
     ];
     assert_eq!(restarted.calls(), [("ReadOne", read, false)]);
     assert_eq!(running.calls(), []);
+}
+
+#[test]
+fn the_command_and_the_notification_daemon_wait_until_the_restarted_portal_has_the_font() {
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let systemd = Systemd::new(scripts.path("started"));
+    let _running = Portal::running(scripts.path("started"));
+    let daemon = scripts.write("notifications", &format!("touch \"$dir/daemon\"\n{WAIT}"));
+    f.state.caminito.notifications.program = Some(daemon);
+    let command = scripts.session_command(&format!("touch \"$dir/started\"\n{WAIT}"));
+
+    start(&mut f, command);
+    f.dispatch_until(|_| {
+        systemd
+            .calls()
+            .iter()
+            .any(|call| call.0 == "TryRestartUnit")
+    });
+    // After a logout, the restarted portal can answer before systemd lets its Settings
+    // backend start, and has no font then (CMN-287).
+    let restarted = Portal::restarted_without_the_font(scripts.path("started"), 2);
+    f.dispatch_until(|_| scripts.exists("started") && scripts.exists("daemon"));
+
+    let read = vec![
+        "font-name".to_owned(),
+        "org.gnome.desktop.interface".to_owned(),
+    ];
+    assert_eq!(
+        restarted.calls(),
+        [
+            ("ReadOne", read.clone(), false),
+            ("ReadOne", read.clone(), false),
+            ("ReadOne", read, false)
+        ]
+    );
+}
+
+#[test]
+fn a_portal_that_never_has_the_font_holds_the_command_only_for_the_wait() {
+    let logs = Logs::capture();
+    let mut f = fixture();
+    let scripts = Scripts::new();
+    let systemd = Systemd::new(scripts.path("started"));
+    let _running = Portal::running(scripts.path("started"));
+    let command = scripts.session_command(&format!("touch \"$dir/started\"\n{WAIT}"));
+    let wait = Duration::from_millis(400);
+
+    f.state.caminito.start_session(command, SOCKET.into());
+    f.state.caminito.set_portal_wait(wait);
+    let asked = Instant::now();
+    f.start_xwayland();
+    f.dispatch_until(|_| {
+        systemd
+            .calls()
+            .iter()
+            .any(|call| call.0 == "TryRestartUnit")
+    });
+    let _restarted = Portal::restarted_without_the_font(scripts.path("started"), u32::MAX);
+    f.dispatch_until(|_| scripts.exists("started"));
+
+    assert!(asked.elapsed() >= wait);
+    let logs = logs.text();
+    assert!(
+        logs.contains("can't read the font from the restarted portal within 400ms"),
+        "{logs}"
+    );
 }
 
 #[test]
@@ -827,8 +953,13 @@ fn a_systemd_that_doesnt_answer_the_unset_is_given_up_on_after_the_wait() {
 
     let calls: Vec<&str> = systemd.calls().iter().map(|call| call.0).collect();
     assert_eq!(
-        calls[..3],
-        ["SetEnvironment", "TryRestartUnit", "UnsetEnvironment"]
+        calls[..4],
+        [
+            "SetEnvironment",
+            "ResetFailedUnit",
+            "TryRestartUnit",
+            "UnsetEnvironment"
+        ]
     );
     let logs = logs.text();
     assert!(
@@ -855,7 +986,12 @@ fn a_stop_during_the_export_spawns_no_command_and_systemd_still_forgets() {
     let calls: Vec<&str> = systemd.calls().iter().map(|call| call.0).collect();
     assert_eq!(
         calls,
-        ["SetEnvironment", "TryRestartUnit", "UnsetEnvironment"]
+        [
+            "SetEnvironment",
+            "ResetFailedUnit",
+            "TryRestartUnit",
+            "UnsetEnvironment"
+        ]
     );
 }
 
@@ -875,6 +1011,7 @@ fn a_systemd_that_doesnt_answer_the_unset_is_asked_again() {
         calls,
         [
             "SetEnvironment",
+            "ResetFailedUnit",
             "TryRestartUnit",
             "UnsetEnvironment",
             "UnsetEnvironment"
@@ -900,7 +1037,10 @@ fn the_systemd_on_the_bus_that_replaces_one_that_stops_with_the_command_forgets(
 
     assert_eq!(f.state.caminito.session_exit(), Some(0));
     let asked: Vec<&str> = first.calls().iter().map(|call| call.0).collect();
-    assert_eq!(asked, ["SetEnvironment", "TryRestartUnit"]);
+    assert_eq!(
+        asked,
+        ["SetEnvironment", "ResetFailedUnit", "TryRestartUnit"]
+    );
     let names = [
         "DISPLAY",
         "MATE_WM_KEYBINDINGS",
