@@ -140,7 +140,8 @@ install_data(
   install_dir: get_option('sysconfdir') / 'xdg' / 'autostart',
 )
 # Its hidden application entry (CMN-268), which its notifications name in their desktop-entry
-# hint: the notification daemon takes the Notifying app's name and icon from it.
+# hint: the Apps page of the notification settings takes the Notifying app's name and icon
+# from it.
 install_data(
   'data/caminito-network.desktop',
   install_dir: get_option('datadir') / 'applications',

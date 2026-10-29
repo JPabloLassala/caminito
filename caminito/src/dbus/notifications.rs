@@ -13,7 +13,8 @@ const INTERFACE: &str = "org.freedesktop.Notifications";
 /// The icon the control center has for its accessibility pages.
 const ICON: &str = "preferences-desktop-accessibility";
 /// The `desktop-entry` hint: Workspace Behaviour's entry, which makes the notifications those of
-/// a Notifying app of its own (CMN-268), with Workspace Behaviour's name and icon.
+/// a Notifying app of its own (CMN-268), which the Apps page shows with that entry's name and
+/// icon. The bubbles keep the app name and the icon of `Notify`.
 const DESKTOP_ENTRY: &str = "caminito-behaviour";
 
 impl Caminito {
