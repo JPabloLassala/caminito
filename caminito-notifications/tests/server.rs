@@ -23,6 +23,10 @@ const PATH: &str = "/org/freedesktop/Notifications";
 const API_NAME: &str = "org.mate.Caminito.Notifications";
 const API_PATH: &str = "/org/mate/Caminito/Notifications";
 
+/// How long a test waits to see that no signal comes. A signal crosses the private bus in a
+/// millisecond or two, so this is many times what one needs.
+const QUIET: Duration = Duration::from_millis(100);
+
 /// The seconds in a week, which the history keeps an entry for.
 const WEEK: u64 = 7 * 24 * 60 * 60;
 
@@ -394,9 +398,10 @@ impl Daemon<'_> {
         });
     }
 
-    /// Forgets the signals so far, once those on their way have arrived.
+    /// Forgets the signals so far. A call's answer comes after the signals the server emitted
+    /// before it, so those on their way have arrived once it has.
     fn forget_signals(&self) {
-        self.bus.run_for(Duration::from_millis(50));
+        self.counts();
         self.signals.borrow_mut().clear();
         self.api_signals.borrow_mut().clear();
     }
@@ -1152,13 +1157,13 @@ fn a_new_notification_and_a_replacement_fire_the_change_signals_that_changed() {
             ..notify("Two")
         });
         daemon.wait_for_api_signals(1);
-        daemon.bus.run_for(Duration::from_millis(100));
+        daemon.bus.run_for(QUIET);
 
         // The count of the app is the same, so the counts don't change.
         assert_eq!(daemon.api_signals(), [signal("HistoryChanged", "()")]);
         daemon.forget_signals();
         daemon.notify(notify("Transient").hint("transient", true));
-        daemon.bus.run_for(Duration::from_millis(100));
+        daemon.bus.run_for(QUIET);
         assert!(daemon.api_signals().is_empty());
     });
 }
@@ -1268,7 +1273,7 @@ fn the_api_clears_an_apps_entries_and_then_all_of_them_with_one_change_each() {
         daemon.forget_signals();
         daemon.api("ClearAll", ().to_variant());
         daemon.api("ClearApp", ("A",).to_variant());
-        daemon.bus.run_for(Duration::from_millis(100));
+        daemon.bus.run_for(QUIET);
         assert!(daemon.api_signals().is_empty());
     });
 }
@@ -1307,7 +1312,7 @@ fn the_api_invokes_an_action_with_the_token_and_the_notification_leaves_unless_r
         // Without a token, and for the default action a click invokes.
         daemon.api("InvokeAction", (resident, "default", "").to_variant());
         daemon.wait_for_signals(1);
-        daemon.bus.run_for(Duration::from_millis(100));
+        daemon.bus.run_for(QUIET);
 
         assert_eq!(
             daemon.signals(),
@@ -1343,7 +1348,7 @@ fn the_api_refuses_an_action_the_entry_doesnt_have_and_an_entry_that_isnt_there(
                 .try_api("InvokeAction", (id + 1, "open", "").to_variant())
                 .is_err()
         );
-        daemon.bus.run_for(Duration::from_millis(100));
+        daemon.bus.run_for(QUIET);
 
         assert_eq!(daemon.summaries(), ["Message"]);
         assert!(daemon.signals().is_empty());
@@ -1394,7 +1399,7 @@ fn the_api_replies_to_an_entry_with_a_reply_field_and_refuses_one_without() {
         // A resident one stays.
         daemon.api("Reply", (resident, "Hi").to_variant());
         daemon.wait_for_signals(3);
-        daemon.bus.run_for(Duration::from_millis(100));
+        daemon.bus.run_for(QUIET);
         assert_eq!(daemon.signals().len(), 3);
         assert_eq!(daemon.summaries(), ["Resident", "Plain"]);
     });

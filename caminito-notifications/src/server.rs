@@ -501,7 +501,7 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     let id = if replaced { replaces } else { guard.next_id() };
     guard.remember(id, &notification, now);
 
-    if live && let Some(entry) = guard.notifications.get_mut(&id) {
+    if let Some(entry) = guard.notifications.get_mut(&id) {
         let bubble = notification.bubble.clone();
         entry.notification = notification;
         // A replacement starts its time again.
@@ -712,18 +712,7 @@ impl State {
             if notification.transient {
                 history.remove(id);
             } else {
-                history.insert(
-                    HistoryEntry {
-                        id,
-                        app: notification.app.clone(),
-                        bubble: notification.bubble.clone(),
-                        has_default: notification.has_default,
-                        resident: notification.resident,
-                        reply: notification.reply,
-                        time: now,
-                    },
-                    now,
-                );
+                history.insert(HistoryEntry::new(id, notification, now), now);
             }
         });
     }

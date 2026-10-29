@@ -10,7 +10,7 @@ use gio::glib::{self, Variant};
 use gio::prelude::*;
 
 use crate::DOMAIN;
-use crate::notification::{icon, pixels};
+use crate::notification::{Notification, icon, pixels};
 use crate::server::{Action, Bubble, Icon, Image};
 
 /// How long an entry stays, in seconds: a week.
@@ -21,7 +21,7 @@ pub(crate) const MAX_ENTRIES: usize = 200;
 
 /// The most bytes of an `image-data` image the file keeps. A bigger one is in the entry
 /// until the daemon stops, so that rewriting the file with every notification stays cheap.
-pub(crate) const MAX_PERSISTED_PIXELS: usize = 128 * 1024;
+const MAX_PERSISTED_PIXELS: usize = 64 * 1024;
 
 /// The file's layout: a version, and the entries. A file of another version is not read.
 const FILE_VERSION: u32 = 1;
@@ -61,7 +61,7 @@ pub(crate) struct History {
 
 impl History {
     /// An empty history, kept in `path` if there's one.
-    pub(crate) fn new(path: Option<PathBuf>) -> History {
+    fn new(path: Option<PathBuf>) -> History {
         History {
             path,
             entries: Vec::new(),
@@ -89,7 +89,7 @@ impl History {
         history
     }
 
-    /// Writes the file, through a temporary file so that a crash leaves the old one.
+    /// Writes the file.
     pub(crate) fn save(&self) {
         let Some(path) = &self.path else {
             return;
@@ -99,7 +99,8 @@ impl History {
         }
     }
 
-    /// What changes have been made, which only grows.
+    /// How many changes the history has had, which only grows, so that a caller can tell
+    /// whether a call changed anything.
     pub(crate) fn generation(&self) -> u64 {
         self.generation
     }
@@ -114,6 +115,7 @@ impl History {
         self.entries.len()
     }
 
+    /// The entry `id`, if the history has it.
     pub(crate) fn get(&self, id: u32) -> Option<&HistoryEntry> {
         self.entries.iter().find(|entry| entry.id == id)
     }
@@ -194,6 +196,19 @@ impl History {
 }
 
 impl HistoryEntry {
+    /// The entry of `notification` as `id`, which arrived at `time`.
+    pub(crate) fn new(id: u32, notification: &Notification, time: u64) -> HistoryEntry {
+        HistoryEntry {
+            id,
+            app: notification.app.clone(),
+            bubble: notification.bubble.clone(),
+            has_default: notification.has_default,
+            resident: notification.resident,
+            reply: notification.reply,
+            time,
+        }
+    }
+
     /// The entry on the wire, which has all its pixels.
     pub(crate) fn to_variant(&self) -> Variant {
         let image = match &self.bubble.image {
@@ -312,12 +327,26 @@ fn decode(bytes: &[u8]) -> Option<Vec<HistoryEntry>> {
     )
 }
 
+/// Writes `bytes` to `path`, through a temporary file so that a crash leaves the old one.
 fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+
+    // The bodies of a user's notifications are for the user alone.
     if let Some(directory) = path.parent() {
-        std::fs::create_dir_all(directory)?;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(directory)?;
     }
     let temporary = path.with_extension("tmp");
-    std::fs::write(&temporary, bytes)?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&temporary)?
+        .write_all(bytes)?;
     std::fs::rename(&temporary, path)
 }
 

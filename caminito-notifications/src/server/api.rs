@@ -16,7 +16,9 @@ use gio::prelude::*;
 use super::{Error, Reason, State, close, close_all, invoke, reply};
 use crate::history::ENTRY_TYPE;
 
+/// The interface's name, which the signals are emitted on.
 pub(super) const NAME: &str = "org.mate.Caminito.Notifications";
+/// The object's path.
 pub(super) const PATH: &str = "/org/mate/Caminito/Notifications";
 
 const INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
@@ -82,6 +84,10 @@ pub(super) fn register(
         .map_err(Error::Export)
 }
 
+fn missing(id: u32) -> String {
+    format!("there's no notification {id} in the history")
+}
+
 /// Answers a client's call. gio has checked its arguments against [`INTERFACE`].
 fn handle(
     state: &Weak<RefCell<State>>,
@@ -117,7 +123,7 @@ fn handle(
         "Dismiss" => {
             let id = id();
             if state.borrow().history.get(id).is_none() {
-                return refuse(format!("there's no notification {id} in the history"));
+                return refuse(missing(id));
             }
             close(&state, id, Reason::Dismissed);
             invocation.return_value(None);
@@ -144,7 +150,7 @@ fn handle(
                     || entry.bubble.actions.iter().any(|action| action.key == key)
             });
             match has_action {
-                None => return refuse(format!("there's no notification {id} in the history")),
+                None => return refuse(missing(id)),
                 Some(false) => return refuse(format!("notification {id} has no action {key}")),
                 Some(true) => {}
             }
@@ -159,7 +165,7 @@ fn handle(
         "Reply" => {
             let id = id();
             match state.borrow().history.get(id).map(|entry| entry.reply) {
-                None => return refuse(format!("there's no notification {id} in the history")),
+                None => return refuse(missing(id)),
                 Some(false) => return refuse(format!("notification {id} has no reply field")),
                 Some(true) => {}
             }
