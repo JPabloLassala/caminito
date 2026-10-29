@@ -19,7 +19,9 @@ struct _NtDaemon
   /* Set while the daemon has its name. */
   GDBusConnection *connection;
   guint            history_changed;
+  guint            ungrouped_changed;
   GPtrArray       *entries;
+  char           **ungrouped;
   /* A List is current until the next one starts, or the daemon goes. */
   guint            generation;
   guint            refresh;
@@ -135,12 +137,61 @@ on_history_changed (GDBusConnection *connection G_GNUC_UNUSED,
 }
 
 static void
+set_ungrouped (NtDaemon *daemon, char **ungrouped)
+{
+  g_strfreev (daemon->ungrouped);
+  daemon->ungrouped = ungrouped;
+  queue_changed (daemon);
+}
+
+static void
+on_ungrouped (GObject *source, GAsyncResult *result, gpointer data)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GVariant) reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result,
+                                                              &error);
+  NtDaemon *daemon = data;
+  char **ungrouped;
+
+  if (reply == NULL)
+    {
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED) && !daemon_is_gone (error))
+        g_warning ("can't read the apps whose grouping is off: %s", error->message);
+      return;
+    }
+  /* The daemon went while the call was out. */
+  if (daemon->connection == NULL)
+    return;
+  g_variant_get (reply, "(^as)", &ungrouped);
+  set_ungrouped (daemon, ungrouped);
+}
+
+static void
+on_ungrouped_changed (GDBusConnection *connection G_GNUC_UNUSED,
+                      const char      *sender G_GNUC_UNUSED,
+                      const char      *path G_GNUC_UNUSED,
+                      const char      *interface G_GNUC_UNUSED,
+                      const char      *signal G_GNUC_UNUSED,
+                      GVariant        *parameters,
+                      gpointer         data)
+{
+  char **ungrouped;
+
+  if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(as)")))
+    return;
+  g_variant_get (parameters, "(^as)", &ungrouped);
+  set_ungrouped (data, ungrouped);
+}
+
+static void
 unsubscribe (NtDaemon *daemon)
 {
   if (daemon->connection == NULL)
     return;
   g_dbus_connection_signal_unsubscribe (daemon->connection, daemon->history_changed);
+  g_dbus_connection_signal_unsubscribe (daemon->connection, daemon->ungrouped_changed);
   daemon->history_changed = 0;
+  daemon->ungrouped_changed = 0;
   g_clear_object (&daemon->connection);
 }
 
@@ -157,6 +208,13 @@ on_name_appeared (GDBusConnection *connection,
   daemon->history_changed = g_dbus_connection_signal_subscribe (
     connection, DAEMON_NAME, DAEMON_INTERFACE, "HistoryChanged", DAEMON_PATH, NULL,
     G_DBUS_SIGNAL_FLAGS_NONE, on_history_changed, daemon, NULL);
+  /* Before it's asked, so that no change falls between. */
+  daemon->ungrouped_changed = g_dbus_connection_signal_subscribe (
+    connection, DAEMON_NAME, DAEMON_INTERFACE, "UngroupedChanged", DAEMON_PATH, NULL,
+    G_DBUS_SIGNAL_FLAGS_NONE, on_ungrouped_changed, daemon, NULL);
+  g_dbus_connection_call (connection, DAEMON_NAME, DAEMON_PATH, DAEMON_INTERFACE, "Ungrouped",
+                          NULL, G_VARIANT_TYPE ("(as)"), G_DBUS_CALL_FLAGS_NONE, -1,
+                          daemon->cancellable, on_ungrouped, daemon);
   queue_refresh (daemon);
   /* Running, before the history is read. */
   queue_changed (daemon);
@@ -174,7 +232,7 @@ on_name_vanished (GDBusConnection *connection G_GNUC_UNUSED,
   daemon->generation++;
   g_clear_handle_id (&daemon->refresh, g_source_remove);
   g_ptr_array_set_size (daemon->entries, 0);
-  queue_changed (daemon);
+  set_ungrouped (daemon, g_new0 (char *, 1));
 }
 
 static void
@@ -214,6 +272,12 @@ nt_daemon_dismiss (NtDaemon *daemon, guint32 id)
 }
 
 void
+nt_daemon_clear_app (NtDaemon *daemon, const char *app)
+{
+  call (daemon, "ClearApp", g_variant_new ("(s)", app));
+}
+
+void
 nt_daemon_clear_all (NtDaemon *daemon)
 {
   call (daemon, "ClearAll", NULL);
@@ -238,6 +302,12 @@ nt_daemon_entries (NtDaemon *daemon)
   return daemon->entries;
 }
 
+const char *const *
+nt_daemon_ungrouped (NtDaemon *daemon)
+{
+  return (const char *const *) daemon->ungrouped;
+}
+
 NtDaemon *
 nt_daemon_new (NtDaemonChanged changed, gpointer data)
 {
@@ -245,6 +315,7 @@ nt_daemon_new (NtDaemonChanged changed, gpointer data)
 
   daemon->cancellable = g_cancellable_new ();
   daemon->entries = g_ptr_array_new_with_free_func ((GDestroyNotify) nt_entry_free);
+  daemon->ungrouped = g_new0 (char *, 1);
   daemon->changed = changed;
   daemon->data = data;
   daemon->watch = g_bus_watch_name (G_BUS_TYPE_SESSION, DAEMON_NAME,
@@ -262,6 +333,7 @@ nt_daemon_free (NtDaemon *daemon)
   g_clear_handle_id (&daemon->refresh, g_source_remove);
   g_clear_handle_id (&daemon->idle, g_source_remove);
   g_ptr_array_unref (daemon->entries);
+  g_strfreev (daemon->ungrouped);
   g_object_unref (daemon->cancellable);
   g_free (daemon);
 }

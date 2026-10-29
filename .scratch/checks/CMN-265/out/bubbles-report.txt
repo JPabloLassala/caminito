@@ -1,0 +1,18 @@
+
+(/usr/lib/xdg-desktop-portal:458245): xdg-desktop-portal-WARNING **: 15:31:14.592: Failed to load RealtimeKit property: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable
+
+(/usr/lib/xdg-desktop-portal:458245): xdg-desktop-portal-WARNING **: 15:31:14.592: Failed to load RealtimeKit property: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable
+
+(/usr/lib/xdg-desktop-portal:458245): xdg-desktop-portal-WARNING **: 15:31:14.592: Failed to load RealtimeKit property: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable
+two notifications: the daemon lives
+the third merges them: the daemon lives
+two more join: the daemon lives
+the group opened: the daemon lives
+another app's notification: the daemon lives
+the daemon's warnings:
+MESA-EGL: warning: DRI3 error: Could not get DRI3 device
+MESA-EGL: warning: Ensure your X server supports DRI3 to get accelerated rendering
+(caminito-notifications:458232): caminito-notifications-WARNING **: 15:31:14.680: there's no layer shell, so the bubbles are plain windows
+
+(/usr/lib/xdg-desktop-portal:458245): xdg-desktop-portal-WARNING **: 15:31:20.835: Failed to close session implementation: The connection is closed
+A connection to the bus can't be made

@@ -3,8 +3,9 @@
     python3 -m dbusmock --template notifications-mock.py
 
 It has the Notification history's part of org.mate.Caminito.Notifications as the
-Notifications applet uses it: List, Dismiss, ClearApp, ClearAll, InvokeAction, Reply, Counts
-and OpenSettings, with the HistoryChanged and CountsChanged signals. As in the daemon, an
+Notifications applet uses it: List, Dismiss, ClearApp, ClearAll, InvokeAction, Reply, Counts,
+Ungrouped and OpenSettings, with the HistoryChanged, CountsChanged and UngroupedChanged
+signals. As in the daemon, an
 entry leaves the history when it's dismissed or one of its actions is used, unless it's
 resident, and List gives the newest first. It refuses what the daemon refuses: an entry that
 isn't there, and an action an entry hasn't, "default" without a default action.
@@ -13,6 +14,7 @@ org.caminito.NotificationsMock is for a test or a check script:
 
 * AddEntry(id, app, app_name, app_icon, summary, body, image, actions, has_default, resident,
   age): a new entry, which arrived age seconds ago. image is a path or a theme's name.
+* SetUngrouped(apps): the apps whose grouping is off (CMN-265), which Ungrouped gives.
 * GetLog() -> the calls the mock took, in order, as lines:
     Dismiss <id>
     ClearApp <app>
@@ -39,6 +41,7 @@ def load(mock, _parameters):
     mock.log_lines = []
     # Newest first, as List gives them: dicts with the entry's fields.
     mock.entries = []
+    mock.ungrouped = []
 
 
 def _counts(mock):
@@ -142,6 +145,11 @@ def Counts(self):
     return _counts(self)
 
 
+@dbus.service.method(MAIN_IFACE, in_signature="", out_signature="as")
+def Ungrouped(self):
+    return dbus.Array(self.ungrouped, signature="s")
+
+
 @dbus.service.method(MAIN_IFACE, in_signature="s", out_signature="")
 def OpenSettings(self, app):
     self.log_lines.append(f'OpenSettings "{app}"')
@@ -169,6 +177,12 @@ def AddEntry(
         },
     )
     _changed(self)
+
+
+@dbus.service.method(MOCK_IFACE, in_signature="as", out_signature="")
+def SetUngrouped(self, apps):
+    self.ungrouped = sorted(str(app) for app in apps)
+    self.EmitSignal(MAIN_IFACE, "UngroupedChanged", "as", [dbus.Array(self.ungrouped, signature="s")])
 
 
 @dbus.service.method(MOCK_IFACE, in_signature="", out_signature="as")

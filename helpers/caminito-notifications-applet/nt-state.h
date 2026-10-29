@@ -1,6 +1,7 @@
 /*
  * What the Notifications applet shows (CMN-260): the Notification history's entries as the
- * daemon's private API lists them (ADR 0051), an entry's age, the icon and the tooltip.
+ * daemon's private API lists them (ADR 0051), grouped by app (CMN-265), an entry's age, the
+ * icon and the tooltip.
  * Nothing here talks to the daemon, so that the tests can build any history by hand.
  */
 
@@ -40,6 +41,18 @@ typedef struct
   gint64     time;
 } NtEntry;
 
+/* What the Notification center shows as one: an app's entries, or one entry of an app whose
+   grouping is off. */
+typedef struct
+{
+  /* The Notifying app's key, the entries'. */
+  const char *app;
+  /* Whether it's the app's group, rather than one entry standing alone. */
+  gboolean    grouped;
+  /* Its NtEntries, newest first, which belong to the entries it was made from. */
+  GPtrArray  *entries;
+} NtGroup;
+
 /* The D-Bus type of List's reply. */
 #define NT_LIST_TYPE "(a(usssssva(ss)bbbt))"
 
@@ -47,6 +60,12 @@ void               nt_entry_free        (NtEntry *entry);
 /* The NtEntries of List's reply, in its order, newest first; NULL if reply isn't
    NT_LIST_TYPE. */
 GPtrArray         *nt_entries_from_list (GVariant *reply);
+
+/* The NtGroups of entries, the history newest first, by their newest entries: each app's, but
+   an entry of one of ungrouped, a NULL-terminated array of apps' keys, on its own. They
+   last as long as entries. */
+GPtrArray         *nt_state_groups      (const GPtrArray   *entries,
+                                         const char *const *ungrouped);
 
 /* "now", "5 min ago", "3 h ago", "yesterday", "4 days ago": time's age at now, both in
    seconds since the epoch. */

@@ -52,6 +52,14 @@ const INTERFACE: &str = r#"
     <method name="Counts">
       <arg type="a{su}" name="counts" direction="out"/>
     </method>
+    <!-- The keys of the Notifying apps whose grouping is off, in order, whose entries the
+         Notification center doesn't group (CMN-265). -->
+    <method name="Ungrouped">
+      <arg type="as" name="apps" direction="out"/>
+    </method>
+    <signal name="UngroupedChanged">
+      <arg type="as" name="apps"/>
+    </signal>
     <!-- The history changed: list it again. -->
     <signal name="HistoryChanged"/>
     <signal name="CountsChanged">

@@ -273,6 +273,7 @@ impl HistoryEntry {
                     .into_iter()
                     .map(|(key, label)| Action { key, label })
                     .collect(),
+                earlier: Vec::new(),
             },
             has_default: variant.child_value(8).get()?,
             resident: variant.child_value(9).get()?,
@@ -369,6 +370,7 @@ mod tests {
                     key: "reply".to_owned(),
                     label: "Reply".to_owned(),
                 }],
+                earlier: Vec::new(),
             },
             has_default: true,
             resident: false,

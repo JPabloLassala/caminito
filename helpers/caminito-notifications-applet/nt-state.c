@@ -78,6 +78,44 @@ nt_entries_from_list (GVariant *reply)
   return read_entries;
 }
 
+static void
+group_free (gpointer data)
+{
+  NtGroup *group = data;
+
+  g_ptr_array_unref (group->entries);
+  g_free (group);
+}
+
+GPtrArray *
+nt_state_groups (const GPtrArray *entries, const char *const *ungrouped)
+{
+  GPtrArray *groups = g_ptr_array_new_with_free_func (group_free);
+  /* Each grouped app's NtGroup, by its key. */
+  g_autoptr (GHashTable) by_app = g_hash_table_new (g_str_hash, g_str_equal);
+
+  /* The entries are newest first, so a group is placed by the first entry met. */
+  for (guint i = 0; i < entries->len; i++)
+    {
+      NtEntry *entry = g_ptr_array_index (entries, i);
+      gboolean grouped = !g_strv_contains (ungrouped, entry->app);
+      NtGroup *group = grouped ? g_hash_table_lookup (by_app, entry->app) : NULL;
+
+      if (group == NULL)
+        {
+          group = g_new0 (NtGroup, 1);
+          group->app = entry->app;
+          group->grouped = grouped;
+          group->entries = g_ptr_array_new ();
+          g_ptr_array_add (groups, group);
+          if (grouped)
+            g_hash_table_insert (by_app, entry->app, group);
+        }
+      g_ptr_array_add (group->entries, entry);
+    }
+  return groups;
+}
+
 char *
 nt_state_age (gint64 time, gint64 now)
 {

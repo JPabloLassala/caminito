@@ -31,6 +31,8 @@ pub(crate) struct Notification {
     pub(crate) resident: bool,
     /// Whether it never enters the Notification history (`transient`).
     pub(crate) transient: bool,
+    /// Whether it's critical (`urgency` 2), which groups only with its app's critical ones.
+    pub(crate) critical: bool,
     /// Whether it has a reply field (KDE's `x-kde-reply-placeholder-text`).
     pub(crate) reply: bool,
     /// What plays as it arrives, if anything.
@@ -89,6 +91,7 @@ impl Notification {
             body: markup::sanitize(arguments.body),
             image: image(hints),
             actions,
+            earlier: Vec::new(),
         };
         Notification {
             app,
@@ -96,6 +99,7 @@ impl Notification {
             has_default,
             resident: hint::<bool>(hints, "resident").unwrap_or(false),
             transient: hint::<bool>(hints, "transient").unwrap_or(false),
+            critical,
             reply: hint::<String>(hints, "x-kde-reply-placeholder-text").is_some(),
             sound: sound(hints),
             timeout: timeout(arguments.expire_timeout, critical, default_timeout),

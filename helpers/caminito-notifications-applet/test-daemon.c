@@ -1,8 +1,9 @@
 /*
  * caminito-notifications as the Notifications applet uses it (CMN-260), against a mock of
  * its private API (notifications-mock.py) on a private session bus: the history read and
- * followed through HistoryChanged, the calls that dismiss, clear and act on its entries, and
- * the daemon leaving the bus and coming back.
+ * followed through HistoryChanged, the apps with grouping off followed through
+ * UngroupedChanged (CMN-265), the calls that dismiss, clear and act on its entries, and the
+ * daemon leaving the bus and coming back.
  *
  *   test-daemon <python> <notifications-mock.py>
  */
@@ -146,6 +147,21 @@ list_is (Fixture *fixture, gconstpointer expected)
   return g_strcmp0 (now, expected) == 0;
 }
 
+/* Tells the mock which apps have grouping off. */
+static void
+set_ungrouped (Fixture *fixture, const char *const *apps)
+{
+  g_variant_unref (mock_call (fixture, "SetUngrouped", g_variant_new ("(^as)", apps)));
+}
+
+static gboolean
+ungrouped_is (Fixture *fixture, gconstpointer expected)
+{
+  g_autofree char *now = g_strjoinv (";", (char **) nt_daemon_ungrouped (fixture->daemon));
+
+  return g_strcmp0 (now, expected) == 0;
+}
+
 static gboolean
 log_is (Fixture *fixture, gconstpointer expected)
 {
@@ -253,10 +269,30 @@ test_the_calls_reach_the_daemon (Fixture *fixture, gconstpointer data G_GNUC_UNU
   nt_daemon_invoke_action (fixture->daemon, 3, "reply");
   wait_until (fixture, log_is, "Dismiss 1;InvokeAction 2 default \"\";InvokeAction 3 reply \"\"");
   g_assert_true (list_is (fixture, "3 Ana is calling"));
-  nt_daemon_clear_all (fixture->daemon);
+  nt_daemon_clear_app (fixture->daemon, "org.gnome.Evolution");
   wait_until (fixture, list_is, "");
+  nt_daemon_clear_all (fixture->daemon);
   wait_until (fixture, log_is,
-              "Dismiss 1;InvokeAction 2 default \"\";InvokeAction 3 reply \"\";ClearAll");
+              "Dismiss 1;InvokeAction 2 default \"\";InvokeAction 3 reply \"\";"
+              "ClearApp org.gnome.Evolution;ClearAll");
+}
+
+static void
+test_the_apps_with_grouping_off_follow_the_daemon (Fixture *fixture,
+                                                   gconstpointer data G_GNUC_UNUSED)
+{
+  const char *const chat[] = { "chat", NULL };
+  const char *const both[] = { "chat", "mail", NULL };
+
+  start_mock (fixture);
+  set_ungrouped (fixture, chat);
+  fixture->daemon = nt_daemon_new (on_changed, fixture);
+  wait_until (fixture, ungrouped_is, "chat");
+  set_ungrouped (fixture, both);
+  wait_until (fixture, ungrouped_is, "chat;mail");
+
+  stop_mock (fixture);
+  wait_until (fixture, ungrouped_is, "");
 }
 
 static void
@@ -289,6 +325,7 @@ main (int argc, char **argv)
   g_test_add ("/daemon/the-history-is-read-when-the-daemon-is-there", Fixture, NULL, setup, test_the_history_is_read_when_the_daemon_is_there, teardown);
   g_test_add ("/daemon/the-history-follows-the-daemon", Fixture, NULL, setup, test_the_history_follows_the_daemon, teardown);
   g_test_add ("/daemon/the-calls-reach-the-daemon", Fixture, NULL, setup, test_the_calls_reach_the_daemon, teardown);
+  g_test_add ("/daemon/the-apps-with-grouping-off-follow-the-daemon", Fixture, NULL, setup, test_the_apps_with_grouping_off_follow_the_daemon, teardown);
   g_test_add ("/daemon/the-daemon-leaving-and-coming-back", Fixture, NULL, setup, test_the_daemon_leaving_and_coming_back, teardown);
   return g_test_run ();
 }
