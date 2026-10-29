@@ -6,6 +6,10 @@
 //! as it goes: what a bubble shows as it opens, the sound as a notification arrives, and the
 //! default timeout.
 //!
+//! Every notification that isn't transient also enters the Notification history (CMN-259),
+//! which outlasts its bubble and the daemon, and `api` serves it to the applets. The time
+//! the history ages by comes from a [`Clock`].
+//!
 //! The name is asked for with `REPLACE`: a daemon that D-Bus activation started while this
 //! one wasn't running, as mate-notification-daemon, gives it back at once if it allows its
 //! replacement (CMN-258). This one doesn't allow its own, so no other daemon takes the name
@@ -21,8 +25,12 @@ use gio::glib::{self, Variant, VariantDict};
 use gio::prelude::*;
 
 use crate::DOMAIN;
+use crate::history::{History, HistoryEntry, MAX_AGE};
 use crate::notification::{Arguments, DEFAULT_ACTION, Notification};
+use crate::private_api::{INTERFACE_NAME as PRIVATE_INTERFACE, PATH as PRIVATE_PATH};
 use crate::settings;
+
+mod api;
 
 /// The name the server owns.
 pub const NAME: &str = "org.freedesktop.Notifications";
@@ -36,14 +44,15 @@ const SERVER_NAME: &str = "Caminito";
 const VENDOR: &str = "MATE";
 const SPEC_VERSION: &str = "1.3";
 
-/// The spec's optional parts the server has (`GetCapabilities`). The Notification history's
-/// `persistence` and the inline reply come with their tickets (CMN-259, CMN-266).
-const CAPABILITIES: [&str; 6] = [
+/// The spec's optional parts the server has (`GetCapabilities`). The inline reply comes with
+/// its ticket (CMN-266).
+const CAPABILITIES: [&str; 7] = [
     "actions",
     "body",
     "body-hyperlinks",
     "body-markup",
     "icon-static",
+    "persistence",
     "sound",
 ];
 
@@ -84,6 +93,10 @@ const INTERFACE: &str = r#"
     <signal name="ActivationToken">
       <arg type="u" name="id"/>
       <arg type="s" name="activation_token"/>
+    </signal>
+    <signal name="NotificationReplied">
+      <arg type="u" name="id"/>
+      <arg type="s" name="text"/>
     </signal>
   </interface>
 </node>
@@ -252,6 +265,47 @@ impl Events {
     }
 }
 
+/// What tells the time the history ages by.
+pub trait Clock {
+    /// The time now, in seconds since the Unix epoch.
+    fn now(&self) -> u64;
+}
+
+/// The system's clock.
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs())
+    }
+}
+
+/// What the Notification history is kept with.
+pub struct Config {
+    /// The file the Notification history is kept in, under `$XDG_STATE_HOME/caminito/`.
+    pub history_file: PathBuf,
+    /// The time the history's limits are kept by.
+    pub clock: Rc<dyn Clock>,
+}
+
+/// The history's calls of the private API, which [`crate::private_api`] routes to the server.
+#[derive(Clone)]
+pub struct HistoryCalls(Weak<RefCell<State>>);
+
+impl HistoryCalls {
+    /// Answers `invocation`, a call of `method` of the private API that isn't the settings'.
+    pub fn handle(
+        &self,
+        method: &str,
+        parameters: &Variant,
+        invocation: gio::DBusMethodInvocation,
+    ) {
+        api::handle(&self.0, method, parameters, invocation);
+    }
+}
+
 /// A failure to start the server.
 #[derive(Debug)]
 pub enum Error {
@@ -282,7 +336,12 @@ struct State {
     bubbles: Rc<dyn Bubbles>,
     sounds: Rc<dyn Sounds>,
     settings: gio::Settings,
+    clock: Rc<dyn Clock>,
+    history: History,
+    /// Waits for the end of the oldest entry's week.
+    expiry: Option<glib::JoinHandle<()>>,
     last_id: u32,
+    /// The notifications that have a bubble, shown or queued.
     notifications: HashMap<u32, Entry>,
     /// The bubbles on screen, oldest first.
     shown: Vec<u32>,
@@ -310,6 +369,9 @@ impl Drop for Server {
             let _ = self.connection.unregister_object(registration);
         }
         let mut state = self.state.borrow_mut();
+        if let Some(expiry) = state.expiry.take() {
+            expiry.abort();
+        }
         for entry in state.notifications.values_mut() {
             entry.stop_timer();
         }
@@ -317,21 +379,33 @@ impl Drop for Server {
 }
 
 impl Server {
+    /// The history's part of the private API, for [`crate::private_api::PrivateApi`].
+    pub fn history_calls(&self) -> HistoryCalls {
+        HistoryCalls(Rc::downgrade(&self.state))
+    }
+
     /// Exports the server on `connection` and asks for the notification name. It follows
-    /// `settings`, which are `org.mate.Caminito.notifications`'s.
+    /// `settings`, which are `org.mate.Caminito.notifications`'s, and keeps the history
+    /// `config` names.
     pub fn new(
         connection: &gio::DBusConnection,
         bubbles: Rc<dyn Bubbles>,
         sounds: Rc<dyn Sounds>,
         settings: gio::Settings,
+        config: Config,
     ) -> Result<Server, Error> {
+        let history = History::load(config.history_file, config.clock.now());
         let state = Rc::new_cyclic(|this| {
             RefCell::new(State {
                 connection: connection.clone(),
                 bubbles,
                 sounds,
                 settings,
-                last_id: 0,
+                clock: config.clock,
+                // The ids the history holds stay taken, since an app may still hold one.
+                last_id: history.max_id(),
+                history,
+                expiry: None,
                 notifications: HashMap::new(),
                 shown: Vec::new(),
                 queued: VecDeque::new(),
@@ -353,6 +427,7 @@ impl Server {
             })
             .build()
             .map_err(Error::Export)?;
+        state.borrow_mut().schedule_expiry();
 
         let owner = gio::bus_own_name_on_connection(
             connection,
@@ -427,33 +502,40 @@ fn handle(
 /// room, or waits for one.
 fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -> u32 {
     let mut guard = state.borrow_mut();
+    let now = guard.clock.now();
     let notification = Notification::new(arguments, settings::timeout(&guard.settings));
     let timeout = notification.timeout;
 
-    if guard.notifications.contains_key(&replaces) {
+    let live = guard.notifications.contains_key(&replaces);
+    // One whose bubble is gone is replaced too, when its app still holds its id.
+    let replaced = live || guard.history.get(replaces).is_some();
+    let id = if replaced { replaces } else { guard.next_id() };
+    guard.remember(id, &notification, now);
+
+    if live {
         let bubble = guard.shown_bubble(&notification.bubble);
         let entry = guard
             .notifications
-            .get_mut(&replaces)
+            .get_mut(&id)
             .expect("the server has the notification it replaces");
         entry.notification = notification;
         // A replacement starts its time again.
         entry.stop_timer();
         entry.remaining = timeout;
-        let shown = guard.shown.contains(&replaces);
+        let shown = guard.shown.contains(&id);
         if shown {
-            guard.start_timer(replaces);
+            guard.start_timer(id);
         }
         let bubbles = guard.bubbles.clone();
         drop(guard);
         if shown {
-            bubbles.update(replaces, &bubble);
+            bubbles.update(id, &bubble);
         }
-        return replaces;
+        return id;
     }
 
-    let id = guard.next_id();
-    let sound = notification.sound.clone();
+    // A replacement isn't a new notification, so it has no sound.
+    let sound = notification.sound.clone().filter(|_| !replaced);
     guard.notifications.insert(
         id,
         Entry {
@@ -496,50 +578,96 @@ fn show(state: &Rc<RefCell<State>>, id: u32) {
     bubbles.show(id, &bubble, events);
 }
 
-/// Closes the notification `id`, if the server has it, for `reason`: its bubble goes and the
-/// oldest that waits takes its place, and its app hears why.
+/// Closes the notification `id` for `reason`: see [`close_all`].
 fn close(state: &Rc<RefCell<State>>, id: u32, reason: Reason) {
+    close_all(state, &[id], reason);
+}
+
+/// Closes the notifications `ids` that the server has, for `reason`: their bubbles go and the
+/// oldest that wait take their places, and their apps hear why. A bubble that times out leaves
+/// its notification in the history, and any other way of closing takes it out too.
+fn close_all(state: &Rc<RefCell<State>>, ids: &[u32], reason: Reason) {
     let mut guard = state.borrow_mut();
-    let Some(mut entry) = guard.notifications.remove(&id) else {
-        return;
-    };
-    entry.stop_timer();
-    guard.queued.retain(|queued| *queued != id);
-    let was_shown = guard.shown.contains(&id);
-    guard.shown.retain(|shown| *shown != id);
-    let next = if was_shown {
-        guard.queued.pop_front()
+    let in_history = if matches!(reason, Reason::Expired) {
+        Vec::new()
     } else {
-        None
+        guard.change_history(|history| history.remove_all(ids))
     };
+    let mut gone = Vec::new();
+    for &id in ids {
+        let live = guard.notifications.remove(&id);
+        if live.is_some() || in_history.contains(&id) {
+            gone.push(id);
+        }
+        if let Some(mut entry) = live {
+            entry.stop_timer();
+        }
+    }
+    let mut was_shown = Vec::new();
+    for &id in &gone {
+        guard.queued.retain(|queued| *queued != id);
+        if guard.shown.contains(&id) {
+            guard.shown.retain(|shown| *shown != id);
+            was_shown.push(id);
+        }
+    }
+    let mut next = Vec::new();
+    while guard.shown.len() + next.len() < MAX_SHOWN {
+        let Some(id) = guard.queued.pop_front() else {
+            break;
+        };
+        next.push(id);
+    }
     let bubbles = guard.bubbles.clone();
     let connection = guard.connection.clone();
     drop(guard);
 
-    if was_shown {
+    for id in was_shown {
         bubbles.close(id);
     }
-    if let Some(next) = next {
-        show(state, next);
+    for id in next {
+        show(state, id);
     }
-    emit(&connection, "NotificationClosed", (id, reason as u32));
+    for id in gone {
+        emit(&connection, "NotificationClosed", (id, reason as u32));
+    }
 }
 
-/// Tells the app its action `key` was used, and closes the notification unless it's
-/// resident.
+/// Tells the app the user used the action `key` of `id`, with an xdg-activation token if there
+/// is one, and closes the notification unless it's resident.
 fn invoke(state: &Rc<RefCell<State>>, id: u32, key: &str, token: Option<String>) {
+    act(state, id, |connection| {
+        // Before the action, as the spec has it, so the app has it as it acts.
+        if let Some(token) = token {
+            emit(connection, "ActivationToken", (id, token));
+        }
+        emit(connection, "ActionInvoked", (id, key));
+    });
+}
+
+/// Tells the app the user's `text` in reply to `id`, and closes the notification unless it's
+/// resident.
+fn reply(state: &Rc<RefCell<State>>, id: u32, text: &str) {
+    act(state, id, |connection| {
+        emit(connection, "NotificationReplied", (id, text));
+    });
+}
+
+/// What the user does to a notification that the app hears of: `tell` it, then close the
+/// notification unless it's resident. It may have only its history entry left.
+fn act(state: &Rc<RefCell<State>>, id: u32, tell: impl FnOnce(&gio::DBusConnection)) {
     let guard = state.borrow();
-    let Some(entry) = guard.notifications.get(&id) else {
+    let resident = guard
+        .notifications
+        .get(&id)
+        .map(|entry| entry.notification.resident)
+        .or_else(|| guard.history.get(id).map(|entry| entry.resident));
+    let Some(resident) = resident else {
         return;
     };
-    let resident = entry.notification.resident;
     let connection = guard.connection.clone();
     drop(guard);
-    // Before the action, as the spec has it, so the app has it as it acts.
-    if let Some(token) = token {
-        emit(&connection, "ActivationToken", (id, token));
-    }
-    emit(&connection, "ActionInvoked", (id, key));
+    tell(&connection);
     if !resident {
         close(state, id, Reason::Dismissed);
     }
@@ -566,8 +694,18 @@ fn hover(state: &Rc<RefCell<State>>, id: u32, hovered: bool) {
 }
 
 fn emit(connection: &gio::DBusConnection, signal: &str, arguments: impl ToVariant) {
+    emit_on(connection, PATH, NAME, signal, arguments);
+}
+
+fn emit_on(
+    connection: &gio::DBusConnection,
+    path: &str,
+    interface: &str,
+    signal: &str,
+    arguments: impl ToVariant,
+) {
     if let Err(err) =
-        connection.emit_signal(None, PATH, NAME, signal, Some(&arguments.to_variant()))
+        connection.emit_signal(None, path, interface, signal, Some(&arguments.to_variant()))
     {
         glib::g_warning!(DOMAIN, "can't emit {signal}: {err}");
     }
@@ -598,11 +736,86 @@ impl State {
         shown
     }
 
+    /// Puts `notification` in the history as `id`, in place of the entry it has, unless it's
+    /// transient, which takes it out.
+    fn remember(&mut self, id: u32, notification: &Notification, now: u64) {
+        self.change_history(|history| {
+            if notification.transient {
+                history.remove(id);
+            } else {
+                history.insert(HistoryEntry::new(id, notification, now), now);
+            }
+        });
+    }
+
+    /// Runs `change` on the history. If it changed, the file is written, the clients hear of
+    /// it, and the end of the oldest entry's week is waited for again.
+    fn change_history<R>(&mut self, change: impl FnOnce(&mut History) -> R) -> R {
+        let generation = self.history.generation();
+        let counts = self.history.counts();
+        let result = change(&mut self.history);
+        if self.history.generation() != generation {
+            self.history.save();
+            emit_on(
+                &self.connection,
+                PRIVATE_PATH,
+                PRIVATE_INTERFACE,
+                "HistoryChanged",
+                (),
+            );
+            let counts_now = self.history.counts();
+            if counts_now != counts {
+                emit_on(
+                    &self.connection,
+                    PRIVATE_PATH,
+                    PRIVATE_INTERFACE,
+                    "CountsChanged",
+                    (counts_now,),
+                );
+            }
+            self.schedule_expiry();
+        }
+        result
+    }
+
+    /// Drops the entries a week has passed over.
+    fn prune_history(&mut self) {
+        let now = self.clock.now();
+        self.change_history(|history| history.prune(now));
+    }
+
+    /// Waits for the end of the oldest entry's week, at least a second away, and then prunes.
+    /// It checks the clock again then, so that a clock that jumped is followed.
+    fn schedule_expiry(&mut self) {
+        if let Some(expiry) = self.expiry.take() {
+            expiry.abort();
+        }
+        let Some(ends) = self.history.expires_at() else {
+            return;
+        };
+        let wait = Duration::from_secs(ends.saturating_sub(self.clock.now()).clamp(1, MAX_AGE));
+        let this = self.this.clone();
+        self.expiry = Some(
+            glib::MainContext::ref_thread_default().spawn_local(async move {
+                glib::timeout_future(wait).await;
+                if let Some(state) = this.upgrade() {
+                    let mut guard = state.borrow_mut();
+                    guard.prune_history();
+                    // Nothing may have gone yet, if the clock is behind.
+                    guard.schedule_expiry();
+                }
+            }),
+        );
+    }
+
     /// The next id, which is never 0: that's `replaces_id`'s "none".
     fn next_id(&mut self) -> u32 {
         loop {
             self.last_id = self.last_id.wrapping_add(1);
-            if self.last_id != 0 && !self.notifications.contains_key(&self.last_id) {
+            if self.last_id != 0
+                && !self.notifications.contains_key(&self.last_id)
+                && self.history.get(self.last_id).is_none()
+            {
                 return self.last_id;
             }
         }

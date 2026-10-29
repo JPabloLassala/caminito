@@ -10,7 +10,7 @@ publish = false
 # The library is the Desktop Notifications server over gio's D-Bus (ADR 0051), with no zbus,
 # and names no toolkit. Only the binary uses GTK, and libcanberra for the sounds.
 [dependencies]
-gio = "0.22.10"
+gio = { version = "0.22.10", features = ["v2_72"] }
 # The bubbles, without libadwaita (ADR 0014).
 gtk = { workspace = true, features = ["v4_12"] }
 # The bubbles' layer surfaces.

@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 use caminito_notifications::DOMAIN;
 use caminito_notifications::private_api::PrivateApi;
-use caminito_notifications::server::Server;
+use caminito_notifications::server::{Config, Server, SystemClock};
 use caminito_notifications::settings;
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -83,14 +83,20 @@ fn main() -> glib::ExitCode {
 
         let bubbles = Rc::new(bubbles::GtkBubbles::new(application, settings.clone()));
         let sounds = Rc::new(sound::Canberra::default());
-        let server = match Server::new(&connection, bubbles, sounds, settings.clone()) {
+        let history = Config {
+            history_file: glib::user_state_dir()
+                .join("caminito")
+                .join("notification-history"),
+            clock: Rc::new(SystemClock),
+        };
+        let server = match Server::new(&connection, bubbles, sounds, settings.clone(), history) {
             Ok(server) => server,
             Err(err) => {
                 glib::g_warning!(DOMAIN, "{err}");
                 return;
             }
         };
-        let private_api = PrivateApi::new(&connection, {
+        let private_api = PrivateApi::new(&connection, server.history_calls(), {
             let application = application.downgrade();
             let window = window.clone();
             move |app| {

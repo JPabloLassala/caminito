@@ -453,7 +453,7 @@ A notification shown on the desktop for a few seconds, over the windows, until i
 _Avoid_: banner (macOS's), toast, popup (that's an applet's), OSD (that's the volume and brightness display)
 
 **Notification history**:
-The notifications the user hasn't dismissed yet, kept across sessions for a week at most, grouped by their Notifying app. A transient notification is never in it, and one its app withdraws leaves it.
+The notifications the user hasn't dismissed yet, kept across sessions for a week or 200 notifications at most, grouped by their Notifying app. A transient notification is never in it, and one its app withdraws leaves it.
 _Avoid_: notification list, log, inbox
 
 **Notification center**:

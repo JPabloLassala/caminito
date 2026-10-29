@@ -6,9 +6,10 @@
 //! gio's D-Bus, which decides when a bubble opens, changes and closes and which sound plays,
 //! through the [`server::Bubbles`] and [`server::Sounds`] the binary gives it, following
 //! [`settings`], the keys of `org.mate.Caminito.notifications`, [`private_api`], what the
-//! applets call, and `markup`, which makes a body's markup safe for Pango. The integration
-//! tests drive the server and the private API on a private bus with fakes of what the binary
-//! gives them. The bubbles' layer surfaces, the settings window and libcanberra are the
+//! applets call, and `markup`, which makes a body's markup safe for Pango. The server also
+//! keeps the Notification history (CMN-259), in a file, which `private_api` serves. The
+//! integration tests drive the server and the private API on a private bus with fakes of what
+//! the binary gives them. The bubbles' layer surfaces, the settings window and libcanberra are the
 //! binary's.
 
 #![forbid(unsafe_code)]
@@ -16,6 +17,7 @@
 /// The log domain of GLib's warnings, the program's and the library's.
 pub const DOMAIN: &str = "caminito-notifications";
 
+mod history;
 mod markup;
 mod notification;
 pub mod private_api;
