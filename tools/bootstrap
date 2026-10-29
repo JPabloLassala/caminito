@@ -45,7 +45,7 @@ for package in mate-session-manager-caminito mate-panel-caminito mate-settings-d
   # A patched package lists its patches by bare filename, as its AUR repo has them, so its
   # component's series and Arch's build patches are copied here first (ADR 0030, ADR 0052).
   # The component is the PKGBUILD's _pkgname, upstream's name. The old copies go first, so a
-  # patch taken out of the series doesn't stay. mate-applets has only Arch's build patches.
+  # patch taken out of the series doesn't stay. A component can have only a distribution's patches.
   component=$(sed -n 's/^_pkgname=//p' PKGBUILD)
   patches=$root/packaging/patches/$component
   if [[ -n $component && -d $patches ]]; then

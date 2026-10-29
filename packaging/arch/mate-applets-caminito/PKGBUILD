@@ -5,7 +5,7 @@
 
 # Arch's mate-applets PKGBUILD with the smallest diff (16), so a change there shows what to
 # carry over. The differences: the name, provides and conflicts, and mate-panel-caminito in
-# place of mate-panel (ADR 0011). It has no carried patch: Arch builds the applets into the
+# place of mate-panel (ADR 0011). It's a rebuilt package, with no carried patch: Arch builds the applets into the
 # panel's process, against the 1.28 applet library, and there TrashApplet's class is smaller
 # than master's MatePanelApplet, so GLib refuses it and the panel aborts (CMN-282). Built
 # against mate-panel-caminito's, every applet links libmate-panel-applet-4.so.2.
@@ -54,8 +54,9 @@ groups=(mate-extra)
 # pacman never swaps stock and patched on its own (ADR 0011).
 provides=("${_pkgname}=${pkgver}")
 conflicts=("${_pkgname}")
-# Arch's patches are its build patches, kept in packaging/patches/mate-applets/arch/ (ADR 0030),
-# and tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
+# Arch's patches are fixes from upstream's pull requests that Arch picked, not Caminito's, so
+# they're kept in packaging/patches/mate-applets/arch/ (ADR 0030), and tools/bootstrap copies
+# them beside the PKGBUILD before makepkg (ADR 0052).
 source=(
   "git+https://github.com/mate-desktop/mate-applets.git#tag=v$pkgver"
   mate-applets-default-icon.patch

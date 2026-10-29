@@ -280,7 +280,7 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = "2025-2026 Juan Pablo Lassala"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
-# Arch's build patches to mate-applets (ADR 0030) are fixes from upstream's pull requests.
+# Arch's patches to mate-applets (ADR 0030) are fixes from upstream's pull requests.
 [[annotations]]
 path = "packaging/patches/mate-applets/arch/*.patch"
 precedence = "closest"

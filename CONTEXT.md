@@ -28,6 +28,10 @@ _Avoid_: fork package, Caminito build of MATE
 A stock MATE component built at a newer upstream version, with no carried patches, because a distribution's own is older than what Caminito or a patched package needs. It takes the stock package's place as a patched package does.
 _Avoid_: patched package
 
+**Rebuilt package**:
+A distribution's own package of a MATE component, at the distribution's version and with no carried patches, built again against a patched package's library because the distribution's build can't work with it. `mate-applets-caminito` is one: its applets load into the panel's process, where only `mate-panel-caminito`'s applet library works. It takes the stock package's place as a patched package does.
+_Avoid_: patched package, backported package
+
 **Layer surface**:
 A shell surface that sits in a fixed layer of an output rather than among ordinary windows: the panel, caja's desktop, the wallpaper, notification bubbles and mate-screenshot's area picker.
 _Avoid_: panel window, dock window

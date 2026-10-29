@@ -452,6 +452,22 @@ session_env() {
 - **Debug tool:** the window list, and `WAYLAND_DEBUG=1 mate-panel --replace 2>&1 | grep
   xfce_foreign_toplevel` for the `workspace_enter` and `workspace_leave` events.
 
+### The Trash applet loads into the panel
+
+- **Milestone:** `public-release`, the developer's to run (CMN-282).
+- **Steps:**
+  1. With `mate-applets-caminito` installed, run `coredumpctl list mate-panel` and note the
+     last dump.
+  2. Log into *MATE on Caminito*, and add the *Trash* applet to a panel from its *Add to
+     Panel…* menu.
+  3. Log out and in again, and run `coredumpctl list mate-panel`.
+- **Expected:** the panel starts with the Trash applet on it in step 3, and `coredumpctl`
+  shows no dump newer than step 1's.
+- **Debug tool:** `objdump -p /usr/lib/mate-applets/libmate-trash-applet.so | grep NEEDED`
+  names `libmate-panel-applet-4.so.2`. With Arch's `mate-applets` the panel aborts in
+  `_mate_panel_applet_factory_main_internal`, on `g_type_is_a(applet_type,
+  PANEL_TYPE_APPLET)`.
+
 ### The window list sends each button's rectangle
 
 - **Milestone:** M6

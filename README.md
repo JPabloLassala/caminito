@@ -141,15 +141,14 @@ filename, as its AUR package has them, and `tools/bootstrap` copies them beside 
 ([ADR 0052](docs/adr/0052-the-aur-packages-are-published-from-the-monorepo.md)).
 
 `mate-panel-caminito` is built from mate-panel's master, where the applet library has a new
-soname (`libmate-panel-applet-4.so.2`). Arch's applets in other packages, such as `mate-applets`,
-are linked to the old one, so the package also builds the 1.28 library and installs it beside
-master's: each of those applets is a program of its own, which talks to the panel over D-Bus.
-An applet loaded into the panel's process can't use it there. Arch builds `mate-applets` that
-way, and its Trash applet aborts the panel, so `mate-applets-caminito` is Arch's `mate-applets`
-built again against master's library, with no patch of Caminito's. The applet of
-`mate-notification-daemon` is loaded into the panel's process too, and doesn't work until that
-package is built again. A Session
-doesn't run `mate-notification-daemon` at all: `caminito-notifications` is its notification daemon
+soname (`libmate-panel-applet-4.so.2`). Arch's applets in other packages, such as
+`mate-netbook`'s, are linked to the old one, so the package also builds the 1.28 library and
+installs it beside master's: each of those applets is a program of its own, which talks to the
+panel over D-Bus. An applet loaded into the panel's process can't use the 1.28 library there.
+Arch builds `mate-applets` that way, and its Trash applet aborts the panel, so
+`mate-applets-caminito` is Arch's `mate-applets` built again against master's library, with no
+patch of Caminito's. The applet of `mate-notification-daemon` is loaded into the panel's process
+too, and doesn't work until that package is built again. A Session doesn't run `mate-notification-daemon` at all: `caminito-notifications` is its notification daemon
 (ADR 0051).
 
 `mate-settings-daemon-caminito` is msd 1.29.1, which asks for mate-desktop 1.29.0. Arch has 1.28.2,
