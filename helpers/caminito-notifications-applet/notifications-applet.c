@@ -2,10 +2,11 @@
  * The Notifications applet (CMN-260, ADR 0051): an in-process mate-panel applet whose icon is
  * a bell, with a dot on it while the Notification history isn't empty, and whose popup is the
  * Notification center (nt-popup.c), which groups the history by app (CMN-265). It reads the
- * history over caminito-notifications's private API (nt-daemon.c), and hides itself while the daemon isn't on the bus, as under X11
- * MATE. Left-click toggles the popup, and the daemon can ask for it too (CMN-285); it hears
- * whether the popup is open, as there are no bubbles while it is. The struck-through bell and
- * middle-click (CMN-263), and the settings gear (CMN-261), come later.
+ * history over caminito-notifications's private API (nt-daemon.c), and hides itself while
+ * the daemon isn't on the bus, as under X11 MATE. Left-click toggles the popup, and the daemon
+ * can ask for it too (CMN-285), as Caminito has it for Super+N; it hears whether the popup is
+ * open, as there are no bubbles while it is. During Do Not Disturb the bell is struck
+ * through, and middle-click toggles it (CMN-263). The settings gear (CMN-261) comes later.
  */
 
 #include <mate-panel-applet.h>
@@ -27,6 +28,8 @@ typedef struct
   NtDaemon            *daemon;
   CaminitoAppletPopup *popup;
   NtPopup             *content;
+  /* Whether the icon is the struck-through bell. */
+  gboolean             struck;
 } Applet;
 
 static void
@@ -34,9 +37,17 @@ update (Applet *applet)
 {
   const GPtrArray *entries = nt_daemon_entries (applet->daemon);
   g_autofree char *tooltip = NULL;
+  gint64 now = g_get_real_time () / G_USEC_PER_SEC;
+  guint64 end;
+  gboolean do_not_disturb = nt_daemon_do_not_disturb (applet->daemon, &end);
 
-  nt_popup_update (applet->content, entries, nt_daemon_ungrouped (applet->daemon),
-                   g_get_real_time () / G_USEC_PER_SEC);
+  nt_popup_update (applet->content, entries, nt_daemon_ungrouped (applet->daemon), now);
+  nt_popup_set_do_not_disturb (applet->content, do_not_disturb, end, now);
+  if (do_not_disturb != applet->struck)
+    {
+      applet->struck = do_not_disturb;
+      caminito_applet_icon_set (applet->icon, nt_state_icon_names (do_not_disturb));
+    }
   /* No daemon, no icon: the applet comes back with it. */
   if (!nt_daemon_running (applet->daemon))
     {
@@ -54,6 +65,20 @@ static void
 on_changed (NtDaemon *daemon G_GNUC_UNUSED, gpointer data)
 {
   update (data);
+}
+
+/* Before mate-panel's own handler, which would take a middle-click to move the applet. */
+static gboolean
+on_button_press (GtkWidget *widget G_GNUC_UNUSED, GdkEventButton *event, gpointer data)
+{
+  Applet *applet = data;
+
+  if (event->button != GDK_BUTTON_MIDDLE)
+    return FALSE;
+  /* A double click's second press, too, which would start a move. */
+  if (event->type == GDK_BUTTON_PRESS)
+    nt_daemon_toggle_do_not_disturb (applet->daemon);
+  return TRUE;
 }
 
 /* The dot is the theme's selection colour, which is what themes use to draw the eye, in a
@@ -150,12 +175,21 @@ on_popup_unmap (GtkWidget *window G_GNUC_UNUSED, gpointer data)
   nt_daemon_set_center_open (applet->daemon, FALSE);
 }
 
+static void
+set_do_not_disturb (const char *until, gpointer data)
+{
+  Applet *applet = data;
+
+  nt_daemon_set_do_not_disturb (applet->daemon, until);
+}
+
 static const NtPopupActions popup_actions = {
   .invoke = invoke,
   .reply = reply,
   .dismiss = dismiss,
   .clear_app = clear_app,
   .clear_all = clear_all,
+  .set_do_not_disturb = set_do_not_disturb,
 };
 
 static void
@@ -184,7 +218,7 @@ fill (MatePanelApplet *panel_applet)
   gtk_widget_set_halign (overlay, GTK_ALIGN_CENTER);
   gtk_widget_set_valign (overlay, GTK_ALIGN_CENTER);
   applet->icon = caminito_applet_icon_new (panel_applet);
-  caminito_applet_icon_set (applet->icon, nt_state_icon_names ());
+  caminito_applet_icon_set (applet->icon, nt_state_icon_names (FALSE));
   gtk_container_add (GTK_CONTAINER (overlay), applet->icon);
   applet->dot = gtk_drawing_area_new ();
   gtk_widget_set_halign (applet->dot, GTK_ALIGN_END);
@@ -194,6 +228,7 @@ fill (MatePanelApplet *panel_applet)
   gtk_overlay_add_overlay (GTK_OVERLAY (overlay), applet->dot);
   gtk_container_add (GTK_CONTAINER (panel_applet), overlay);
   g_signal_connect (panel_applet, "change-size", G_CALLBACK (on_change_size), applet);
+  g_signal_connect (panel_applet, "button-press-event", G_CALLBACK (on_button_press), applet);
   on_change_size (panel_applet, mate_panel_applet_get_size (panel_applet), applet);
 
   g_object_set_data_full (G_OBJECT (panel_applet), "caminito-notifications-applet", applet,

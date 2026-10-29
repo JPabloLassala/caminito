@@ -2,6 +2,7 @@
 //! press with some modifiers held is bound to.
 
 use super::*;
+use crate::dbus::notifications_daemon::NotificationsAction;
 
 const GLOBAL: &str = MARCO_GLOBAL_KEYBINDINGS;
 const WINDOW: &str = MARCO_WINDOW_KEYBINDINGS;
@@ -636,8 +637,12 @@ fn the_table_lists_each_combination_with_its_key() {
     assert!(rows.contains(&("switch-windows", "<Alt>Tab".into())));
     assert!(rows.contains(&("switch-windows", "<Shift><Alt>Tab".into())));
     assert!(rows.contains(&("run-command-screenshot", "Print".into())));
-    assert_eq!(rows.last(), Some(&("overview", "<Super>w".into())));
-    assert_eq!(rows.len(), 34, "{rows:?}");
+    assert!(rows.contains(&("overview", "<Super>w".into())));
+    assert_eq!(
+        rows.last(),
+        Some(&("notification-center", "<Super>n".into()))
+    );
+    assert_eq!(rows.len(), 35, "{rows:?}");
 }
 
 // The Overview's shortcut (241), which is `org.mate.Caminito`'s.
@@ -687,6 +692,34 @@ fn the_application_overviews_shortcut_is_what_caminitos_key_says() {
         policy(Action::ApplicationOverview)
     );
     assert_eq!(bound(&t, SUPER, Keysym::w), policy(Action::Overview));
+}
+
+// The Notification center's shortcut and Do Not Disturb's (CMN-263), `org.mate.Caminito`'s
+// too, which ask caminito-notifications.
+
+#[test]
+fn super_n_opens_the_notification_center_by_default() {
+    let t = table(&[]);
+    assert_eq!(
+        bound(&t, SUPER, Keysym::n),
+        Some(Binding::Notifications(NotificationsAction::OpenCenter))
+    );
+}
+
+#[test]
+fn do_not_disturb_has_no_shortcut_by_default_and_has_the_one_caminitos_key_says() {
+    assert!(
+        table(&[])
+            .iter()
+            .all(|(key, _)| key != TOGGLE_DO_NOT_DISTURB_KEY)
+    );
+    let t = table(&[(CAMINITO, TOGGLE_DO_NOT_DISTURB_KEY, "<Super>d")]);
+    assert_eq!(
+        bound(&t, SUPER, Keysym::d),
+        Some(Binding::Notifications(
+            NotificationsAction::ToggleDoNotDisturb
+        ))
+    );
 }
 
 #[test]

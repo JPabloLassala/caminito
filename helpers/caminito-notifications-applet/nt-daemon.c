@@ -21,11 +21,14 @@ struct _NtDaemon
   guint            history_changed;
   guint            center_requested_id;
   guint            ungrouped_changed;
+  guint            do_not_disturb_changed;
   GPtrArray       *entries;
   char           **ungrouped;
   /* A List is current until the next one starts, or the daemon goes. */
   guint            generation;
   guint            refresh;
+  gboolean         do_not_disturb;
+  guint64          do_not_disturb_end;
   NtDaemonChanged  changed;
   NtDaemonCenterRequested center_requested;
   gpointer         data;
@@ -140,6 +143,46 @@ on_history_changed (GDBusConnection *connection G_GNUC_UNUSED,
   queue_refresh (data);
 }
 
+/* parameters is DoNotDisturb's reply or DoNotDisturbChanged's arguments, which are alike. */
+static void
+take_do_not_disturb (NtDaemon *daemon, GVariant *parameters)
+{
+  g_variant_get (parameters, "(bt&s)", &daemon->do_not_disturb, &daemon->do_not_disturb_end,
+                 NULL);
+  queue_changed (daemon);
+}
+
+static void
+on_do_not_disturb_changed (GDBusConnection *connection G_GNUC_UNUSED,
+                           const char      *sender G_GNUC_UNUSED,
+                           const char      *path G_GNUC_UNUSED,
+                           const char      *interface G_GNUC_UNUSED,
+                           const char      *signal G_GNUC_UNUSED,
+                           GVariant        *parameters,
+                           gpointer         data)
+{
+  take_do_not_disturb (data, parameters);
+}
+
+/* As on_listed: the daemon is only touched while the cancellable says it's there. The
+   reply and the daemon's signals come in the order it sent them, so a DoNotDisturbChanged
+   after the reply is newer, and wins. */
+static void
+on_do_not_disturb (GObject *source, GAsyncResult *result, gpointer data)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GVariant) reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result,
+                                                              &error);
+
+  if (reply == NULL)
+    {
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED) && !daemon_is_gone (error))
+        g_warning ("can't read Do Not Disturb: %s", error->message);
+      return;
+    }
+  take_do_not_disturb (data, reply);
+}
+
 static void
 on_center_requested (GDBusConnection *connection G_GNUC_UNUSED,
                      const char      *sender G_GNUC_UNUSED,
@@ -214,6 +257,8 @@ unsubscribe (NtDaemon *daemon)
   daemon->history_changed = 0;
   daemon->center_requested_id = 0;
   daemon->ungrouped_changed = 0;
+  g_dbus_connection_signal_unsubscribe (daemon->connection, daemon->do_not_disturb_changed);
+  daemon->do_not_disturb_changed = 0;
   g_clear_object (&daemon->connection);
 }
 
@@ -243,6 +288,12 @@ on_name_appeared (GDBusConnection *connection,
   g_dbus_connection_call (connection, DAEMON_NAME, DAEMON_PATH, DAEMON_INTERFACE, "Ungrouped",
                           NULL, G_VARIANT_TYPE ("(as)"), G_DBUS_CALL_FLAGS_NONE, -1,
                           daemon->cancellable, on_ungrouped, daemon);
+  daemon->do_not_disturb_changed = g_dbus_connection_signal_subscribe (
+    connection, DAEMON_NAME, DAEMON_INTERFACE, "DoNotDisturbChanged", DAEMON_PATH, NULL,
+    G_DBUS_SIGNAL_FLAGS_NONE, on_do_not_disturb_changed, daemon, NULL);
+  g_dbus_connection_call (connection, DAEMON_NAME, DAEMON_PATH, DAEMON_INTERFACE, "DoNotDisturb",
+                          NULL, G_VARIANT_TYPE ("(bts)"), G_DBUS_CALL_FLAGS_NONE, -1,
+                          daemon->cancellable, on_do_not_disturb, daemon);
   queue_refresh (daemon);
   /* Running, before the history is read. */
   queue_changed (daemon);
@@ -261,6 +312,8 @@ on_name_vanished (GDBusConnection *connection G_GNUC_UNUSED,
   g_clear_handle_id (&daemon->refresh, g_source_remove);
   g_ptr_array_set_size (daemon->entries, 0);
   set_ungrouped (daemon, g_new0 (char *, 1));
+  daemon->do_not_disturb = FALSE;
+  daemon->do_not_disturb_end = 0;
 }
 
 static void
@@ -330,6 +383,25 @@ nt_daemon_set_center_open (NtDaemon *daemon, gboolean open)
     return;
   daemon->center_open = open;
   call (daemon, "SetCenterOpen", g_variant_new ("(b)", open));
+}
+
+gboolean
+nt_daemon_do_not_disturb (NtDaemon *daemon, guint64 *end)
+{
+  *end = daemon->do_not_disturb_end;
+  return daemon->do_not_disturb;
+}
+
+void
+nt_daemon_set_do_not_disturb (NtDaemon *daemon, const char *until)
+{
+  call (daemon, "SetDoNotDisturb", g_variant_new ("(s)", until));
+}
+
+void
+nt_daemon_toggle_do_not_disturb (NtDaemon *daemon)
+{
+  call (daemon, "ToggleDoNotDisturb", NULL);
 }
 
 gboolean

@@ -49,10 +49,12 @@ configure_file(
   install_dir: get_option('datadir') / 'mate-panel' / 'applets',
 )
 
-# The bell's last fallback, in hicolor, which every icon theme falls back to: MATE's themes
-# have no bell, and Adwaita's has the name of MATE's speech bubble.
+# The bell's last fallbacks, plain and struck through for Do Not Disturb, in hicolor, which
+# every icon theme falls back to: MATE's themes have no bell, and Adwaita's has the name of
+# MATE's speech bubble.
 install_data(
   'caminito-bell-symbolic.svg',
+  'caminito-bell-disabled-symbolic.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'status',
 )
 
@@ -63,7 +65,8 @@ test('state', executable('test-state', 'test-state.c', link_with: state, depende
 test(
   'popup',
   executable('test-popup', 'test-popup.c', link_with: [popup, state], dependencies: common),
-  env: {'NO_AT_BRIDGE': '1'},
+  # UTC, so that the times Do Not Disturb ends at read the same everywhere.
+  env: {'NO_AT_BRIDGE': '1', 'TZ': 'UTC'},
 )
 
 # The private API against a mock of it, on a private session bus, where python-dbusmock is

@@ -36,6 +36,11 @@ struct _NtPopup
   GtkWidget           *scrolled;
   GtkWidget           *list;
   GtkWidget           *clear_all;
+  GtkWidget           *do_not_disturb;
+  GtkWidget           *until;
+  GtkWidget           *durations;
+  /* Set while the switch is set to the daemon's state, which calls nothing back. */
+  gboolean             updating;
   GArray              *ages;
   guint                tick;
   /* What the last update gave, for a group opened or closed to be drawn again. */
@@ -264,6 +269,73 @@ on_clear_all (GtkButton *button G_GNUC_UNUSED, gpointer data)
   /* The center closes with it (CMN-285). */
   caminito_applet_popup_hide (popup->applet_popup);
   popup->actions.clear_all (popup->data);
+}
+
+static void
+on_do_not_disturb_switched (GObject *button G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED,
+                            gpointer data)
+{
+  NtPopup *popup = data;
+  gboolean on = gtk_switch_get_active (GTK_SWITCH (popup->do_not_disturb));
+
+  if (!popup->updating)
+    popup->actions.set_do_not_disturb (on ? "until-turned-off" : "off", popup->data);
+}
+
+static void
+on_duration (GtkButton *button, gpointer data)
+{
+  NtPopup *popup = data;
+
+  popup->actions.set_do_not_disturb (g_object_get_data (G_OBJECT (button), "nt-until"),
+                                     popup->data);
+}
+
+/* The Do Not Disturb row: its name, and when it ends below it while it's on, beside the
+   switch; and below them, the durations, which turn it on or change its end. */
+static GtkWidget *
+do_not_disturb_row (NtPopup *popup)
+{
+  static const struct
+  {
+    const char *label;
+    const char *until;
+  } durations[] = {
+    { "1 hour", "one-hour" },
+    { "4 hours", "four-hours" },
+    { "Tomorrow morning", "tomorrow-morning" },
+  };
+  GtkWidget *row = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+  GtkWidget *top = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
+  GtkWidget *text = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
+  GtkWidget *name = gtk_label_new ("Do Not Disturb");
+
+  g_object_set (row, "margin", 8, NULL);
+  gtk_label_set_xalign (GTK_LABEL (name), 0);
+  gtk_box_pack_start (GTK_BOX (text), name, FALSE, FALSE, 0);
+  popup->until = dim_label ("");
+  gtk_widget_set_no_show_all (popup->until, TRUE);
+  gtk_box_pack_start (GTK_BOX (text), popup->until, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (top), text, TRUE, TRUE, 0);
+  popup->do_not_disturb = gtk_switch_new ();
+  gtk_widget_set_name (popup->do_not_disturb, "do-not-disturb");
+  gtk_widget_set_valign (popup->do_not_disturb, GTK_ALIGN_CENTER);
+  g_signal_connect (popup->do_not_disturb, "notify::active",
+                    G_CALLBACK (on_do_not_disturb_switched), popup);
+  gtk_box_pack_end (GTK_BOX (top), popup->do_not_disturb, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (row), top, FALSE, FALSE, 0);
+
+  popup->durations = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+  for (guint i = 0; i < G_N_ELEMENTS (durations); i++)
+    {
+      GtkWidget *button = gtk_button_new_with_label (durations[i].label);
+
+      g_object_set_data (G_OBJECT (button), "nt-until", (gpointer) durations[i].until);
+      g_signal_connect (button, "clicked", G_CALLBACK (on_duration), popup);
+      gtk_box_pack_start (GTK_BOX (popup->durations), button, FALSE, FALSE, 0);
+    }
+  gtk_box_pack_start (GTK_BOX (row), popup->durations, FALSE, FALSE, 0);
+  return row;
 }
 
 static GtkWidget *
@@ -553,6 +625,20 @@ nt_popup_update (NtPopup           *popup,
   rebuild (popup);
 }
 
+void
+nt_popup_set_do_not_disturb (NtPopup *popup, gboolean on, guint64 end, gint64 now)
+{
+  g_autoptr (GTimeZone) zone = g_time_zone_new_local ();
+  g_autofree char *until = nt_state_until (end, now, zone);
+
+  popup->updating = TRUE;
+  gtk_switch_set_active (GTK_SWITCH (popup->do_not_disturb), on);
+  popup->updating = FALSE;
+  gtk_label_set_text (GTK_LABEL (popup->until), until);
+  gtk_widget_set_visible (popup->until, on);
+  fit_list (popup);
+}
+
 NtPopup *
 nt_popup_new (CaminitoAppletPopup *applet_popup, const NtPopupActions *actions, gpointer data)
 {
@@ -570,6 +656,9 @@ nt_popup_new (CaminitoAppletPopup *applet_popup, const NtPopupActions *actions, 
   popup->ungrouped = g_new0 (char *, 1);
   popup->opened = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   gtk_widget_set_size_request (box, WIDTH, -1);
+  gtk_box_pack_start (GTK_BOX (box), do_not_disturb_row (popup), FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (box), gtk_separator_new (GTK_ORIENTATION_HORIZONTAL), FALSE,
+                      FALSE, 0);
 
   popup->scrolled = gtk_scrolled_window_new (NULL, NULL);
   popup->list = gtk_list_box_new ();
@@ -614,6 +703,7 @@ nt_popup_free (NtPopup *popup)
 
   g_signal_handlers_disconnect_by_data (window, popup);
   g_signal_handlers_disconnect_by_data (popup->list, popup);
+  g_signal_handlers_disconnect_by_data (popup->do_not_disturb, popup);
   g_clear_handle_id (&popup->tick, g_source_remove);
   g_array_unref (popup->ages);
   g_ptr_array_unref (popup->entries);

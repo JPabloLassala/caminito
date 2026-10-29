@@ -1,11 +1,13 @@
 /*
  * The Notification center (CMN-260): the Notifications applet's popup, in the shared popup
- * window. The Notification history grouped by app (CMN-265), newest group first: each group
- * with its app's icon and name, its count and a clear button, collapsed to its latest few with
- * "N more" to open it. An entry of an app whose grouping is off stands alone among the
- * groups, with its app's icon and name. Each entry has its age, a close button, its summary,
- * body and image, and its action buttons, and its reply field (CMN-266). "No notifications" when it's empty, and "Clear all"
- * at the bottom. The Do Not Disturb row (CMN-263) comes later. It draws NtEntries and calls
+ * window. On top is the Do Not Disturb row (CMN-263): its switch, which turns it on until
+ * turned off, "Until 14:30" while it's on, and the durations to turn it on for or change its
+ * end to. Then the Notification history grouped by app (CMN-265), newest group first: each
+ * group with its app's icon and name, its count and a clear button, collapsed to its latest
+ * few with "N more" to open it. An entry of an app whose grouping is off stands alone among
+ * the groups, with its app's icon and name. Each entry has its age, a close button, its
+ * summary, body and image, and its action buttons, and its reply field (CMN-266). "No
+ * notifications" when it's empty, and "Clear all" at the bottom. It draws NtEntries and calls
  * back for what the user does, so that it knows nothing of D-Bus.
  */
 
@@ -30,6 +32,9 @@ typedef struct
   void (*clear_app) (const char *app, gpointer data);
   /* "Clear all". The popup has closed before it's called. */
   void (*clear_all) (gpointer data);
+  /* The switch or a duration: until is "one-hour", "four-hours", "tomorrow-morning",
+     "until-turned-off" or "off". The popup stays open. */
+  void (*set_do_not_disturb) (const char *until, gpointer data);
 } NtPopupActions;
 
 /* The content of applet_popup's window, which it lives as long as. actions is copied. */
@@ -44,4 +49,10 @@ void     nt_popup_update (NtPopup           *popup,
                           const GPtrArray   *entries,
                           const char *const *ungrouped,
                           gint64             now);
+/* Shows Do Not Disturb as the daemon has it: on or off, and its end in seconds since the
+   epoch, or 0 for none, as it reads at now in the local zone. Nothing is called back. */
+void     nt_popup_set_do_not_disturb (NtPopup *popup,
+                                      gboolean on,
+                                      guint64  end,
+                                      gint64   now);
 void     nt_popup_free   (NtPopup *popup);

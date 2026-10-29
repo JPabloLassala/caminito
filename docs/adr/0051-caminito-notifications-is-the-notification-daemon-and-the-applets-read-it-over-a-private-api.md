@@ -28,7 +28,7 @@ ADR 0035 split a feature into a thin C and GTK3 in-process applet and a Rust pro
   - opening the settings window, at an app's page;
   - the Notification center: the daemon asks the applet to open it, and the applet says while it's open, as there are no bubbles then (CMN-285).
 
-  Each comes with change signals. Its clients are the Notifications applet and the Dock applet. It's unversioned, because all three ship in the `caminito` package.
+  Each comes with change signals. Its clients are the Notifications applet and the Dock applet, and Caminito, which calls it for `Super+N` and Do Not Disturb's System shortcut. It's unversioned, because all of them ship in the `caminito` package.
 - **Settings are GSettings:** `org.mate.Caminito.notifications`, plus the relocatable `org.mate.Caminito.notifications.app`, one path per Notifying app. The C applets can read them, and `dconf` can edit them. The history is a file under `$XDG_STATE_HOME/caminito/`.
 - **Caminito decides nothing about Do Not Disturb.** It publishes, on `org.mate.Caminito`, whether the output under the pointer has a fullscreen window and whether a screencast is running, and the daemon watches them.
 
@@ -36,7 +36,7 @@ ADR 0035 split a feature into a thin C and GTK3 in-process applet and a Rust pro
 
 - Without the daemon, the Notifications applet hides itself and the Dock shows only Launcher entry counts. Outside a Session, X11 MATE keeps mate-notification-daemon, and the applet hides there too.
 - A daemon crash loses the bubbles on screen but not the history, which is on disk. Caminito restarts it at once. While the name is unowned, a call can still start another daemon by D-Bus activation, and that daemon keeps the name until it exits. mate-notification-daemon is activated with `--idle-exit`, so it does exit when idle. The restarted daemon takes the name back at once all the same (CMN-258): the activated mate-notification-daemon owns it with `ALLOW_REPLACEMENT`, the daemon asks for it with `REPLACE`, and mate-notification-daemon exits as it loses it. Plasma's activation file only runs `plasma_waitforname`, which owns nothing outside Plasma. The daemon doesn't allow its own replacement, and waits in the bus's queue for a name it's refused.
-- The private API is the one interface between Caminito's processes that isn't a system service's or Caminito's own. Changing it means changing the daemon and both applets together.
+- The private API is the one interface between Caminito's processes that isn't a system service's or Caminito's own. Changing it means changing the daemon, both applets and Caminito's calls together.
 - The Dock applet gains a second D-Bus client, and the Badge has two sources (CONTEXT.md).
 - GNOME Shell's `org.gtk.Notifications` isn't served. GApplication apps fall back to the freedesktop name, but an action only reaches such an app while it's running.
 - Rejected:

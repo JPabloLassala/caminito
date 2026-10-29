@@ -16,6 +16,7 @@ pub(crate) mod global_menu;
 pub(crate) mod logind;
 pub(crate) mod menu_claim;
 mod notifications;
+pub(crate) mod notifications_daemon;
 pub(crate) mod panel;
 pub(crate) mod registrar;
 pub mod screensaver;

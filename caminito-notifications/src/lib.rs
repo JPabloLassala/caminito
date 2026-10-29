@@ -8,10 +8,10 @@
 //! [`settings`], the keys of `org.mate.Caminito.notifications` and the Notifying apps' own,
 //! [`apps`], the Notifying apps the settings window lists, [`private_api`], what the
 //! applets call, and `markup`, which makes a body's markup safe for Pango. The server also
-//! keeps the Notification history (CMN-259), in a file, which `private_api` serves. The
-//! integration tests drive the server and the private API on a private bus with fakes of what
-//! the binary gives them. The bubbles' layer surfaces, the settings window and libcanberra are the
-//! binary's.
+//! keeps the Notification history (CMN-259), in a file, which `private_api` serves, and
+//! decides Do Not Disturb (CMN-263), which a file keeps too. The integration tests drive the
+//! server and the private API on a private bus with fakes of what the binary gives them. The
+//! bubbles' layer surfaces, the settings window and libcanberra are the binary's.
 
 #![forbid(unsafe_code)]
 
@@ -19,6 +19,7 @@
 pub const DOMAIN: &str = "caminito-notifications";
 
 pub mod apps;
+mod do_not_disturb;
 mod history;
 mod markup;
 mod notification;

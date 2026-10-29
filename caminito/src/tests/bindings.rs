@@ -355,13 +355,15 @@ fn the_state_dump_lists_the_bindings_in_force_with_their_keys() {
     );
     let rows = bindings_in_force(&f);
     let row = |key: &str, combination: &str| (key.to_owned(), combination.to_owned());
-    assert_eq!(rows.len(), 34, "{rows:?}");
+    assert_eq!(rows.len(), 35, "{rows:?}");
     assert_eq!(
         rows[0],
         row("switch-to-workspace-left", "<Control><Alt>Left")
     );
-    // The Overview's, which is Caminito's own, is after Marco's (241).
+    // The Overview's, which is Caminito's own, is after Marco's (241), and the
+    // Notification center's after it (CMN-263).
     assert_eq!(rows[33], row("overview", "<Super>w"));
+    assert_eq!(rows[34], row("notification-center", "<Super>n"));
     assert!(
         rows.contains(&row("switch-windows", "<Shift><Alt>Tab")),
         "{rows:?}"

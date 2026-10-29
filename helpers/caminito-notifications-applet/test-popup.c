@@ -1,8 +1,9 @@
 /*
  * The Notification center (CMN-260): the history drawn from entries built by hand, newest
  * first and grouped by app (CMN-265), and what a click on an entry, its close button, its
- * actions, its reply field (CMN-266), a group's clear button and "Clear all" call back.
- * Without a display, GTK can't start, and it's skipped.
+ * actions, its reply field (CMN-266), a group's clear button and "Clear all" call back, and
+ * the Do Not Disturb row (CMN-263), in UTC, as meson runs it. Without a display, GTK can't
+ * start, and it's skipped.
  */
 
 #include "nt-popup.h"
@@ -17,7 +18,7 @@ typedef struct
   CaminitoAppletPopup *applet_popup;
   NtPopup             *popup;
   /* What the popup called back, as "invoke 7 default;", "reply 7 Hi;", "dismiss 3;",
-     "clear app chat;", "clear all;". */
+     "clear app chat;", "clear all;", "do not disturb one-hour;". */
   GString             *calls;
   GPtrArray           *entries;
   /* The apps whose grouping is off. */
@@ -67,12 +68,21 @@ on_clear_all (gpointer data)
   g_string_append (fixture->calls, "clear all;");
 }
 
+static void
+on_set_do_not_disturb (const char *until, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "do not disturb %s;", until);
+}
+
 static const NtPopupActions actions = {
   .invoke = on_invoke,
   .reply = on_reply,
   .dismiss = on_dismiss,
   .clear_app = on_clear_app,
   .clear_all = on_clear_all,
+  .set_do_not_disturb = on_set_do_not_disturb,
 };
 
 /* An entry from Mail, which arrived ago seconds before NOW, with the actions given as
@@ -542,6 +552,64 @@ test_an_ungrouped_apps_entries_stand_alone_by_their_time (Fixture *fixture,
   g_assert_cmpstr (regrouped, ==, "Hi;Are you there?;Lunch?");
 }
 
+static GtkWidget *
+do_not_disturb_switch (Fixture *fixture)
+{
+  GtkWidget *found = named_under (window_of (fixture), "do-not-disturb");
+
+  g_assert_true (GTK_IS_SWITCH (found));
+  return found;
+}
+
+static void
+click (Fixture *fixture, const char *label)
+{
+  gtk_button_clicked (GTK_BUTTON (ancestor (label_under (window_of (fixture), label),
+                                            GTK_TYPE_BUTTON)));
+}
+
+static void
+test_the_do_not_disturb_row_shows_its_state (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  /* Off: the switch off, and the durations to turn it on for. */
+  nt_popup_set_do_not_disturb (fixture->popup, FALSE, 0, NOW);
+  g_assert_true (shows (fixture, "Do Not Disturb"));
+  g_assert_false (gtk_switch_get_active (GTK_SWITCH (do_not_disturb_switch (fixture))));
+  g_assert_true (shows (fixture, "1 hour"));
+  g_assert_true (shows (fixture, "4 hours"));
+  g_assert_true (shows (fixture, "Tomorrow morning"));
+
+  /* NOW is 22:13:20 in UTC. */
+  nt_popup_set_do_not_disturb (fixture->popup, TRUE, NOW + 60 * 60, NOW);
+  g_assert_true (gtk_switch_get_active (GTK_SWITCH (do_not_disturb_switch (fixture))));
+  g_assert_true (shows (fixture, "Until 23:13"));
+  /* The durations stay, to change the end with. */
+  g_assert_true (shows (fixture, "1 hour"));
+
+  nt_popup_set_do_not_disturb (fixture->popup, TRUE, 0, NOW);
+  g_assert_true (shows (fixture, "Until turned off"));
+  /* What the daemon says is shown, and nothing is asked of it. */
+  g_assert_cmpstr (fixture->calls->str, ==, "");
+}
+
+static void
+test_the_switch_and_the_durations_set_do_not_disturb (Fixture *fixture,
+                                                      gconstpointer data G_GNUC_UNUSED)
+{
+  nt_popup_set_do_not_disturb (fixture->popup, FALSE, 0, NOW);
+  gtk_switch_set_active (GTK_SWITCH (do_not_disturb_switch (fixture)), TRUE);
+  nt_popup_set_do_not_disturb (fixture->popup, TRUE, 0, NOW);
+  gtk_switch_set_active (GTK_SWITCH (do_not_disturb_switch (fixture)), FALSE);
+  nt_popup_set_do_not_disturb (fixture->popup, FALSE, 0, NOW);
+  click (fixture, "1 hour");
+  click (fixture, "4 hours");
+  click (fixture, "Tomorrow morning");
+  g_assert_cmpstr (fixture->calls->str, ==,
+                   "do not disturb until-turned-off;do not disturb off;"
+                   "do not disturb one-hour;do not disturb four-hours;"
+                   "do not disturb tomorrow-morning;");
+}
+
 int
 main (int argc, char **argv)
 {
@@ -564,5 +632,7 @@ main (int argc, char **argv)
   g_test_add ("/popup/a-group-shows-its-latest-few-and-n-more-opens-it", Fixture, NULL, setup, test_a_group_shows_its_latest_few_and_n_more_opens_it, teardown);
   g_test_add ("/popup/a-groups-clear-button-clears-its-app", Fixture, NULL, setup, test_a_groups_clear_button_clears_its_app, teardown);
   g_test_add ("/popup/an-ungrouped-apps-entries-stand-alone-by-their-time", Fixture, NULL, setup, test_an_ungrouped_apps_entries_stand_alone_by_their_time, teardown);
+  g_test_add ("/popup/the-do-not-disturb-row-shows-its-state", Fixture, NULL, setup, test_the_do_not_disturb_row_shows_its_state, teardown);
+  g_test_add ("/popup/the-switch-and-the-durations-set-do-not-disturb", Fixture, NULL, setup, test_the_switch_and_the_durations_set_do_not_disturb, teardown);
   return g_test_run ();
 }

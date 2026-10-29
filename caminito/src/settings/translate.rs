@@ -13,7 +13,7 @@ use caminito_policy::{
 use caminito_theme::ButtonLayout;
 
 use crate::input::bindings::button_modifier::ButtonModifier;
-use crate::input::bindings::{APPLICATION_OVERVIEW_KEY, Bindings, OVERVIEW_KEY};
+use crate::input::bindings::{Bindings, CAMINITO_KEYS};
 use crate::input::remaps::{KeyRemaps, Unremappable};
 
 pub const MARCO_GENERAL: &str = "org.mate.Marco.general";
@@ -1304,12 +1304,12 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         resize_with_right_button: r.bool(MARCO_GENERAL, "resize-with-right-button", true),
     };
 
-    // Every key of both of Marco's schemas, so every value is parsed (148), and the two
-    // keys of Caminito's own that are bindings, the Overview's (241) and the Application
-    // overview's (CMN-185).
+    // Every key of both of Marco's schemas, so every value is parsed (148), and the keys
+    // of Caminito's own that are bindings: the Overview's (241), the Application
+    // overview's (CMN-185), the Notification center's and Do Not Disturb's (CMN-263).
     let overview = reading
         .strings_of(CAMINITO)
-        .filter(|(key, _)| [OVERVIEW_KEY, APPLICATION_OVERVIEW_KEY].contains(key))
+        .filter(|(key, _)| CAMINITO_KEYS.contains(key))
         .map(|(key, value)| (CAMINITO, key, value));
     let keys = [MARCO_GLOBAL_KEYBINDINGS, MARCO_WINDOW_KEYBINDINGS]
         .into_iter()

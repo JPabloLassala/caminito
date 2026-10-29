@@ -186,6 +186,7 @@ install_data(
 install_data(
   'data/keybindings/50-caminito-desktop-key.xml',
   'data/keybindings/50-caminito-global-key.xml',
+  'data/keybindings/50-caminito-notifications-key.xml',
   'data/keybindings/50-caminito-overview-key.xml',
   'data/keybindings/50-caminito-window-key.xml',
   install_dir: get_option('datadir') / 'mate-control-center' / 'keybindings',

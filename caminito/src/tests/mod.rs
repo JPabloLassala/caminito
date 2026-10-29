@@ -65,6 +65,7 @@ mod modifier_click;
 mod move_to;
 mod night_light;
 mod not_responding;
+mod notifications_keys;
 mod open_close_animation;
 mod open_close_animation_effects;
 mod output_lifecycle;

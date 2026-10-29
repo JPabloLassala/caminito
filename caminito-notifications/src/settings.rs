@@ -221,6 +221,11 @@ impl Settings {
         }
     }
 
+    /// Whether critical notifications break through Do Not Disturb.
+    pub(crate) fn critical_breaks_through(&self) -> bool {
+        self.global.boolean(CRITICAL_BREAKS_THROUGH)
+    }
+
     /// How long a bubble stays when its app leaves that to the daemon.
     pub(crate) fn timeout(&self) -> Duration {
         Duration::from_secs(self.global.uint(TIMEOUT).into())
