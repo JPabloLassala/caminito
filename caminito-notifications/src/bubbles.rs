@@ -1,7 +1,9 @@
 //! The Notification bubbles (CMN-258), in GTK4: one layer surface in the namespace
-//! `caminito-notification`, anchored to the corner the settings name (CMN-261), that holds the
-//! bubbles on screen, newest nearest the corner. A new bubble moves them to the corner the
-//! settings name now. Its exclusive zone is 0, so it sits under the panel, and
+//! `caminito-notification`, on the side of the corner the settings name (CMN-261), that holds the
+//! bubbles on screen, newest nearest the corner, under their header (CMN-285). A new bubble
+//! moves them to the corner the settings name now. Its exclusive zone is 0, so it sits under
+//! the panel. It spans the output's height between the panel and the far edge, which is the
+//! room the bubbles have, and takes the pointer only where they and their header are. It
 //! it names no output, so Caminito puts it on the output under the pointer as it maps. It's
 //! hidden while there's no bubble, and maps again where the pointer is for the next one; a
 //! bubble that opens while others show joins them on their output, as bubbles are on one
@@ -13,10 +15,14 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use caminito_notifications::server::{Bubble, Bubbles, Events, Icon, Image, Pixels};
+use caminito_notifications::server::{
+    Bubble, Bubbles, Events, Header, HeaderEvents, Icon, Image, Pixels,
+};
 use caminito_notifications::settings::Corner;
 use gtk::prelude::*;
-use gtk::{gdk, gio, glib, pango};
+use std::rc::Rc;
+
+use gtk::{cairo, gdk, gio, glib, pango};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 
 /// The namespace of the bubbles' layer surface, which Caminito knows them by.
@@ -37,6 +43,8 @@ window.caminito-notifications { background: none; }
 }
 .caminito-notification .app-name { font-size: smaller; }
 .caminito-notification .close { min-width: 20px; min-height: 20px; padding: 2px; margin: 4px; }
+.caminito-notifications-header button { border-radius: 12px; min-height: 24px; padding: 0 10px; }
+.caminito-notifications-header .more.critical { color: @error_color; }
 ";
 
 /// The bubbles, in their layer surface.
@@ -47,9 +55,17 @@ pub(crate) struct GtkBubbles {
     settings: gio::Settings,
     /// The corner the bubbles are in.
     corner: Cell<Corner>,
+    /// The header and the bubbles under it.
+    column: gtk::Box,
     /// The bubbles, newest first, which is nearest the corner.
     stack: gtk::Box,
     shown: RefCell<HashMap<u32, Shown>>,
+    /// "*N* more notifications", and the icon of a critical one among them.
+    more: gtk::Button,
+    more_label: gtk::Label,
+    more_critical: gtk::Image,
+    /// What the header's buttons tell the server.
+    header_events: Rc<RefCell<Option<HeaderEvents>>>,
 }
 
 /// A bubble on screen.
@@ -86,7 +102,24 @@ impl GtkBubbles {
             );
         }
         let stack = gtk::Box::new(gtk::Orientation::Vertical, GAP);
-        window.set_child(Some(&stack));
+        let header_events: Rc<RefCell<Option<HeaderEvents>>> = Rc::default();
+        let (header, more, more_label, more_critical) = header(&header_events);
+        let column = gtk::Box::new(gtk::Orientation::Vertical, GAP);
+        column.append(&header);
+        column.append(&stack);
+        // The window is as tall as the room, which the area's size says, and as wide as the
+        // column.
+        let room = gtk::DrawingArea::new();
+        let overlay = gtk::Overlay::new();
+        overlay.set_child(Some(&room));
+        overlay.add_overlay(&column);
+        overlay.set_measure_overlay(&column, true);
+        window.set_child(Some(&overlay));
+        room.connect_resize({
+            let window = window.clone();
+            let column = column.clone();
+            move |_, _, _| reshape(&window, &column, layer)
+        });
 
         if let Some(display) = gdk::Display::default() {
             let provider = gtk::CssProvider::new();
@@ -103,8 +136,13 @@ impl GtkBubbles {
             layer,
             settings,
             corner: Cell::new(corner),
+            column,
             stack,
             shown: RefCell::default(),
+            more,
+            more_label,
+            more_critical,
+            header_events,
         };
         bubbles.anchor(corner);
         bubbles
@@ -130,19 +168,36 @@ impl GtkBubbles {
     }
 
     fn anchor(&self, corner: Corner) {
+        self.column.set_valign(if corner.is_top() {
+            gtk::Align::Start
+        } else {
+            gtk::Align::End
+        });
         if !self.layer {
             return;
         }
-        self.window.set_anchor(Edge::Top, corner.is_top());
-        self.window.set_anchor(Edge::Bottom, !corner.is_top());
+        self.window.set_anchor(Edge::Top, true);
+        self.window.set_anchor(Edge::Bottom, true);
         self.window.set_anchor(Edge::Right, corner.is_right());
         self.window.set_anchor(Edge::Left, !corner.is_right());
+    }
+
+    /// The height the header and the bubbles have: the window's, between the panel and the
+    /// output's far edge, or without a layer shell, the output's. `None` until it's known.
+    fn room(&self) -> Option<i32> {
+        if self.layer {
+            return Some(self.window.height()).filter(|height| *height > 0);
+        }
+        let surface = self.window.surface()?;
+        let monitor = surface.display().monitor_at_surface(&surface)?;
+        Some(monitor.geometry().height() - 2 * GAP)
     }
 
     /// Shows the window when it has a bubble, and hides it, shrunk, when it has none.
     fn present(&self) {
         if self.stack.first_child().is_some() {
             self.window.set_visible(true);
+            reshape(&self.window, &self.column, self.layer);
         } else {
             self.window.set_visible(false);
             // So that it maps again at the size of its next bubble.
@@ -151,18 +206,131 @@ impl GtkBubbles {
     }
 }
 
+/// The header: "*N* more notifications" on the left while some got no bubble, which opens
+/// the Notification center, and on the right the close button that shows "Clear all" on
+/// hover. Returns it with its "more" button, that button's label and its critical icon.
+fn header(
+    events: &Rc<RefCell<Option<HeaderEvents>>>,
+) -> (gtk::Box, gtk::Button, gtk::Label, gtk::Image) {
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    header.add_css_class("caminito-notifications-header");
+
+    let more_label = gtk::Label::new(None);
+    let more_critical = gtk::Image::from_icon_name("dialog-warning-symbolic");
+    let more_content = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    more_content.append(&more_critical);
+    more_content.append(&more_label);
+    let more = gtk::Button::builder()
+        .child(&more_content)
+        .css_classes(["more"])
+        .focusable(false)
+        .visible(false)
+        .build();
+    more.connect_clicked({
+        let events = events.clone();
+        move |_| {
+            if let Some(events) = events.borrow().clone() {
+                events.open_center();
+            }
+        }
+    });
+    header.append(&more);
+
+    let clear_label = gtk::Label::new(Some("Clear all"));
+    clear_label.set_visible(false);
+    let clear_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    clear_content.append(&clear_label);
+    clear_content.append(&gtk::Image::from_icon_name("window-close-symbolic"));
+    let clear = gtk::Button::builder()
+        .child(&clear_content)
+        .css_classes(["clear"])
+        .focusable(false)
+        .halign(gtk::Align::End)
+        .hexpand(true)
+        .build();
+    clear.update_property(&[gtk::accessible::Property::Label("Clear all")]);
+    clear.connect_clicked({
+        let events = events.clone();
+        move |_| {
+            if let Some(events) = events.borrow().clone() {
+                events.clear_all();
+            }
+        }
+    });
+    let motion = gtk::EventControllerMotion::new();
+    motion.connect_enter({
+        let label = clear_label.clone();
+        move |_, _, _| label.set_visible(true)
+    });
+    motion.connect_leave(move |_| clear_label.set_visible(false));
+    clear.add_controller(motion);
+    header.append(&clear);
+
+    (header, more, more_label, more_critical)
+}
+
+/// The header and the bubbles' natural size: width, and height at that width.
+fn natural_size(column: &gtk::Box) -> (i32, i32) {
+    let (_, width, _, _) = column.measure(gtk::Orientation::Horizontal, -1);
+    let (_, height, _, _) = column.measure(gtk::Orientation::Vertical, width);
+    (width, height)
+}
+
+/// Lets the pointer through the window, which spans the output's height, but where the header
+/// and the bubbles are, at its top or its bottom as the corner is.
+fn reshape(window: &gtk::Window, column: &gtk::Box, layer: bool) {
+    let Some(surface) = window.surface().filter(|_| layer) else {
+        return;
+    };
+    let (width, height) = natural_size(column);
+    let y = if column.valign() == gtk::Align::End {
+        (window.height() - height).max(0)
+    } else {
+        0
+    };
+    let area = cairo::RectangleInt::new(0, y, width, height);
+    surface.set_input_region(Some(&cairo::Region::create_rectangle(&area)));
+}
+
 impl Bubbles for GtkBubbles {
-    fn show(&self, id: u32, bubble: &Bubble, events: Events) {
+    fn show(&self, id: u32, bubble: &Bubble, events: Events) -> bool {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         fill(&root, bubble, &events);
         self.follow_corner();
+        let first = self.stack.first_child().is_none();
         if self.corner.get().is_top() {
             self.stack.prepend(&root);
         } else {
             self.stack.append(&root);
         }
+        // Measured in the stack, where the theme styles it.
+        if !first
+            && let Some(room) = self.room()
+            && natural_size(&self.column).1 > room
+        {
+            self.stack.remove(&root);
+            return false;
+        }
         self.shown.borrow_mut().insert(id, Shown { root, events });
         self.present();
+        true
+    }
+
+    fn header(&self, header: Header, events: HeaderEvents) {
+        *self.header_events.borrow_mut() = Some(events);
+        let more = match header.more {
+            1 => "1 more notification".to_owned(),
+            more => format!("{more} more notifications"),
+        };
+        self.more_label.set_text(&more);
+        self.more.set_visible(header.more > 0);
+        self.more_critical.set_visible(header.critical);
+        if header.critical {
+            self.more.add_css_class("critical");
+        } else {
+            self.more.remove_css_class("critical");
+        }
+        reshape(&self.window, &self.column, self.layer);
     }
 
     fn update(&self, id: u32, bubble: &Bubble) {
@@ -174,6 +342,7 @@ impl Bubbles for GtkBubbles {
             shown.root.remove(&child);
         }
         fill(&shown.root, bubble, &shown.events);
+        reshape(&self.window, &self.column, self.layer);
     }
 
     fn close(&self, id: u32) {

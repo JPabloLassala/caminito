@@ -19,12 +19,16 @@ struct _NtDaemon
   /* Set while the daemon has its name. */
   GDBusConnection *connection;
   guint            history_changed;
+  guint            center_requested_id;
   GPtrArray       *entries;
   /* A List is current until the next one starts, or the daemon goes. */
   guint            generation;
   guint            refresh;
   NtDaemonChanged  changed;
+  NtDaemonCenterRequested center_requested;
   gpointer         data;
+  /* What the daemon was last told of the Notification center. */
+  gboolean         center_open;
   guint            idle;
 };
 
@@ -135,12 +139,30 @@ on_history_changed (GDBusConnection *connection G_GNUC_UNUSED,
 }
 
 static void
+on_center_requested (GDBusConnection *connection G_GNUC_UNUSED,
+                     const char      *sender G_GNUC_UNUSED,
+                     const char      *path G_GNUC_UNUSED,
+                     const char      *interface G_GNUC_UNUSED,
+                     const char      *signal G_GNUC_UNUSED,
+                     GVariant        *parameters G_GNUC_UNUSED,
+                     gpointer         data)
+{
+  NtDaemon *daemon = data;
+
+  daemon->center_requested (daemon, daemon->data);
+}
+
+static void call (NtDaemon *daemon, const char *method, GVariant *parameters);
+
+static void
 unsubscribe (NtDaemon *daemon)
 {
   if (daemon->connection == NULL)
     return;
   g_dbus_connection_signal_unsubscribe (daemon->connection, daemon->history_changed);
+  g_dbus_connection_signal_unsubscribe (daemon->connection, daemon->center_requested_id);
   daemon->history_changed = 0;
+  daemon->center_requested_id = 0;
   g_clear_object (&daemon->connection);
 }
 
@@ -157,6 +179,12 @@ on_name_appeared (GDBusConnection *connection,
   daemon->history_changed = g_dbus_connection_signal_subscribe (
     connection, DAEMON_NAME, DAEMON_INTERFACE, "HistoryChanged", DAEMON_PATH, NULL,
     G_DBUS_SIGNAL_FLAGS_NONE, on_history_changed, daemon, NULL);
+  daemon->center_requested_id = g_dbus_connection_signal_subscribe (
+    connection, DAEMON_NAME, DAEMON_INTERFACE, "CenterRequested", DAEMON_PATH, NULL,
+    G_DBUS_SIGNAL_FLAGS_NONE, on_center_requested, daemon, NULL);
+  /* A daemon that comes back thinks it closed. */
+  if (daemon->center_open)
+    call (daemon, "SetCenterOpen", g_variant_new ("(b)", TRUE));
   queue_refresh (daemon);
   /* Running, before the history is read. */
   queue_changed (daemon);
@@ -226,6 +254,15 @@ nt_daemon_invoke_action (NtDaemon *daemon, guint32 id, const char *key)
   call (daemon, "InvokeAction", g_variant_new ("(uss)", id, key, ""));
 }
 
+void
+nt_daemon_set_center_open (NtDaemon *daemon, gboolean open)
+{
+  if (daemon->center_open == open)
+    return;
+  daemon->center_open = open;
+  call (daemon, "SetCenterOpen", g_variant_new ("(b)", open));
+}
+
 gboolean
 nt_daemon_running (NtDaemon *daemon)
 {
@@ -239,13 +276,14 @@ nt_daemon_entries (NtDaemon *daemon)
 }
 
 NtDaemon *
-nt_daemon_new (NtDaemonChanged changed, gpointer data)
+nt_daemon_new (NtDaemonChanged changed, NtDaemonCenterRequested center_requested, gpointer data)
 {
   NtDaemon *daemon = g_new0 (NtDaemon, 1);
 
   daemon->cancellable = g_cancellable_new ();
   daemon->entries = g_ptr_array_new_with_free_func ((GDestroyNotify) nt_entry_free);
   daemon->changed = changed;
+  daemon->center_requested = center_requested;
   daemon->data = data;
   daemon->watch = g_bus_watch_name (G_BUS_TYPE_SESSION, DAEMON_NAME,
                                     G_BUS_NAME_WATCHER_FLAGS_NONE, on_name_appeared,

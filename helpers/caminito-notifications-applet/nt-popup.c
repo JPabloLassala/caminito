@@ -193,6 +193,8 @@ on_clear_all (GtkButton *button G_GNUC_UNUSED, gpointer data)
 {
   NtPopup *popup = data;
 
+  /* The center closes with it (CMN-285). */
+  caminito_applet_popup_hide (popup->applet_popup);
   popup->actions.clear_all (popup->data);
 }
 

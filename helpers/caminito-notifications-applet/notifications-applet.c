@@ -3,7 +3,8 @@
  * a bell, with a dot on it while the Notification history isn't empty, and whose popup is the
  * Notification center (nt-popup.c). It reads the history over caminito-notifications's
  * private API (nt-daemon.c), and hides itself while the daemon isn't on the bus, as under X11
- * MATE. Left-click toggles the popup. The struck-through bell and middle-click (CMN-263), and
+ * MATE. Left-click toggles the popup, and the daemon can ask for it too (CMN-285); it hears
+ * whether the popup is open, as there are no bubbles while it is. The struck-through bell and middle-click (CMN-263), and
  * the settings gear (CMN-261), come later.
  */
 
@@ -108,6 +109,30 @@ clear_all (gpointer data)
   nt_daemon_clear_all (applet->daemon);
 }
 
+static void
+on_center_requested (NtDaemon *daemon G_GNUC_UNUSED, gpointer data)
+{
+  Applet *applet = data;
+
+  caminito_applet_popup_show (applet->popup);
+}
+
+static void
+on_popup_map (GtkWidget *window G_GNUC_UNUSED, gpointer data)
+{
+  Applet *applet = data;
+
+  nt_daemon_set_center_open (applet->daemon, TRUE);
+}
+
+static void
+on_popup_unmap (GtkWidget *window G_GNUC_UNUSED, gpointer data)
+{
+  Applet *applet = data;
+
+  nt_daemon_set_center_open (applet->daemon, FALSE);
+}
+
 static const NtPopupActions popup_actions = {
   .invoke = invoke,
   .dismiss = dismiss,
@@ -120,6 +145,7 @@ applet_free (gpointer data)
   Applet *applet = data;
 
   /* The popup's window goes with the applet. */
+  g_signal_handlers_disconnect_by_data (caminito_applet_popup_get_window (applet->popup), applet);
   nt_daemon_free (applet->daemon);
   nt_popup_free (applet->content);
   g_free (applet);
@@ -155,7 +181,11 @@ fill (MatePanelApplet *panel_applet)
                           applet_free);
   applet->popup = caminito_applet_popup_new (GTK_WIDGET (panel_applet));
   applet->content = nt_popup_new (applet->popup, &popup_actions, applet);
-  applet->daemon = nt_daemon_new (on_changed, applet);
+  applet->daemon = nt_daemon_new (on_changed, on_center_requested, applet);
+  g_signal_connect (caminito_applet_popup_get_window (applet->popup), "map",
+                    G_CALLBACK (on_popup_map), applet);
+  g_signal_connect (caminito_applet_popup_get_window (applet->popup), "unmap",
+                    G_CALLBACK (on_popup_unmap), applet);
   /* Hidden until the daemon is found on the bus. */
   gtk_widget_show_all (overlay);
   gtk_widget_hide (GTK_WIDGET (panel_applet));

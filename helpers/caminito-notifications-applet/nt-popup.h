@@ -21,7 +21,7 @@ typedef struct
   void (*invoke)    (guint32 id, const char *key, gpointer data);
   /* An entry's close button. */
   void (*dismiss)   (guint32 id, gpointer data);
-  /* "Clear all". */
+  /* "Clear all". The popup has closed before it's called. */
   void (*clear_all) (gpointer data);
 } NtPopupActions;
 

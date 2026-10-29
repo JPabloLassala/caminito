@@ -4,7 +4,8 @@
 
 It has the Notification history's part of org.mate.Caminito.Notifications as the
 Notifications applet uses it: List, Dismiss, ClearApp, ClearAll, InvokeAction, Reply, Counts
-and OpenSettings, with the HistoryChanged and CountsChanged signals. As in the daemon, an
+and OpenSettings, with the HistoryChanged and CountsChanged signals, and the Notification
+center's (CMN-285): OpenCenter, which emits CenterRequested, and SetCenterOpen. As in the daemon, an
 entry leaves the history when it's dismissed or one of its actions is used, unless it's
 resident, and List gives the newest first. It refuses what the daemon refuses: an entry that
 isn't there, and an action an entry hasn't, "default" without a default action.
@@ -20,6 +21,7 @@ org.caminito.NotificationsMock is for a test or a check script:
     InvokeAction <id> <key> "<token>"
     Reply <id> "<text>"
     OpenSettings "<app>"
+    SetCenterOpen true|false
 """
 
 import time
@@ -145,6 +147,16 @@ def Counts(self):
 @dbus.service.method(MAIN_IFACE, in_signature="s", out_signature="")
 def OpenSettings(self, app):
     self.log_lines.append(f'OpenSettings "{app}"')
+
+
+@dbus.service.method(MAIN_IFACE, in_signature="", out_signature="")
+def OpenCenter(self):
+    self.EmitSignal(MAIN_IFACE, "CenterRequested", "", [])
+
+
+@dbus.service.method(MAIN_IFACE, in_signature="b", out_signature="")
+def SetCenterOpen(self, is_open):
+    self.log_lines.append(f"SetCenterOpen {'true' if is_open else 'false'}")
 
 
 @dbus.service.method(MOCK_IFACE, in_signature="ussssssa(ss)bbt", out_signature="")

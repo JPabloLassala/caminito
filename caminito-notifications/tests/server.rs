@@ -13,7 +13,8 @@ use std::time::Duration;
 
 use caminito_notifications::private_api::PrivateApi;
 use caminito_notifications::server::{
-    Action, Bubble, Bubbles, Clock, Config, Events, Icon, Image, Server, Sound, Sounds,
+    Action, Bubble, Bubbles, Clock, Config, Events, Header, HeaderEvents, Icon, Image, Server,
+    Sound, Sounds,
 };
 use gio::glib::{self, Variant, VariantDict};
 use gio::prelude::*;
@@ -42,15 +43,33 @@ const CLOSED: u32 = 3;
 struct FakeBubbles {
     shown: RefCell<Vec<(u32, Bubble)>>,
     events: RefCell<HashMap<u32, Events>>,
+    /// How many bubbles fit on the output, or `None` for any number.
+    room: Cell<Option<usize>>,
+    /// The header, as the server last gave it, and what the user can do to it.
+    header: Cell<Header>,
+    header_events: RefCell<Option<HeaderEvents>>,
     /// How many times each bubble was shown, updated or closed, in order.
     calls: RefCell<Vec<String>>,
 }
 
 impl Bubbles for FakeBubbles {
-    fn show(&self, id: u32, bubble: &Bubble, events: Events) {
+    fn show(&self, id: u32, bubble: &Bubble, events: Events) -> bool {
+        if self
+            .room
+            .get()
+            .is_some_and(|room| self.shown.borrow().len() >= room)
+        {
+            return false;
+        }
         self.shown.borrow_mut().push((id, bubble.clone()));
         self.events.borrow_mut().insert(id, events);
         self.calls.borrow_mut().push(format!("show {id}"));
+        true
+    }
+
+    fn header(&self, header: Header, events: HeaderEvents) {
+        self.header.set(header);
+        *self.header_events.borrow_mut() = Some(events);
     }
 
     fn update(&self, id: u32, bubble: &Bubble) {
@@ -83,6 +102,14 @@ impl FakeBubbles {
     /// What the user does to the bubble `id`.
     fn events(&self, id: u32) -> Events {
         self.events.borrow()[&id].clone()
+    }
+
+    /// What the user does to the header.
+    fn header_events(&self) -> HeaderEvents {
+        self.header_events
+            .borrow()
+            .clone()
+            .expect("the server gave the header")
     }
 }
 
@@ -350,8 +377,21 @@ impl Daemon<'_> {
         method: &str,
         parameters: Variant,
     ) -> Result<Variant, glib::Error> {
+        self.send_on(&self.app, destination, path, interface, method, parameters)
+    }
+
+    /// Calls `method` over `connection`, which may be another client's than the app's.
+    fn send_on(
+        &self,
+        connection: &gio::DBusConnection,
+        destination: &str,
+        path: &str,
+        interface: &str,
+        method: &str,
+        parameters: Variant,
+    ) -> Result<Variant, glib::Error> {
         let answer: Rc<RefCell<Option<Result<Variant, glib::Error>>>> = Rc::default();
-        self.app.call(
+        connection.call(
             Some(destination),
             path,
             interface,
@@ -750,27 +790,116 @@ fn a_click_invokes_the_default_action_and_a_resident_notification_stays() {
 }
 
 #[test]
-fn three_bubbles_show_at_once_and_the_rest_wait_for_a_place() {
+fn bubbles_show_as_many_as_fit_and_one_that_doesnt_fit_gets_none_later_either() {
     bus::run(|bus| {
         let daemon = start(bus);
+        daemon.bubbles.room.set(Some(3));
         let ids: Vec<u32> = ["1", "2", "3", "4", "5"]
             .into_iter()
             .map(|summary| daemon.notify(notify(summary)))
             .collect();
         assert_eq!(daemon.bubbles.ids(), ids[..3]);
+        assert_eq!(
+            daemon.bubbles.header.get(),
+            Header {
+                more: 2,
+                critical: false
+            }
+        );
+        // They're in the history, as any other.
+        assert_eq!(daemon.summaries(), ["5", "4", "3", "2", "1"]);
 
-        // One that waits is replaced where it waits, and closed without ever showing.
-        daemon.notify(Notify {
-            replaces: ids[3],
-            ..notify("4 again")
-        });
-        daemon.close(ids[4]);
-        daemon.wait_for_signals(1);
-        assert_eq!(daemon.bubbles.ids(), ids[..3]);
-
+        // A bubble that closes doesn't make room for them.
         daemon.bubbles.events(ids[1]).dismiss();
-        assert_eq!(daemon.bubbles.ids(), [ids[0], ids[2], ids[3]]);
-        assert_eq!(daemon.bubbles.bubble(ids[3]).summary, "4 again");
+        assert_eq!(daemon.bubbles.ids(), [ids[0], ids[2]]);
+        assert_eq!(daemon.bubbles.header.get().more, 2);
+
+        // The next one fits where that one was.
+        let next = daemon.notify(notify("6"));
+        assert_eq!(daemon.bubbles.ids(), [ids[0], ids[2], next]);
+    });
+}
+
+#[test]
+fn the_count_loses_what_leaves_the_history_and_empties_when_the_last_bubble_closes() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.bubbles.room.set(Some(1));
+        let shown = daemon.notify(notify("Shown"));
+        let withdrawn = daemon.notify(notify("Withdrawn"));
+        daemon.notify(notify("Counted"));
+        assert_eq!(daemon.bubbles.header.get().more, 2);
+
+        daemon.close(withdrawn);
+        assert_eq!(daemon.bubbles.header.get().more, 1);
+
+        daemon.bubbles.events(shown).dismiss();
+        assert!(daemon.bubbles.ids().is_empty());
+        assert_eq!(daemon.bubbles.header.get(), Header::default());
+        assert_eq!(daemon.summaries(), ["Counted"]);
+    });
+}
+
+#[test]
+fn clear_all_in_the_header_takes_the_bubbles_out_of_the_history_and_leaves_the_counted() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.bubbles.room.set(Some(2));
+        let first = daemon.notify(notify("First"));
+        let second = daemon.notify(notify("Second"));
+        daemon.notify(notify("Counted"));
+        daemon.forget_signals();
+
+        daemon.bubbles.header_events().clear_all();
+
+        assert!(daemon.bubbles.ids().is_empty());
+        assert_eq!(daemon.bubbles.header.get(), Header::default());
+        assert_eq!(daemon.summaries(), ["Counted"]);
+        daemon.wait_for_signals(2);
+        assert_eq!(
+            daemon.signals(),
+            [
+                signal("NotificationClosed", &format!("({first}, {DISMISSED})")),
+                signal("NotificationClosed", &format!("({second}, {DISMISSED})")),
+            ]
+        );
+    });
+}
+
+#[test]
+fn a_critical_notification_takes_the_place_of_the_oldest_ordinary_bubble_or_gets_none() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.bubbles.room.set(Some(2));
+        let critical = |summary| notify(summary).hint("urgency", 2u8);
+        daemon.notify(notify("Ordinary"));
+        let first = daemon.notify(critical("First"));
+        daemon.forget_signals();
+
+        let second = daemon.notify(critical("Second"));
+        assert_eq!(daemon.bubbles.ids(), [first, second]);
+        assert_eq!(
+            daemon.bubbles.header.get(),
+            Header {
+                more: 1,
+                critical: false
+            }
+        );
+        // Its notification stays the app's, in the history.
+        bus.run_for(QUIET);
+        assert!(daemon.signals().is_empty());
+        assert!(daemon.summaries().contains(&"Ordinary".to_owned()));
+
+        let third = daemon.notify(critical("Third"));
+        assert_eq!(daemon.bubbles.ids(), [first, second]);
+        assert_eq!(
+            daemon.bubbles.header.get(),
+            Header {
+                more: 2,
+                critical: true
+            }
+        );
+        assert!(daemon.history().iter().any(|entry| entry.id == third));
     });
 }
 
@@ -1495,19 +1624,79 @@ fn with_sound_off_no_notification_plays_one() {
 }
 
 #[test]
-fn a_waiting_notification_follows_the_settings_as_its_bubble_opens() {
+fn while_the_center_is_open_there_are_no_bubbles_and_a_new_notification_only_sounds() {
     bus::run(|bus| {
         let daemon = start(bus);
-        let ids: Vec<u32> = ["1", "2", "3", "4"]
-            .into_iter()
-            .map(|summary| daemon.notify(notify(summary)))
-            .collect();
+        daemon.bubbles.room.set(Some(1));
+        daemon.notify(notify("Shown"));
+        daemon.notify(notify("Counted"));
+        daemon.forget_signals();
 
-        daemon.settings.set_boolean("previews", false).unwrap();
-        daemon.bubbles.events(ids[0]).dismiss();
+        daemon.api("SetCenterOpen", (true,).to_variant());
+        assert!(daemon.bubbles.ids().is_empty());
+        assert_eq!(daemon.bubbles.header.get(), Header::default());
+        // Its notification waits in the center, still the app's.
+        bus.run_for(QUIET);
+        assert!(daemon.signals().is_empty());
 
-        assert_eq!(daemon.bubbles.bubble(ids[1]).summary, "2");
-        assert_eq!(daemon.bubbles.bubble(ids[3]).summary, "Notification");
+        daemon.notify(notify("In the center"));
+        assert!(daemon.bubbles.ids().is_empty());
+        assert_eq!(daemon.bubbles.header.get(), Header::default());
+        assert_eq!(daemon.sounds.0.borrow().len(), 3);
+        assert_eq!(daemon.summaries(), ["In the center", "Counted", "Shown"]);
+
+        daemon.api("SetCenterOpen", (false,).to_variant());
+        let after = daemon.notify(notify("After"));
+        assert_eq!(daemon.bubbles.ids(), [after]);
+    });
+}
+
+#[test]
+fn the_center_counts_as_closed_once_the_client_that_opened_it_leaves_the_bus() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let applet = bus.connect();
+        daemon
+            .send_on(
+                &applet,
+                &daemon.service,
+                API_PATH,
+                API_NAME,
+                "SetCenterOpen",
+                (true,).to_variant(),
+            )
+            .expect("SetCenterOpen answers");
+        daemon.notify(notify("In the center"));
+        assert!(daemon.bubbles.ids().is_empty());
+
+        applet.close_sync(gio::Cancellable::NONE).unwrap();
+        // The bus tells the server it left, which a call after it waits for.
+        bus.run_for(QUIET);
+        let after = daemon.notify(notify("After"));
+        assert_eq!(daemon.bubbles.ids(), [after]);
+    });
+}
+
+#[test]
+fn open_center_and_the_headers_count_ask_the_applet_for_the_center() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.bubbles.room.set(Some(1));
+        daemon.notify(notify("Shown"));
+        daemon.notify(notify("Counted"));
+        daemon.forget_signals();
+
+        daemon.api("OpenCenter", ().to_variant());
+        daemon.bubbles.header_events().open_center();
+
+        daemon.wait_for_api_signals(2);
+        assert_eq!(
+            daemon.api_signals(),
+            [
+                signal("CenterRequested", "()"),
+                signal("CenterRequested", "()")
+            ]
+        );
     });
 }
 

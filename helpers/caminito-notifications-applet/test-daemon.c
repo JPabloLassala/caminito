@@ -1,8 +1,9 @@
 /*
  * caminito-notifications as the Notifications applet uses it (CMN-260), against a mock of
  * its private API (notifications-mock.py) on a private session bus: the history read and
- * followed through HistoryChanged, the calls that dismiss, clear and act on its entries, and
- * the daemon leaving the bus and coming back.
+ * followed through HistoryChanged, the calls that dismiss, clear and act on its entries, the
+ * Notification center's being open and the daemon asking for it (CMN-285), and the daemon
+ * leaving the bus and coming back.
  *
  *   test-daemon <python> <notifications-mock.py>
  */
@@ -25,12 +26,19 @@ typedef struct
   GSubprocess     *mock;
   NtDaemon        *daemon;
   guint            changes;
+  guint            center_requests;
 } Fixture;
 
 static void
 on_changed (NtDaemon *daemon G_GNUC_UNUSED, gpointer data)
 {
   ((Fixture *) data)->changes++;
+}
+
+static void
+on_center_requested (NtDaemon *daemon G_GNUC_UNUSED, gpointer data)
+{
+  ((Fixture *) data)->center_requests++;
 }
 
 static void
@@ -167,6 +175,12 @@ has_changed (Fixture *fixture, gconstpointer expected G_GNUC_UNUSED)
 }
 
 static gboolean
+center_requested (Fixture *fixture, gconstpointer expected)
+{
+  return fixture->center_requests == GPOINTER_TO_UINT (expected);
+}
+
+static gboolean
 connection_gone (Fixture *fixture, gconstpointer expected G_GNUC_UNUSED)
 {
   return fixture->connection == NULL;
@@ -203,7 +217,7 @@ teardown (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 static void
 test_without_the_daemon_nothing_runs (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 {
-  fixture->daemon = nt_daemon_new (on_changed, fixture);
+  fixture->daemon = nt_daemon_new (on_changed, on_center_requested, fixture);
   /* The name watch tells it the name has no owner. */
   wait_until (fixture, has_changed, NULL);
   g_assert_false (nt_daemon_running (fixture->daemon));
@@ -217,7 +231,7 @@ test_the_history_is_read_when_the_daemon_is_there (Fixture *fixture,
   start_mock (fixture);
   add_entry (fixture, 1, "Invoice", FALSE);
   add_entry (fixture, 2, "Lunch?", FALSE);
-  fixture->daemon = nt_daemon_new (on_changed, fixture);
+  fixture->daemon = nt_daemon_new (on_changed, on_center_requested, fixture);
   wait_until (fixture, list_is, "2 Lunch?;1 Invoice");
   g_assert_true (nt_daemon_running (fixture->daemon));
 }
@@ -226,7 +240,7 @@ static void
 test_the_history_follows_the_daemon (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 {
   start_mock (fixture);
-  fixture->daemon = nt_daemon_new (on_changed, fixture);
+  fixture->daemon = nt_daemon_new (on_changed, on_center_requested, fixture);
   wait_until (fixture, is_running, GINT_TO_POINTER (TRUE));
   wait_until (fixture, list_is, "");
   add_entry (fixture, 4, "Build passed", FALSE);
@@ -242,7 +256,7 @@ test_the_calls_reach_the_daemon (Fixture *fixture, gconstpointer data G_GNUC_UNU
   add_entry (fixture, 1, "Invoice", FALSE);
   add_entry (fixture, 2, "Lunch?", FALSE);
   add_entry (fixture, 3, "Ana is calling", TRUE);
-  fixture->daemon = nt_daemon_new (on_changed, fixture);
+  fixture->daemon = nt_daemon_new (on_changed, on_center_requested, fixture);
   wait_until (fixture, list_is, "3 Ana is calling;2 Lunch?;1 Invoice");
 
   nt_daemon_dismiss (fixture->daemon, 1);
@@ -264,7 +278,7 @@ test_the_daemon_leaving_and_coming_back (Fixture *fixture, gconstpointer data G_
 {
   start_mock (fixture);
   add_entry (fixture, 1, "Invoice", FALSE);
-  fixture->daemon = nt_daemon_new (on_changed, fixture);
+  fixture->daemon = nt_daemon_new (on_changed, on_center_requested, fixture);
   wait_until (fixture, list_is, "1 Invoice");
 
   stop_mock (fixture);
@@ -275,6 +289,34 @@ test_the_daemon_leaving_and_coming_back (Fixture *fixture, gconstpointer data G_
   wait_until (fixture, is_running, GINT_TO_POINTER (TRUE));
   add_entry (fixture, 9, "Back", FALSE);
   wait_until (fixture, list_is, "9 Back");
+}
+
+static void
+test_the_center_is_told_and_asked_for (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GVariant) reply = NULL;
+
+  start_mock (fixture);
+  fixture->daemon = nt_daemon_new (on_changed, on_center_requested, fixture);
+  wait_until (fixture, is_running, GINT_TO_POINTER (TRUE));
+  nt_daemon_set_center_open (fixture->daemon, TRUE);
+  wait_until (fixture, log_is, "SetCenterOpen true");
+
+  /* As the bubbles' "N more notifications" asks. */
+  reply = g_dbus_connection_call_sync (fixture->connection, DAEMON_NAME, DAEMON_PATH,
+                                       DAEMON_NAME, "OpenCenter", NULL, NULL,
+                                       G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+  g_assert_no_error (error);
+  wait_until (fixture, center_requested, GUINT_TO_POINTER (1));
+
+  /* A daemon that comes back hears that the center is open. */
+  stop_mock (fixture);
+  wait_until (fixture, is_running, GINT_TO_POINTER (FALSE));
+  start_mock (fixture);
+  wait_until (fixture, log_is, "SetCenterOpen true");
+  nt_daemon_set_center_open (fixture->daemon, FALSE);
+  wait_until (fixture, log_is, "SetCenterOpen true;SetCenterOpen false");
 }
 
 int
@@ -289,6 +331,7 @@ main (int argc, char **argv)
   g_test_add ("/daemon/the-history-is-read-when-the-daemon-is-there", Fixture, NULL, setup, test_the_history_is_read_when_the_daemon_is_there, teardown);
   g_test_add ("/daemon/the-history-follows-the-daemon", Fixture, NULL, setup, test_the_history_follows_the_daemon, teardown);
   g_test_add ("/daemon/the-calls-reach-the-daemon", Fixture, NULL, setup, test_the_calls_reach_the_daemon, teardown);
+  g_test_add ("/daemon/the-center-is-told-and-asked-for", Fixture, NULL, setup, test_the_center_is_told_and_asked_for, teardown);
   g_test_add ("/daemon/the-daemon-leaving-and-coming-back", Fixture, NULL, setup, test_the_daemon_leaving_and_coming_back, teardown);
   return g_test_run ();
 }

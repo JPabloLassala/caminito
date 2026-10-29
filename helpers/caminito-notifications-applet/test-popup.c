@@ -342,8 +342,11 @@ test_clear_all_clears_the_history (Fixture *fixture, gconstpointer data G_GNUC_U
   two_entries (fixture);
   nt_popup_update (fixture->popup, fixture->entries, NOW);
   g_assert_true (shows (fixture, CLEAR_ALL));
+  caminito_applet_popup_show (fixture->applet_popup);
   gtk_button_clicked (GTK_BUTTON (clear_all_button (fixture)));
   g_assert_cmpstr (fixture->calls->str, ==, "clear all;");
+  /* And closes the center (CMN-285). */
+  g_assert_false (caminito_applet_popup_is_shown (fixture->applet_popup));
 }
 
 static void
@@ -386,7 +389,7 @@ main (int argc, char **argv)
   g_test_add ("/popup/a-click-on-an-entry-invokes-its-default-action", Fixture, NULL, setup, test_a_click_on_an_entry_invokes_its_default_action, teardown);
   g_test_add ("/popup/an-action-button-invokes-its-action", Fixture, NULL, setup, test_an_action_button_invokes_its_action, teardown);
   g_test_add ("/popup/the-close-button-dismisses-the-entry", Fixture, NULL, setup, test_the_close_button_dismisses_the_entry, teardown);
-  g_test_add ("/popup/clear-all-clears-the-history", Fixture, NULL, setup, test_clear_all_clears_the_history, teardown);
+  g_test_add ("/popup/clear-all-clears-the-history-and-closes-the-center", Fixture, NULL, setup, test_clear_all_clears_the_history, teardown);
   g_test_add ("/popup/an-image-is-shown", Fixture, NULL, setup, test_an_image_is_shown, teardown);
   return g_test_run ();
 }
