@@ -441,15 +441,15 @@ Holding Night Light off until the next sunrise while it stays enabled. It ends b
 _Avoid_: inhibit (that's an app holding it off, which Caminito doesn't offer), suspend, disable (that's turning Night Light off)
 
 **Notification bubble**:
-A notification shown on the desktop for a few seconds, over the windows, until it times out, is dismissed or is acted on. It's then in the Notification history, unless it was transient.
+A notification shown on the desktop for a few seconds, over the windows, until it times out, is dismissed or is acted on. It's then in the Notification history, unless it was transient. While the user hasn't turned grouping off for its Notifying app, one bubble can hold several of the app's notifications. A notification gets no bubble while the Notification center is open, or when there's no room left for one.
 _Avoid_: banner (macOS's), toast, popup (that's an applet's), OSD (that's the volume and brightness display)
 
 **Notification history**:
-The notifications the user hasn't dismissed yet, kept across sessions for a week or 200 notifications at most, grouped by their Notifying app. A transient notification is never in it, and one its app withdraws leaves it.
+The notifications the user hasn't dismissed yet, kept across sessions for a week or 200 notifications at most. A transient notification is never in it, and one its app withdraws leaves it.
 _Avoid_: notification list, log, inbox
 
 **Notification center**:
-The Notifications applet's popup, showing the Notification history and the Do Not Disturb choices.
+The Notifications applet's popup, showing the Notification history and the Do Not Disturb choices. Each Notifying app's notifications are one group there, unless the user has turned grouping off for the app; then each stands alone, among the groups by its time. No Notification bubble shows while it's open.
 _Avoid_: notification drawer, action center, tray
 
 **Notifications applet**:
