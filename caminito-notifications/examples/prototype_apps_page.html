@@ -135,13 +135,13 @@ button.send { font: inherit; font-weight: 700; color: var(--accent-fg); backgrou
 button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .desktop {
   --desk: #2d4a5e; --desk-2: #1d3242; --bubble: rgb(36 39 44 / .94); --center: rgb(30 33 38); --bubble-fg: #eef0f3; --bubble-muted: #aab2bf;
-  position: relative; height: 380px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line);
+  position: relative; height: 470px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line);
   background: linear-gradient(160deg, var(--desk), var(--desk-2)); color: var(--bubble-fg);
 }
 .panel { display: flex; align-items: center; justify-content: flex-end; gap: 14px; height: 30px; padding: 0 12px; background: rgb(0 0 0 / .45); font-size: 13px; }
 .panel .bell { position: relative; display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; background: transparent; border: 0; padding: 2px 6px; border-radius: 6px; cursor: pointer; }
 .panel .bell[aria-expanded="true"] { background: rgb(255 255 255 / .15); }
-.center { position: absolute; z-index: 5; top: 36px; right: 8px; width: min(360px, calc(100% - 16px)); max-height: calc(100% - 46px); overflow-y: auto; box-sizing: border-box; background: var(--center); color: var(--bubble-fg); border-radius: 12px; padding: 10px; display: grid; gap: 8px; align-content: start; box-shadow: 0 8px 24px rgb(0 0 0 / .4); }
+.center { position: absolute; z-index: 5; top: 36px; left: 8px; width: min(360px, calc(100% - 16px)); max-height: calc(100% - 46px); overflow-y: auto; box-sizing: border-box; background: var(--center); color: var(--bubble-fg); border-radius: 12px; padding: 10px; display: grid; gap: 8px; align-content: start; box-shadow: 0 8px 24px rgb(0 0 0 / .4); }
 .center .c-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
 .center .c-dnd { color: var(--bubble-muted); }
 .center .c-group, .center .c-one { background: rgb(255 255 255 / .06); border-radius: 10px; padding: 8px; display: grid; gap: 6px; }
@@ -178,7 +178,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 .bubble:hover .x, .bubble .x:focus-visible { opacity: 1; }
 .bubble.critical { box-shadow: 0 0 0 2px #e0654f, 0 6px 18px rgb(0 0 0 / .35); }
 .bubble .timer { height: 2px; background: rgb(255 255 255 / .25); border-radius: 1px; transform-origin: left; }
-.queued { position: absolute; top: 40px; left: 12px; font-size: 12px; color: var(--bubble-muted); }
+.queued { position: absolute; bottom: 70px; right: 14px; font-size: 12px; color: var(--bubble-muted); }
 .dock { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; padding: 8px 12px; border-radius: 14px; background: rgb(0 0 0 / .4); }
 .dock .item { position: relative; }
 .dock .icon { width: 32px; height: 32px; border-radius: 8px; font-size: 14px; }
@@ -190,7 +190,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 @keyframes pop { from { transform: translateY(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 @media (max-width: 640px) {
-  .desktop { height: 420px; }
+  .desktop { height: 520px; }
   .dock { gap: 6px; padding: 6px 8px; }
   .dock .icon { width: 26px; height: 26px; }
   .sidebar { grid-template-columns: 1fr; }
@@ -204,7 +204,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   <header class="brief">
     <div class="eyebrow">Caminito · Notifications epic · CMN-262 prototype</div>
     <h1>The Apps page of the Notifications settings</h1>
-    <p>The page where each app gets its own notification settings. The table (B) was chosen; A and C stay for comparison. Change a setting, search, or set an app back to the default, then send a test notification and open the bell to see the Notification center. Nothing here touches real settings.</p>
+    <p>The page where each app gets its own notification settings. The table (B) was chosen; A and C stay for comparison. Change a setting, search, or set an app back to the default, and watch the Notification center below follow them. Nothing here touches real settings.</p>
   </header>
 
   <section class="switcher" aria-label="Layout">
@@ -225,7 +225,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 
   <section class="try" aria-label="Send a test notification">
     <h2>Send a test notification</h2>
-    <p class="dim">It follows the settings above as they are now. Bubbles stay 7 seconds (critical ones until closed), hovering pauses them, at most 3 show at once and the rest wait.</p>
+    <p class="dim">The Notification center is open on the left with six example notifications: Firefox, Signal and Slack. Firefox and Signal are grouped; Slack has grouping off, so its two notifications stand alone among the groups by their time. Untick or tick Group in the table and the center regroups. The bell opens and closes it. Sent notifications follow the settings as they are now. Bubbles show top right, stay 7 seconds (critical ones until closed), pause while hovered, and at most 3 show at once.</p>
     <div class="try-controls">
       <label class="field" for="try-app">From <select id="try-app"></select></label>
       <label class="field" for="try-site" id="try-site-field" hidden>Tab <select id="try-site"><option value="claude" selected>claude.ai</option><option value="github">github.com</option><option value="">None (Firefox itself)</option></select></label>
@@ -237,11 +237,11 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
       <button type="button" class="plain" id="try-clear">Clear all</button>
     </div>
     <div class="desktop" id="desktop">
-      <div class="panel"><span class="sound" id="desk-sound" aria-hidden="true">♪ sound</span><button type="button" class="bell" id="desk-bell" aria-expanded="false" aria-controls="desk-center" title="Notification center">🔔<span class="dot" id="desk-dot" hidden></span><span id="desk-count"></span></button><span>14:30</span></div>
+      <div class="panel"><span class="sound" id="desk-sound" aria-hidden="true">♪ sound</span><button type="button" class="bell" id="desk-bell" aria-expanded="true" aria-controls="desk-center" title="Notification center">🔔<span class="dot" id="desk-dot" hidden></span><span id="desk-count"></span></button><span>14:30</span></div>
       <div class="queued" id="desk-queued" hidden></div>
       <div class="bubbles" id="desk-bubbles" aria-live="polite"></div>
       <div class="dock" id="desk-dock"></div>
-      <div class="center" id="desk-center" hidden></div>
+      <div class="center" id="desk-center"></div>
     </div>
     <ul class="log" id="try-log" aria-live="polite"></ul>
   </section>
@@ -279,14 +279,14 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     ["expanders", "One line per app saying what it gets, opening onto its settings."],
   ];
 
-  // Example apps; Slack starts with settings of its own.
+  // Example apps; Slack starts with settings of its own, grouping off among them.
   const apps = [
     { id: "default", name: "Default", color: "#6b7280", letter: "★", own: { delivery: "bubble", flags: [true, true, true, true, true, false] } },
     { id: "caminito-accessx", name: "Accessibility keys", color: "#2f6fd6", letter: "A", own: null },
     { id: "firefox", name: "Firefox", color: "#e66000", letter: "F", own: null },
     { id: "caminito-network", name: "Network", color: "#4b7f52", letter: "N", own: null },
     { id: "org.signal.Signal", name: "Signal", color: "#3a76f0", letter: "S", own: null },
-    { id: "slack", name: "Slack", color: "#6b3a7a", letter: "S", own: { delivery: "history", flags: [false, true, true, true, true, false] } },
+    { id: "slack", name: "Slack", color: "#6b3a7a", letter: "S", own: { delivery: "history", flags: [false, true, true, false, true, false] } },
     { id: "org.mozilla.Thunderbird", name: "Thunderbird", color: "#1f5fa8", letter: "T", own: null },
     { id: "code", name: "Visual Studio Code", color: "#1f7ac2", letter: "V", own: null },
   ];
@@ -474,6 +474,12 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   // The Notification history: what the center shows and the badges count.
   let history = [], nextId = 1, logLines = [], queue = [], visible = [];
   const expanded = new Set();
+  {
+    const ago = m => Date.now() - m * 60000;
+    // Examples, oldest first: Firefox (index 2), Signal (4) and Slack (5).
+    [[2, "claude", 42], [5, "", 30], [2, "github", 18], [4, "", 12], [5, "", 6], [2, "", 3]]
+      .forEach(([i, site, m]) => history.push({ id: nextId++, i, site, time: ago(m) }));
+  }
   const countOf = i => history.filter(h => h.i === i).length;
   const $ = id => document.getElementById(id);
   $("try-app").innerHTML = apps.slice(1).map((app, n) => `<option value="${n + 1}">${esc(app.name)}</option>`).join("");
