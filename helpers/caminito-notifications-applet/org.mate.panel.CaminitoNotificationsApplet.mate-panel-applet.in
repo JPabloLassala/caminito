@@ -1,0 +1,13 @@
+[Applet Factory]
+Id=CaminitoNotificationsAppletFactory
+InProcess=true
+Location=@APPLET_LOCATION@
+Name=Notifications Applet Factory
+Description=Caminito's Notifications applet
+
+[CaminitoNotificationsApplet]
+Name=Notifications
+Description=See the notifications you haven't dismissed
+Icon=preferences-system-notifications
+MateComponentId=OAFIID:Caminito_NotificationsApplet;
+Platforms=X11;Wayland;

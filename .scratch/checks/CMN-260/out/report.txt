@@ -1,0 +1,10 @@
+no daemon: the panel lives
+an empty history: the panel lives
+the center, empty: the panel lives
+three entries: the panel lives
+the center, with entries: the panel lives
+the center, closed again: the panel lives
+the daemon gone: the panel lives
+the daemon back: the panel lives
+the panel's warnings:
+A connection to the bus can't be made

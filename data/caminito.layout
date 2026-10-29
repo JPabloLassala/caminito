@@ -1,7 +1,8 @@
 # Caminito's default panel layout (CMN-105): mate-panel's own default.layout, from the commit the
 # patched package is built from (58ac6c1), with the Network applet added to the top panel,
 # beside the notification area (CMN-202, ADR 0035, ADR 0041), the Bluetooth applet beside it,
-# and the Power applet beside that (CMN-100).
+# and the Power applet beside that (CMN-100). The Notifications applet is between the Power applet
+# and the clock, right beside the clock (CMN-260, ADR 0051).
 # 90_caminito.gschema.override makes it the default. Only a user with no panel settings gets it:
 # anyone else adds the applets with Add to Panel. The Thermal applet isn't in it: it's in Add to
 # Panel only (270).
@@ -9,7 +10,8 @@
 # The applets are in the same package as this file, so the layout never names one that isn't
 # installed. They work under X11 MATE too, where nm-applet's tray icon is beside the Network
 # applet until the user removes one. The Bluetooth applet hides itself where there is no
-# Bluetooth adapter; the Power applet shows a plug where there is no battery.
+# Bluetooth adapter; the Power applet shows a plug where there is no battery; the Notifications
+# applet hides itself where caminito-notifications isn't running.
 # Move the keys of a later default.layout over by hand when the baseline moves.
 
 [Toplevel top]
@@ -33,7 +35,7 @@ object-type=applet
 applet-iid=NotificationAreaAppletFactory::NotificationArea
 toplevel-id=top
 pack-type=end
-pack-index=1
+pack-index=2
 locked=true
 
 [Object network]
@@ -41,7 +43,7 @@ object-type=applet
 applet-iid=CaminitoNetworkAppletFactory::CaminitoNetworkApplet
 toplevel-id=top
 pack-type=end
-pack-index=2
+pack-index=3
 locked=true
 
 [Object bluetooth]
@@ -49,7 +51,7 @@ object-type=applet
 applet-iid=CaminitoBluetoothAppletFactory::CaminitoBluetoothApplet
 toplevel-id=top
 pack-type=end
-pack-index=3
+pack-index=4
 locked=true
 
 [Object power]
@@ -57,7 +59,15 @@ object-type=applet
 applet-iid=CaminitoPowerAppletFactory::CaminitoPowerApplet
 toplevel-id=top
 pack-type=end
-pack-index=4
+pack-index=5
+locked=true
+
+[Object notifications]
+object-type=applet
+applet-iid=CaminitoNotificationsAppletFactory::CaminitoNotificationsApplet
+toplevel-id=top
+pack-type=end
+pack-index=1
 locked=true
 
 [Object clock]

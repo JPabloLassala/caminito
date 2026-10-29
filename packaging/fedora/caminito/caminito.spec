@@ -189,6 +189,7 @@ dbus-run-session -- cargo test --frozen --release
 %{_libdir}/mate-panel/libcaminito-bluetooth-applet.so
 %{_libdir}/mate-panel/libcaminito-dock-applet.so
 %{_libdir}/mate-panel/libcaminito-network-applet.so
+%{_libdir}/mate-panel/libcaminito-notifications-applet.so
 %{_libdir}/mate-panel/libcaminito-power-applet.so
 %{_libdir}/mate-panel/libcaminito-thermal-applet.so
 %{_datadir}/caminito/
@@ -200,11 +201,13 @@ dbus-run-session -- cargo test --frozen --release
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-power.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-thermal.gschema.xml
 %{_datadir}/icons/hicolor/scalable/apps/caminito.svg
+%{_datadir}/icons/hicolor/scalable/status/caminito-bell-symbolic.svg
 %{_datadir}/icons/hicolor/scalable/status/caminito-thermometer-symbolic.svg
 %{_datadir}/mate-control-center/keybindings/50-caminito-*.xml
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoBluetoothApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoDockApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoNetworkApplet.mate-panel-applet
+%{_datadir}/mate-panel/applets/org.mate.panel.CaminitoNotificationsApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoPowerApplet.mate-panel-applet
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoThermalApplet.mate-panel-applet
 %{_datadir}/mate-panel/layouts/caminito.layout

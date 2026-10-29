@@ -29,6 +29,9 @@ subproject('caminito-sound-applet')
 # The Dock applet (CMN-219), on caminito-applet-common too, which reads the windows through
 # libxfce4windowing.
 subproject('caminito-dock-applet')
+# The Notifications applet (CMN-260, ADR 0051), on caminito-applet-common too, which reads
+# caminito-notifications's private API over GDBus.
+subproject('caminito-notifications-applet')
 
 # The display manager's entry for the session (08). Its name isn't the Wayfire session's
 # MATE.desktop, and it needs no wrapper script and no systemd unit.
@@ -138,9 +141,10 @@ install_data(
 )
 
 # The default panel (CMN-105): mate-panel's default layout with the Network applet beside the
-# notification area (CMN-202), the Bluetooth applet beside it, and the Power applet beside
-# that (CMN-100), and the override that makes it the default. Like caminito-bluetooth's
-# entries these are in the normal XDG directories, not share/caminito/xdg/: the layout is right
+# notification area (CMN-202), the Bluetooth applet beside it, the Power applet beside that
+# (CMN-100) and the Notifications applet beside the clock (CMN-260), and the override that
+# makes it the default. Like caminito-bluetooth's entries these are in the normal XDG
+# directories, not share/caminito/xdg/: the layout is right
 # under X11 MATE too, and the panel finds it by name in its own layouts directory. Only a user
 # with no panel settings gets it (the applets are in Add to Panel for the rest).
 # The package's hook compiles the override with the schemas.
