@@ -1,7 +1,7 @@
 # 50. Caminito tells the Dock applet which item to activate
 
 Date: 2026-10-24
-Status: Accepted
+Status: Superseded on 2026-10-25: the Dock applet became the Icon Task Manager, and Super+1…9, the one feature this protocol served, was cut ("Spec: Icon Task Manager"). Its code is removed.
 
 ## Context
 

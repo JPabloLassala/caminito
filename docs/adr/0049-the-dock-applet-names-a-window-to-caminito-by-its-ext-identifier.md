@@ -1,7 +1,7 @@
 # 49. The Dock applet names a window to Caminito by its ext identifier
 
 Date: 2026-10-24
-Status: Accepted
+Status: Superseded on 2026-10-25: the Dock applet became the Icon Task Manager, and the Dock preview, the Minimised window item's picture and the Application overview for a Dock item, the three features this protocol served, were cut ("Spec: Icon Task Manager"). Its code is removed.
 
 ## Context
 
