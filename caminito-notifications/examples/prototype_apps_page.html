@@ -244,7 +244,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 
   <section class="try" aria-label="Send a test notification">
     <h2>Send a test notification</h2>
-    <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's next notification joins its bubble on screen instead of opening another, and its timer starts again. "+N more" opens the group inside the bubble, and its timer stops until you fold it again. With Group off, each gets its own bubble, unless one app sends more than 3 within 5 seconds. A critical notification always has a bubble of its own. The bell opens the Notification center under it, top right, with six examples to start with; Slack starts ungrouped. While the center is open no bubbles show: those on screen close, and new notifications appear straight in it. Bubbles show top right, stay 7 seconds, pause while hovered, and at most 3 show at once.</p>
+    <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's next notification joins its bubble on screen instead of opening another, and its timer starts again. "+N more" opens the group inside the bubble. Only hovering pauses a bubble's timer, opened or not, and it carries on as soon as the pointer leaves. With Group off, each gets its own bubble, unless one app sends more than 3 within 5 seconds. A critical notification always has a bubble of its own. The bell opens the Notification center under it, top right, with six examples to start with; Slack starts ungrouped. While the center is open no bubbles show: those on screen close, and new notifications appear straight in it. Bubbles show top right, stay 7 seconds, pause while hovered, and at most 3 show at once.</p>
     <h3 class="sub">Grouped bubble design</h3>
     <p class="dim">Three Signal messages in a row, as one grouped bubble. Pick one; the desktop below uses it.</p>
     <div class="designs" id="designs" role="radiogroup" aria-label="Grouped bubble design"></div>
@@ -609,7 +609,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     if (b.bar) b.bar.style.transform = `scaleX(${Math.max(0, b.left) / TIMEOUT})`;
   }
   function run(b) {
-    if (b.critical || !b.live || b.open) return;
+    if (b.critical || !b.live) return;
     clearTimeout(b.timer); b.started = Date.now();
     b.timer = setTimeout(() => close(b), b.left);
     if (b.bar) {
@@ -643,7 +643,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     b.el.addEventListener("click", e => {
       const t = e.target.closest("button"); if (!t) return;
       if (t.classList.contains("x")) close(b);
-      else if (t.hasAttribute("data-toggle")) { b.open = !b.open; pause(b); paint(b); if (!b.open) run(b); }
+      else if (t.hasAttribute("data-toggle")) { b.open = !b.open; pause(b); paint(b); }
     });
     run(b);
     if (b.items[b.items.length - 1].prefs.flags[0]) flashSound();
