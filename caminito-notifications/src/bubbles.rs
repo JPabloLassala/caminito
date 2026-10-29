@@ -67,7 +67,7 @@ window.caminito-notifications { background: none; }
   border-radius: 9px; background: alpha(currentColor, 0.16);
 }
 .caminito-notification .digest { border-top: 1px solid alpha(currentColor, 0.1); padding-top: 6px; }
-.caminito-notification .more { font-size: smaller; padding: 2px 9px; min-height: 0; }
+.caminito-notification .more { padding: 4px 12px; }
 ";
 
 /// The bubbles, in their layer surface.
@@ -79,7 +79,7 @@ pub(crate) struct GtkBubbles {
     /// The corner the bubbles are in.
     corner: Cell<Corner>,
     /// The header and the bubbles under it.
-    column: gtk::Box,
+    column: gtk::Overlay,
     /// The bubbles, newest first, which is nearest the corner.
     stack: gtk::Box,
     shown: RefCell<HashMap<u32, Shown>>,
@@ -141,9 +141,15 @@ impl GtkBubbles {
         let stack = gtk::Box::new(gtk::Orientation::Vertical, GAP);
         let header_events: Rc<RefCell<Option<HeaderEvents>>> = Rc::default();
         let (header, more, more_label, more_critical) = header(&header_events);
-        let column = gtk::Box::new(gtk::Orientation::Vertical, GAP);
-        column.append(&header);
-        column.append(&stack);
+        let content = gtk::Box::new(gtk::Orientation::Vertical, GAP);
+        content.append(&header);
+        content.append(&stack);
+        // The column's size, which an area over it says, changes as a grouped bubble opens
+        // and closes, and the pointer is let in where it is now.
+        let sized = gtk::DrawingArea::builder().can_target(false).build();
+        let column = gtk::Overlay::new();
+        column.set_child(Some(&content));
+        column.add_overlay(&sized);
         // The window is as tall as the room, which the area's size says, and as wide as the
         // column.
         let room = gtk::DrawingArea::new();
@@ -152,11 +158,13 @@ impl GtkBubbles {
         overlay.add_overlay(&column);
         overlay.set_measure_overlay(&column, true);
         window.set_child(Some(&overlay));
-        room.connect_resize({
-            let window = window.clone();
-            let column = column.clone();
-            move |_, _, _| reshape(&window, &column, layer)
-        });
+        for area in [&room, &sized] {
+            area.connect_resize({
+                let window = window.clone();
+                let column = column.clone();
+                move |_, _, _| reshape(&window, &column, layer)
+            });
+        }
 
         if let Some(display) = gdk::Display::default() {
             let provider = gtk::CssProvider::new();
@@ -318,7 +326,7 @@ fn header(
 }
 
 /// The header and the bubbles' natural size: width, and height at that width.
-fn natural_size(column: &gtk::Box) -> (i32, i32) {
+fn natural_size(column: &gtk::Overlay) -> (i32, i32) {
     let (_, width, _, _) = column.measure(gtk::Orientation::Horizontal, -1);
     let (_, height, _, _) = column.measure(gtk::Orientation::Vertical, width);
     (width, height)
@@ -326,7 +334,7 @@ fn natural_size(column: &gtk::Box) -> (i32, i32) {
 
 /// Lets the pointer through the window, which spans the output's height, but where the header
 /// and the bubbles are, at its top or its bottom as the corner is.
-fn reshape(window: &gtk::Window, column: &gtk::Box, layer: bool) {
+fn reshape(window: &gtk::Window, column: &gtk::Overlay, layer: bool) {
     let Some(surface) = window.surface().filter(|_| layer) else {
         return;
     };
@@ -394,21 +402,19 @@ impl Bubbles for GtkBubbles {
     }
 
     fn update(&self, id: u32, bubble: &Bubble) {
-        {
-            let mut all = self.shown.borrow_mut();
-            let Some(shown) = all.get_mut(&id) else {
-                return;
-            };
-            while let Some(child) = shown.root.first_child() {
-                shown.root.remove(&child);
-            }
-            fill(
-                &shown.root,
-                bubble,
-                &shown.events,
-                &shown.open,
-                &shown.time_line.area,
-            );
+        let Some((root, events, open, time_line)) = self.shown.borrow().get(&id).map(|shown| {
+            let area = shown.time_line.area.clone();
+            (shown.root.clone(), shown.events.clone(), shown.open.clone(), area)
+        }) else {
+            return;
+        };
+        // Not borrowed while it changes: the pointer leaves what's taken out, which the
+        // server hears of and answers with the bubble's time left.
+        while let Some(child) = root.first_child() {
+            root.remove(&child);
+        }
+        fill(&root, bubble, &events, &open, &time_line);
+        if let Some(shown) = self.shown.borrow_mut().get_mut(&id) {
             shown.reply = bubble.reply.is_some();
         }
         self.present();
@@ -607,7 +613,7 @@ fn fill(
         frame.append(&reply_field(placeholder, events, &typing, hold.clone()));
     }
     if !bubble.earlier.is_empty() {
-        frame.append(&earlier_part(&bubble.earlier, open));
+        frame.append(&earlier_part(&bubble.summary, &bubble.earlier, open));
     }
 
     let close = gtk::Button::from_icon_name("window-close-symbolic");
@@ -727,22 +733,27 @@ fn reply_field(
     field
 }
 
-/// A grouped bubble's notifications before its newest: a line each of the latest
-/// [`DIGEST_LINES`] and a button that opens them all, or all of them and a button that closes
-/// them again.
-fn earlier_part(earlier: &[Earlier], open: &Rc<Cell<bool>>) -> gtk::Box {
+/// A grouped bubble's notifications before its newest, whose summary is `newest`: a line each
+/// of the latest [`DIGEST_LINES`] and a button that opens them all, or all of them and a button
+/// that closes them again. A summary that's the one above it again isn't repeated, as an app
+/// whose notifications all have one title or one sender's name has them.
+fn earlier_part(newest: &str, earlier: &[Earlier], open: &Rc<Cell<bool>>) -> gtk::Box {
     let part = gtk::Box::new(gtk::Orientation::Vertical, 4);
     part.add_css_class("digest");
 
     let digest = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    let mut above = newest;
     for notification in earlier.iter().take(DIGEST_LINES) {
         let line = gtk::Label::new(None);
         let summary = glib::markup_escape_text(&notification.summary);
         if notification.body.is_empty() {
             line.set_markup(&summary);
+        } else if notification.summary == above {
+            line.set_markup(&one_line(&notification.body));
         } else {
             line.set_markup(&format!("{summary} · {}", one_line(&notification.body)));
         }
+        above = &notification.summary;
         line.set_xalign(0.0);
         line.set_ellipsize(pango::EllipsizeMode::End);
         line.set_single_line_mode(true);
@@ -751,13 +762,18 @@ fn earlier_part(earlier: &[Earlier], open: &Rc<Cell<bool>>) -> gtk::Box {
     }
 
     let all = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    let mut above = newest;
     for notification in earlier {
-        let summary = text_label();
-        summary.set_markup(&format!(
-            "<b>{}</b>",
-            glib::markup_escape_text(&notification.summary)
-        ));
-        all.append(&summary);
+        // Without a body, the summary is all there is of it.
+        if notification.summary != above || notification.body.is_empty() {
+            let summary = text_label();
+            summary.set_markup(&format!(
+                "<b>{}</b>",
+                glib::markup_escape_text(&notification.summary)
+            ));
+            all.append(&summary);
+        }
+        above = &notification.summary;
         if !notification.body.is_empty() {
             let body = text_label();
             body.set_markup(&notification.body);
