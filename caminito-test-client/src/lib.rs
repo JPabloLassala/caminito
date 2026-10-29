@@ -745,6 +745,11 @@ impl Client {
         self.window_mut(id).buffers.push(Buffer { buffer, pool });
     }
 
+    /// [DEBUG-flash] Moves the window's `index`th subsurface; the parent's commit applies it.
+    pub fn set_subsurface_position(&self, id: WindowId, index: usize, (x, y): (i32, i32)) {
+        self.window(id).subsurfaces[index].set_position(x, y);
+    }
+
     /// Attaches no buffer and commits, which unmaps the window.
     pub fn commit_null_buffer(&self, id: WindowId) {
         let surface = &self.window(id).surface;

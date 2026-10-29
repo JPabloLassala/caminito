@@ -30,6 +30,7 @@ mod edge_resistance;
 mod ext_workspace;
 mod fixture;
 mod focus_modes;
+mod flash_probe;
 mod focus_stealing;
 mod foreign_toplevel;
 mod frames;
