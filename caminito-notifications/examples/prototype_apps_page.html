@@ -251,7 +251,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     <h2>Send a test notification</h2>
     <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's first two notifications get bubbles of their own, the third merges them into one grouped bubble, and later ones join it. "+N more" opens the group inside the bubble. With Group off, every notification gets its own bubble. Critical notifications group only with their app's critical ones, in a bubble that never times out. Bubbles stack as far down as there's room; a notification that doesn't fit gets no bubble and counts in "N more notifications" above them, and a critical one takes the place of the oldest ordinary bubble instead. Whenever there's a bubble, a ✕ above them clears them all. Only hovering pauses a bubble's timer. The bell opens the Notification center; while it's open no bubbles show, and new notifications appear straight in it.</p>
     <h3 class="sub">Grouped bubble design</h3>
-    <p class="dim">Three Signal messages in a row, as one grouped bubble. Pick one; the desktop below uses it.</p>
+    <p class="dim">Three Signal messages in a row, as one grouped bubble. Digest (B) was chosen; pick another to compare it on the desktop below.</p>
     <div class="designs" id="designs" role="radiogroup" aria-label="Grouped bubble design"></div>
     <div class="try-controls">
       <label class="field" for="try-app">From <select id="try-app"></select></label>
@@ -560,7 +560,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     digest: "The newest in full, the two before it on a line each, and the count in the header. A click opens them all in the bubble.",
     expand: "The newest in full, and only a count, which opens the others in the bubble.",
   };
-  let design = "stack";
+  let design = "digest";
 
   function parts(n) {
     const app = apps[n.i], p = n.prefs;
@@ -724,7 +724,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     $("designs").innerHTML = DESIGNS.map(([key, name], d) => {
       const b = { i: 4, items: [sample(0), sample(1), sample(2)], critical: false, live: false, open: false };
       return `<div class="design" role="radio" tabindex="0" aria-checked="${key === design}" data-design="${key}">
-        <span class="d-name">${"ABC"[d]} · ${name}</span><span class="d-desc">${DESC[key]}</span>
+        <span class="d-name">${"ABC"[d]} · ${name}${key === "digest" ? " (chosen)" : ""}</span><span class="d-desc">${DESC[key]}</span>
         <div class="design-tile" inert><div class="${bubbleClass(b, key)}">${bubbleHtml(b, key)}</div></div></div>`;
     }).join("");
   }
