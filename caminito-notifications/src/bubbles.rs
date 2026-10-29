@@ -14,13 +14,18 @@
 //! prototype's "Digest": its newest notification in full with the count in its header, the two
 //! before it on a line each, and "+*N* more" or "Show all *N*", which opens them all inside the
 //! bubble, scrolling past half the output's height.
+//!
+//! A bubble with a timeout has a line along its bottom edge, in the theme's accent, that
+//! shrinks over what's left of it (CMN-286). It draws what the server tells it, whose timer is
+//! the one that closes the bubble.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Instant;
 
 use caminito_notifications::server::{
-    Bubble, Bubbles, Earlier, Events, Header, HeaderEvents, Icon, Image, Pixels,
+    Bubble, Bubbles, Earlier, Events, Header, HeaderEvents, Icon, Image, Pixels, TimeLeft,
 };
 use caminito_notifications::settings::Corner;
 use gtk::prelude::*;
@@ -37,6 +42,11 @@ const APP_ICON_SIZE: i32 = 16;
 const IMAGE_SIZE: i32 = 48;
 /// The notifications before the newest that a closed grouped bubble has a line of.
 const DIGEST_LINES: usize = 2;
+/// The time line's thickness, and its distance from the bubble's sides and bottom edge, inside
+/// the bubble's padding, so that it's clear of what's above it and of the round corners.
+const TIME_LINE: i32 = 2;
+const TIME_LINE_INSET: i32 = 12;
+const TIME_LINE_BOTTOM: i32 = 4;
 
 const CSS: &str = "
 window.caminito-notifications { background: none; }
@@ -90,6 +100,17 @@ struct Shown {
     reply: bool,
     /// Whether a grouped bubble shows all its notifications, which an update keeps.
     open: Rc<Cell<bool>>,
+    /// The line of its time left, which an update keeps.
+    time_line: TimeLine,
+}
+
+/// The line along a bubble's bottom edge that shrinks over what's left of its timeout.
+struct TimeLine {
+    area: gtk::DrawingArea,
+    /// What the bubble was last told of its timeout, and when, while it has one.
+    told: Rc<Cell<Option<(TimeLeft, Instant)>>>,
+    /// What redraws it on each frame while the time runs.
+    tick: RefCell<Option<gtk::TickCallbackId>>,
 }
 
 impl GtkBubbles {
@@ -323,7 +344,8 @@ impl Bubbles for GtkBubbles {
     fn show(&self, id: u32, bubble: &Bubble, events: Events) -> bool {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let open = Rc::new(Cell::new(false));
-        fill(&root, bubble, &events, &open);
+        let time_line = TimeLine::new();
+        fill(&root, bubble, &events, &open, &time_line.area);
         self.follow_corner();
         let first = self.stack.first_child().is_none();
         if self.corner.get().is_top() {
@@ -347,6 +369,7 @@ impl Bubbles for GtkBubbles {
                 events,
                 reply,
                 open,
+                time_line,
             },
         );
         self.present();
@@ -379,7 +402,13 @@ impl Bubbles for GtkBubbles {
             while let Some(child) = shown.root.first_child() {
                 shown.root.remove(&child);
             }
-            fill(&shown.root, bubble, &shown.events, &shown.open);
+            fill(
+                &shown.root,
+                bubble,
+                &shown.events,
+                &shown.open,
+                &shown.time_line.area,
+            );
             shown.reply = bubble.reply.is_some();
         }
         self.present();
@@ -392,13 +421,110 @@ impl Bubbles for GtkBubbles {
         }
         self.present();
     }
+
+    fn time_left(&self, id: u32, time_left: Option<TimeLeft>) {
+        if let Some(shown) = self.shown.borrow().get(&id) {
+            shown.time_line.tell(time_left);
+        }
+    }
+}
+
+impl TimeLine {
+    fn new() -> Self {
+        let area = gtk::DrawingArea::builder()
+            .content_height(TIME_LINE)
+            .valign(gtk::Align::End)
+            .margin_start(TIME_LINE_INSET)
+            .margin_end(TIME_LINE_INSET)
+            .margin_bottom(TIME_LINE_BOTTOM)
+            .can_target(false)
+            .visible(false)
+            .build();
+        let told: Rc<Cell<Option<(TimeLeft, Instant)>>> = Rc::default();
+        area.set_draw_func({
+            let told = told.clone();
+            move |area, cr, width, height| {
+                let Some((time_left, at)) = told.get() else {
+                    return;
+                };
+                let left = if time_left.running {
+                    time_left.left.saturating_sub(at.elapsed())
+                } else {
+                    time_left.left
+                };
+                let fraction = (left.as_secs_f64() / time_left.timeout.as_secs_f64()).min(1.0);
+                // A line with round ends, which are half its thickness past its ends.
+                let thickness = f64::from(height);
+                let length = (f64::from(width) - thickness) * fraction;
+                if length <= 0.0 {
+                    return;
+                }
+                let accent = accent(area);
+                cr.set_source_rgba(
+                    f64::from(accent.red()),
+                    f64::from(accent.green()),
+                    f64::from(accent.blue()),
+                    f64::from(accent.alpha()),
+                );
+                cr.set_line_width(thickness);
+                cr.set_line_cap(cairo::LineCap::Round);
+                cr.move_to(thickness / 2.0, thickness / 2.0);
+                cr.line_to(thickness / 2.0 + length, thickness / 2.0);
+                let _ = cr.stroke();
+            }
+        });
+        TimeLine {
+            area,
+            told,
+            tick: RefCell::default(),
+        }
+    }
+
+    /// Draws `time_left` from now on, redrawing on each frame while it runs, or nothing.
+    fn tell(&self, time_left: Option<TimeLeft>) {
+        self.told
+            .set(time_left.map(|time_left| (time_left, Instant::now())));
+        self.area.set_visible(time_left.is_some());
+        let running = time_left.is_some_and(|time_left| time_left.running);
+        let mut tick = self.tick.borrow_mut();
+        if running && tick.is_none() {
+            *tick = Some(self.area.add_tick_callback(|area, _| {
+                area.queue_draw();
+                glib::ControlFlow::Continue
+            }));
+        } else if !running && let Some(tick) = tick.take() {
+            tick.remove();
+        }
+        self.area.queue_draw();
+    }
+}
+
+/// The theme's accent colour, as the Displays capplet reads it (`caminito-displays`'s
+/// `arrangement.rs`), which this crate doesn't depend on.
+fn accent(widget: &gtk::DrawingArea) -> gdk::RGBA {
+    #[expect(
+        deprecated,
+        reason = "GTK 4 has no other way to read a theme's named colour, and a widget's \
+                  own colour isn't the accent"
+    )]
+    let named = |name| widget.style_context().lookup_color(name);
+    named("accent_bg_color")
+        .or_else(|| named("theme_selected_bg_color"))
+        .unwrap_or_else(|| widget.color())
 }
 
 /// Puts what `bubble` shows into `root`: the app's icon and name on top, the summary in bold
 /// and the body, the image on the right, the progress bar, the actions and the reply field
 /// below, and a close button on hover. A grouped bubble has its count in the header and the
-/// notifications before the newest below, all of them while `open`.
-fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events, open: &Rc<Cell<bool>>) {
+/// notifications before the newest below, all of them while `open`. `time_line` goes along
+/// its bottom edge, out of what it showed before.
+fn fill(
+    root: &gtk::Box,
+    bubble: &Bubble,
+    events: &Events,
+    open: &Rc<Cell<bool>>,
+    time_line: &gtk::DrawingArea,
+) {
     // The timeout waits while the pointer is on the bubble, or a reply is being typed in it.
     let pointer = Rc::new(Cell::new(false));
     let typing = Rc::new(Cell::new(false));
@@ -497,8 +623,12 @@ fn fill(root: &gtk::Box, bubble: &Bubble, events: &Events, open: &Rc<Cell<bool>>
         move |_| events.dismiss()
     });
 
+    if let Some(before) = time_line.parent().and_downcast::<gtk::Overlay>() {
+        before.remove_overlay(time_line);
+    }
     let overlay = gtk::Overlay::new();
     overlay.set_child(Some(&frame));
+    overlay.add_overlay(time_line);
     overlay.add_overlay(&close);
 
     let motion = gtk::EventControllerMotion::new();

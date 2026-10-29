@@ -239,6 +239,17 @@ pub struct Header {
     pub critical: bool,
 }
 
+/// What's left of a bubble's timeout, which the line along its bottom edge shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimeLeft {
+    /// The whole timeout, which is the line at full width.
+    pub timeout: Duration,
+    /// What's left of it as the bubble is told.
+    pub left: Duration,
+    /// Whether it runs, or waits while the pointer is on the bubble or a reply is typed in it.
+    pub running: bool,
+}
+
 /// What draws the bubbles. The server decides when each opens, changes and closes, and the
 /// bubbles tell it what the user does through the [`Events`] each is shown with. A bubble's
 /// `id` is its notification's, and a grouped bubble's is that of the notification that made
@@ -254,6 +265,9 @@ pub trait Bubbles {
     fn update(&self, id: u32, bubble: &Bubble);
     /// Takes the bubble `id` away.
     fn close(&self, id: u32);
+    /// Shows what's left of the timeout of the bubble `id`, from now on, or that it has none.
+    /// The server's timer closes the bubble; this only draws it.
+    fn time_left(&self, id: u32, time_left: Option<TimeLeft>);
 }
 
 /// What plays the sounds.
@@ -466,6 +480,8 @@ struct Shown {
     critical: bool,
     /// Whether it's a grouped bubble, which its app's next notifications join.
     grouped: bool,
+    /// Its whole timeout, from its last start, if it has one.
+    timeout: Option<Duration>,
     /// What's left of its timeout, while its timer doesn't run.
     remaining: Option<Duration>,
     /// Its timer, while it runs, and when it ends.
@@ -670,6 +686,7 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         let bubbles = guard.bubbles.clone();
         drop(guard);
         bubbles.update(key, &bubble);
+        tell_time_left(state, key);
         return id;
     }
 
@@ -747,12 +764,14 @@ fn open(state: &Rc<RefCell<State>>, shown: Shown, timeout: Option<Duration>) -> 
     };
     let opened = bubbles.show(key, &bubble, events);
     let mut guard = state.borrow_mut();
-    if opened {
-        guard.restart_timer(index, timeout);
-    } else {
+    if !opened {
         guard.shown.pop();
+        return false;
     }
-    opened
+    guard.restart_timer(index, timeout);
+    drop(guard);
+    tell_time_left(state, key);
+    true
 }
 
 /// Puts notification `id` into the grouped bubble at `index` of `shown`, and starts the
@@ -769,6 +788,7 @@ fn join(state: &Rc<RefCell<State>>, id: u32, index: usize) {
     let bubbles = guard.bubbles.clone();
     drop(guard);
     bubbles.update(key, &bubble);
+    tell_time_left(state, key);
 }
 
 /// Merges the bubbles at `indices` of `shown` and notification `id` into one grouped bubble
@@ -1116,6 +1136,20 @@ fn hover(state: &Rc<RefCell<State>>, key: u32, hovered: bool) {
     } else {
         guard.start_timer(index);
     }
+    drop(guard);
+    tell_time_left(state, key);
+}
+
+/// Tells the bubble `key` what's left of its timeout, and whether it runs, which it draws.
+fn tell_time_left(state: &Rc<RefCell<State>>, key: u32) {
+    let guard = state.borrow();
+    let Some(index) = guard.bubble(key) else {
+        return;
+    };
+    let time_left = guard.shown[index].time_left();
+    let bubbles = guard.bubbles.clone();
+    drop(guard);
+    bubbles.time_left(key, time_left);
 }
 
 fn emit(connection: &gio::DBusConnection, signal: &str, arguments: impl ToVariant) {
@@ -1144,10 +1178,28 @@ impl Shown {
             app,
             critical,
             grouped,
+            timeout: None,
             remaining: None,
             timer: None,
             hovered: false,
         }
+    }
+
+    /// What's left of its timeout now, and whether it runs, if it has one.
+    fn time_left(&self) -> Option<TimeLeft> {
+        let timeout = self.timeout?;
+        Some(match self.timer {
+            Some((_, end)) => TimeLeft {
+                timeout,
+                left: end.saturating_duration_since(Instant::now()),
+                running: true,
+            },
+            None => TimeLeft {
+                timeout,
+                left: self.remaining.unwrap_or_default(),
+                running: false,
+            },
+        })
     }
 
     /// Stops its timer, if it runs, and returns when it would have ended.
@@ -1335,6 +1387,7 @@ impl State {
     fn restart_timer(&mut self, index: usize, timeout: Option<Duration>) {
         let shown = &mut self.shown[index];
         shown.stop_timer();
+        shown.timeout = timeout;
         shown.remaining = timeout;
         self.start_timer(index);
     }
