@@ -244,7 +244,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 
   <section class="try" aria-label="Send a test notification">
     <h2>Send a test notification</h2>
-    <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's next notification joins its bubble on screen instead of opening another, and its timer starts again. "+N more" opens the group inside the bubble. Only hovering pauses a bubble's timer, opened or not, and it carries on as soon as the pointer leaves. With Group off, each gets its own bubble, unless one app sends more than 3 within 5 seconds. A critical notification always has a bubble of its own. The bell opens the Notification center under it, top right, with six examples to start with; Slack starts ungrouped. While the center is open no bubbles show: those on screen close, and new notifications appear straight in it. Bubbles show top right, stay 7 seconds, pause while hovered, and at most 3 show at once.</p>
+    <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's next notification joins its bubble on screen instead of opening another, and its timer starts again. "+N more" opens the group inside the bubble. Only hovering pauses a bubble's timer, opened or not, and it carries on as soon as the pointer leaves. With Group off, each gets its own bubble, unless one app sends more than 3 within 5 seconds. A critical notification joins only its app's other critical ones, in a bubble that never times out. The bell opens the Notification center under it, top right, with six examples to start with; Slack starts ungrouped. While the center is open no bubbles show: those on screen close, and new notifications appear straight in it. Bubbles show top right, stay 7 seconds, pause while hovered, and at most 3 show at once.</p>
     <h3 class="sub">Grouped bubble design</h3>
     <p class="dim">Three Signal messages in a row, as one grouped bubble. Pick one; the desktop below uses it.</p>
     <div class="designs" id="designs" role="radiogroup" aria-label="Grouped bubble design"></div>
@@ -657,11 +657,12 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   // Returns how the notification was shown: "new", "joined" or "burst".
   function deliver(n) {
     if (centerOpen()) { if (n.prefs.flags[0]) flashSound(); renderDesk(); return "center"; }
+    // A critical notification joins only its app's critical bubble, never an ordinary one.
+    const mine = [...visible, ...queue].filter(b => b.i === n.i && b.critical === n.critical);
+    const grouped = n.prefs.flags[3];
+    const target = mine.find(b => grouped || b.burst);
+    if (target) { join(target, n); return "joined"; }
     if (!n.critical) {
-      const mine = [...visible, ...queue].filter(b => b.i === n.i && !b.critical);
-      const grouped = n.prefs.flags[3];
-      const target = mine.find(b => grouped || b.burst);
-      if (target) { join(target, n); return "joined"; }
       if (!grouped) {
         const now = Date.now();
         const recent = opened.filter(o => o.i === n.i && now - o.time < FLOOD_WINDOW).length;
@@ -754,7 +755,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     groups.forEach(g => { g.items.sort((a, b) => b.time - a.time || b.id - a.id); g.time = g.items[0].time; g.id = g.items[0].id; units.push(g); });
     units.sort((a, b) => b.time - a.time || b.id - a.id);
     return top + units.map(u => {
-      if (u.one) return `<div class="c-one">${headHtml(u.one.i, '<span>Not grouped</span>')}${entryHtml(u.one)}</div>`;
+      if (u.one) return `<div class="c-one">${headHtml(u.one.i, '')}${entryHtml(u.one)}</div>`;
       const open = expanded.has(u.i), shown = open ? u.items : u.items.slice(0, SHOWN), more = u.items.length - shown.length;
       return `<div class="c-group">${headHtml(u.i, `<span>${u.items.length}</span><button type="button" class="mini" data-clear-app="${u.i}" aria-label="Clear ${esc(apps[u.i].name)}">Clear</button>`)}
         ${shown.map(entryHtml).join("")}
