@@ -58,6 +58,9 @@ const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 
 const NOTIFICATIONS: &str = "org.freedesktop.Notifications";
 const NOTIFICATIONS_PATH: &str = "/org/freedesktop/Notifications";
+/// The `desktop-entry` hint: `caminito-network.desktop`, which makes the notifications those
+/// of a Notifying app of its own (CMN-268).
+const DESKTOP_ENTRY: &str = "caminito-network";
 
 /// NetworkManager's `NMActiveConnectionState`.
 const ACTIVATED: u32 = 2;
@@ -907,7 +910,10 @@ fn show(state: &Rc<RefCell<State>>, uuid: &str, note: Note) {
     let replaces = slot.id.unwrap_or(0);
     drop(borrowed);
 
-    let hints = HashMap::from([("category".to_owned(), note.category.to_variant())]);
+    let hints = HashMap::from([
+        ("category".to_owned(), note.category.to_variant()),
+        ("desktop-entry".to_owned(), DESKTOP_ENTRY.to_variant()),
+    ]);
     let actions: Vec<String> = Vec::new();
     let parameters = (
         "Network",

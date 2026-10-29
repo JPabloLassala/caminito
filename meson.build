@@ -139,6 +139,12 @@ install_data(
   rename: 'caminito-network.desktop',
   install_dir: get_option('sysconfdir') / 'xdg' / 'autostart',
 )
+# Its hidden application entry (CMN-268), which its notifications name in their desktop-entry
+# hint: the notification daemon takes the Notifying app's name and icon from it.
+install_data(
+  'data/caminito-network.desktop',
+  install_dir: get_option('datadir') / 'applications',
+)
 
 # The default panel (CMN-105): mate-panel's default layout with the Network applet beside the
 # notification area (CMN-202), the Bluetooth applet beside it, the Power applet beside that

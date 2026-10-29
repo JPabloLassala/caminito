@@ -12,6 +12,9 @@ const PATH: &str = "/org/freedesktop/Notifications";
 const INTERFACE: &str = "org.freedesktop.Notifications";
 /// The icon the control center has for its accessibility pages.
 const ICON: &str = "preferences-desktop-accessibility";
+/// The `desktop-entry` hint: Workspace Behaviour's entry, which makes the notifications those of
+/// a Notifying app of its own (CMN-268), with Workspace Behaviour's name and icon.
+const DESKTOP_ENTRY: &str = "caminito-behaviour";
 
 impl Caminito {
     /// Posts a notification. The call is made on zbus's thread, and the main thread never
@@ -26,7 +29,7 @@ impl Caminito {
         let call = async move {
             // None. A slice, which is an array on the bus where a Rust array is a struct.
             let actions: &[&str] = &[];
-            let hints: HashMap<&str, Value<'_>> = HashMap::new();
+            let hints = hints();
             // Replacing none, and shown for as long as the daemon's default.
             let notification = (
                 "Caminito", 0u32, ICON, &summary, &body, actions, hints, -1i32,
@@ -42,5 +45,23 @@ impl Caminito {
             .executor()
             .spawn(call, "notification")
             .detach();
+    }
+}
+
+/// The hints of each notification.
+fn hints() -> HashMap<&'static str, Value<'static>> {
+    HashMap::from([("desktop-entry", Value::from(DESKTOP_ENTRY))])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_notifications_are_workspace_behaviours() {
+        assert_eq!(
+            hints().get("desktop-entry"),
+            Some(&Value::from("caminito-behaviour"))
+        );
     }
 }

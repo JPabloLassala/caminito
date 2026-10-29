@@ -72,6 +72,8 @@ struct Notification {
     summary: String,
     body: String,
     category: String,
+    /// The `desktop-entry` hint, which makes it a Notifying app of its own.
+    desktop_entry: String,
 }
 
 fn notifications(mock: &Mock) -> Vec<Notification> {
@@ -79,17 +81,22 @@ fn notifications(mock: &Mock) -> Vec<Notification> {
     let argument = |call: &Variant, index| call.child_value(index).as_variant().unwrap();
     mock.notifies()
         .iter()
-        .map(|call| Notification {
-            replaces: argument(call, 1).get().unwrap(),
-            icon: argument(call, 2).str().unwrap().to_owned(),
-            summary: argument(call, 3).str().unwrap().to_owned(),
-            body: argument(call, 4).str().unwrap().to_owned(),
-            category: argument(call, 6)
-                .get::<HashMap<String, Variant>>()
-                .unwrap()
-                .get("category")
-                .and_then(|category| category.str().map(str::to_owned))
-                .unwrap_or_default(),
+        .map(|call| {
+            let hints = argument(call, 6).get::<HashMap<String, Variant>>().unwrap();
+            let hint = |key| {
+                hints
+                    .get(key)
+                    .and_then(|hint| hint.str().map(str::to_owned))
+                    .unwrap_or_default()
+            };
+            Notification {
+                replaces: argument(call, 1).get().unwrap(),
+                icon: argument(call, 2).str().unwrap().to_owned(),
+                summary: argument(call, 3).str().unwrap().to_owned(),
+                body: argument(call, 4).str().unwrap().to_owned(),
+                category: hint("category"),
+                desktop_entry: hint("desktop-entry"),
+            }
         })
         .collect()
 }
@@ -101,6 +108,7 @@ fn notification(icon: &str, summary: &str, body: &str, category: &str) -> Notifi
         summary: summary.to_owned(),
         body: body.to_owned(),
         category: category.to_owned(),
+        desktop_entry: "caminito-network".to_owned(),
     }
 }
 
