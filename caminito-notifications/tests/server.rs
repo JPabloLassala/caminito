@@ -123,7 +123,7 @@ impl FakeBubbles {
     }
 
     /// What the bubble `id` was last told of its timeout.
-    fn time_left(&self, id: u32) -> Option<TimeLeft> {
+    fn told_time_left(&self, id: u32) -> Option<TimeLeft> {
         let told = self.time_left.borrow();
         *told
             .get(&id)
@@ -921,7 +921,7 @@ fn an_opening_bubble_is_told_its_whole_timeout_running() {
             timeout: 1000,
             ..notify("Timed")
         });
-        assert_time_left(daemon.bubbles.time_left(id), 1000, 900, true);
+        assert_time_left(daemon.bubbles.told_time_left(id), 1000, 900, true);
     });
 }
 
@@ -933,10 +933,11 @@ fn a_hovered_bubble_is_told_its_time_left_waits_and_then_runs_on_from_there() {
             timeout: 1000,
             ..notify("Hovered")
         });
+        // A fifth of its timeout, so that what's left is less than all of it.
         bus.run_for(Duration::from_millis(200));
 
         daemon.bubbles.events(id).hovered(true);
-        let paused = daemon.bubbles.time_left(id);
+        let paused = daemon.bubbles.told_time_left(id);
         assert_time_left(paused, 1000, 500, false);
         let left = paused.unwrap().left;
         assert!(
@@ -944,10 +945,11 @@ fn a_hovered_bubble_is_told_its_time_left_waits_and_then_runs_on_from_there() {
             "{left:?} left after 200 ms"
         );
 
-        // The time it waits doesn't count.
+        // The time it waits doesn't count, so that it goes on with what's left after as long
+        // as it ran before, and more.
         bus.run_for(Duration::from_millis(300));
         daemon.bubbles.events(id).hovered(false);
-        let running = daemon.bubbles.time_left(id).unwrap();
+        let running = daemon.bubbles.told_time_left(id).unwrap();
         assert!(running.running);
         assert!(running.left <= left && running.left + Duration::from_millis(50) >= left);
     });
@@ -968,6 +970,7 @@ fn a_bubble_is_told_its_whole_timeout_again_when_it_restarts() {
         daemon.notify(timed("1"));
         daemon.notify(timed("2"));
         let grouped = daemon.notify(timed("3"));
+        // Long enough into their timeouts that a restart has more left than they had.
         bus.run_for(Duration::from_millis(400));
         // So that what they're told next is from their restart.
         daemon.bubbles.time_left.borrow_mut().clear();
@@ -978,8 +981,8 @@ fn a_bubble_is_told_its_whole_timeout_again_when_it_restarts() {
             ..timed("Replacement")
         });
         daemon.notify(timed("4"));
-        assert_time_left(daemon.bubbles.time_left(replaced), 1000, 900, true);
-        assert_time_left(daemon.bubbles.time_left(grouped), 1000, 900, true);
+        assert_time_left(daemon.bubbles.told_time_left(replaced), 1000, 900, true);
+        assert_time_left(daemon.bubbles.told_time_left(grouped), 1000, 900, true);
     });
 }
 
@@ -1008,9 +1011,9 @@ fn a_bubble_that_never_times_out_is_told_it_has_no_time_left() {
             ..notify("Forever now")
         });
 
-        assert_eq!(daemon.bubbles.time_left(critical), None);
-        assert_eq!(daemon.bubbles.time_left(forever), None);
-        assert_eq!(daemon.bubbles.time_left(replaced), None);
+        assert_eq!(daemon.bubbles.told_time_left(critical), None);
+        assert_eq!(daemon.bubbles.told_time_left(forever), None);
+        assert_eq!(daemon.bubbles.told_time_left(replaced), None);
     });
 }
 

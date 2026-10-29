@@ -686,6 +686,7 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
         let bubbles = guard.bubbles.clone();
         drop(guard);
         bubbles.update(key, &bubble);
+        tell_time_left(state, key);
         return id;
     }
 
@@ -763,12 +764,14 @@ fn open(state: &Rc<RefCell<State>>, shown: Shown, timeout: Option<Duration>) -> 
     };
     let opened = bubbles.show(key, &bubble, events);
     let mut guard = state.borrow_mut();
-    if opened {
-        guard.restart_timer(index, timeout);
-    } else {
+    if !opened {
         guard.shown.pop();
+        return false;
     }
-    opened
+    guard.restart_timer(index, timeout);
+    drop(guard);
+    tell_time_left(state, key);
+    true
 }
 
 /// Puts notification `id` into the grouped bubble at `index` of `shown`, and starts the
@@ -785,6 +788,7 @@ fn join(state: &Rc<RefCell<State>>, id: u32, index: usize) {
     let bubbles = guard.bubbles.clone();
     drop(guard);
     bubbles.update(key, &bubble);
+    tell_time_left(state, key);
 }
 
 /// Merges the bubbles at `indices` of `shown` and notification `id` into one grouped bubble
@@ -1132,7 +1136,20 @@ fn hover(state: &Rc<RefCell<State>>, key: u32, hovered: bool) {
     } else {
         guard.start_timer(index);
     }
-    guard.tell_time_left(index);
+    drop(guard);
+    tell_time_left(state, key);
+}
+
+/// Tells the bubble `key` what's left of its timeout, and whether it runs, which it draws.
+fn tell_time_left(state: &Rc<RefCell<State>>, key: u32) {
+    let guard = state.borrow();
+    let Some(index) = guard.bubble(key) else {
+        return;
+    };
+    let time_left = guard.shown[index].time_left();
+    let bubbles = guard.bubbles.clone();
+    drop(guard);
+    bubbles.time_left(key, time_left);
 }
 
 fn emit(connection: &gio::DBusConnection, signal: &str, arguments: impl ToVariant) {
@@ -1166,6 +1183,23 @@ impl Shown {
             timer: None,
             hovered: false,
         }
+    }
+
+    /// What's left of its timeout now, and whether it runs, if it has one.
+    fn time_left(&self) -> Option<TimeLeft> {
+        let timeout = self.timeout?;
+        Some(match self.timer {
+            Some((_, end)) => TimeLeft {
+                timeout,
+                left: end.saturating_duration_since(Instant::now()),
+                running: true,
+            },
+            None => TimeLeft {
+                timeout,
+                left: self.remaining.unwrap_or_default(),
+                running: false,
+            },
+        })
     }
 
     /// Stops its timer, if it runs, and returns when it would have ended.
@@ -1356,26 +1390,6 @@ impl State {
         shown.timeout = timeout;
         shown.remaining = timeout;
         self.start_timer(index);
-        self.tell_time_left(index);
-    }
-
-    /// Tells the bubble at `index` of `shown` what's left of its timeout, and whether it runs.
-    /// The bubbles only draw it, so this holds the state while they're told.
-    fn tell_time_left(&self, index: usize) {
-        let shown = &self.shown[index];
-        let time_left = shown.timeout.map(|timeout| match shown.timer {
-            Some((_, end)) => TimeLeft {
-                timeout,
-                left: end.saturating_duration_since(Instant::now()),
-                running: true,
-            },
-            None => TimeLeft {
-                timeout,
-                left: shown.remaining.unwrap_or_default(),
-                running: false,
-            },
-        });
-        self.bubbles.time_left(shown.key, time_left);
     }
 
     /// Runs what's left of the timeout of the bubble at `index` of `shown`, unless the pointer

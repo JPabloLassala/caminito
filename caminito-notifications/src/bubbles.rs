@@ -500,7 +500,8 @@ impl TimeLine {
     }
 }
 
-/// The theme's accent colour.
+/// The theme's accent colour, as the Displays capplet reads it (`caminito-displays`'s
+/// `arrangement.rs`), which this crate doesn't depend on.
 fn accent(widget: &gtk::DrawingArea) -> gdk::RGBA {
     #[expect(
         deprecated,
