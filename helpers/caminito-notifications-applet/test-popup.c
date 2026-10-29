@@ -1,7 +1,7 @@
 /*
  * The Notification center (CMN-260): the history drawn from entries built by hand, newest
- * first, and what a click on an entry, its close button, its actions and "Clear all" call
- * back. Without a display, GTK can't start, and it's skipped.
+ * first, and what a click on an entry, its close button, its actions, its reply field
+ * (CMN-266) and "Clear all" call back. Without a display, GTK can't start, and it's skipped.
  */
 
 #include "nt-popup.h"
@@ -15,17 +15,27 @@ typedef struct
   GtkWidget           *anchor;
   CaminitoAppletPopup *applet_popup;
   NtPopup             *popup;
-  /* What the popup called back, as "invoke 7 default;", "dismiss 3;", "clear all;". */
+  /* What the popup called back, as "invoke 7 default;", "reply 7 Hi;", "dismiss 3;",
+     "clear all;". */
   GString             *calls;
   GPtrArray           *entries;
 } Fixture;
 
+/* The token is whatever GDK's display gives, if anything, and isn't recorded. */
 static void
-on_invoke (guint32 id, const char *key, gpointer data)
+on_invoke (guint32 id, const char *key, const char *token G_GNUC_UNUSED, gpointer data)
 {
   Fixture *fixture = data;
 
   g_string_append_printf (fixture->calls, "invoke %u %s;", id, key);
+}
+
+static void
+on_reply (guint32 id, const char *text, gpointer data)
+{
+  Fixture *fixture = data;
+
+  g_string_append_printf (fixture->calls, "reply %u %s;", id, text);
 }
 
 static void
@@ -46,6 +56,7 @@ on_clear_all (gpointer data)
 
 static const NtPopupActions actions = {
   .invoke = on_invoke,
+  .reply = on_reply,
   .dismiss = on_dismiss,
   .clear_all = on_clear_all,
 };
@@ -66,6 +77,7 @@ entry (guint32 id, const char *summary, const char *body, gint64 ago, gboolean h
   entry->summary = g_strdup (summary);
   entry->body = g_strdup (body);
   entry->has_default = has_default;
+  entry->reply = g_strdup ("");
   entry->time = NOW - ago;
   entry->actions = g_ptr_array_new ();
   va_start (args, has_default);
@@ -311,9 +323,36 @@ test_a_click_on_an_entry_invokes_its_default_action (Fixture *fixture,
   gtk_widget_activate (row_of (fixture, "Lunch?"));
   g_assert_cmpstr (fixture->calls->str, ==, "invoke 7 default;");
   g_assert_false (caminito_applet_popup_is_shown (fixture->applet_popup));
-  /* Invoice has no default action: a click does nothing. */
+  /* Invoice has no default action: a click is for the daemon to bring the app forward. */
   gtk_widget_activate (row_of (fixture, "Invoice"));
-  g_assert_cmpstr (fixture->calls->str, ==, "invoke 7 default;");
+  g_assert_cmpstr (fixture->calls->str, ==, "invoke 7 default;invoke 3 default;");
+}
+
+static void
+test_an_entry_with_a_reply_field_sends_what_is_typed (Fixture *fixture,
+                                                     gconstpointer data G_GNUC_UNUSED)
+{
+  GtkWidget *field;
+
+  two_entries (fixture);
+  g_free (((NtEntry *) g_ptr_array_index (fixture->entries, 0))->reply);
+  ((NtEntry *) g_ptr_array_index (fixture->entries, 0))->reply = g_strdup ("Reply to Ana");
+  nt_popup_update (fixture->popup, fixture->entries, NOW);
+  caminito_applet_popup_show (fixture->applet_popup);
+
+  field = named_under (row_of (fixture, "Lunch?"), "reply");
+  g_assert_nonnull (field);
+  g_assert_true (widget_shows (fixture, field));
+  g_assert_cmpstr (gtk_entry_get_placeholder_text (GTK_ENTRY (field)), ==, "Reply to Ana");
+  /* Invoice has none. */
+  g_assert_null (named_under (row_of (fixture, "Invoice"), "reply"));
+
+  /* An empty reply isn't sent. */
+  gtk_widget_activate (field);
+  g_assert_cmpstr (fixture->calls->str, ==, "");
+  gtk_entry_set_text (GTK_ENTRY (field), "On my way");
+  gtk_widget_activate (field);
+  g_assert_cmpstr (fixture->calls->str, ==, "reply 7 On my way;");
 }
 
 static void
@@ -384,6 +423,7 @@ main (int argc, char **argv)
   g_test_add ("/popup/the-entries-show-newest-first", Fixture, NULL, setup, test_the_entries_show_newest_first, teardown);
   g_test_add ("/popup/an-update-replaces-the-entries", Fixture, NULL, setup, test_an_update_replaces_the_entries, teardown);
   g_test_add ("/popup/a-click-on-an-entry-invokes-its-default-action", Fixture, NULL, setup, test_a_click_on_an_entry_invokes_its_default_action, teardown);
+  g_test_add ("/popup/an-entry-with-a-reply-field-sends-what-is-typed", Fixture, NULL, setup, test_an_entry_with_a_reply_field_sends_what_is_typed, teardown);
   g_test_add ("/popup/an-action-button-invokes-its-action", Fixture, NULL, setup, test_an_action_button_invokes_its_action, teardown);
   g_test_add ("/popup/the-close-button-dismisses-the-entry", Fixture, NULL, setup, test_the_close_button_dismisses_the_entry, teardown);
   g_test_add ("/popup/clear-all-clears-the-history", Fixture, NULL, setup, test_clear_all_clears_the_history, teardown);

@@ -23,14 +23,16 @@ pub(crate) const MAX_ENTRIES: usize = 200;
 /// until the daemon stops, so that rewriting the file with every notification stays cheap.
 const MAX_PERSISTED_PIXELS: usize = 64 * 1024;
 
-/// The file's layout: a version, and the entries. A file of another version is not read.
-const FILE_VERSION: u32 = 1;
-const FILE_TYPE: &str = "(ua(usssssva(ss)bbbt))";
+/// The file's layout: a version, and the entries. A file of another version is not read:
+/// version 1's reply field had no placeholder (CMN-266).
+const FILE_VERSION: u32 = 2;
+const FILE_TYPE: &str = "(ua(usssssva(ss)bbst))";
 
 /// The type of an entry on the wire and in the file: id, app key, app name, app icon,
 /// summary, body, image (a string, or `(iiibiiay)` pixels), actions, has a default action,
-/// resident, has a reply field, and its time in seconds since the epoch.
-pub(crate) const ENTRY_TYPE: &str = "(usssssva(ss)bbbt)";
+/// resident, the reply field's placeholder or empty for none, and its time in seconds since
+/// the epoch.
+pub(crate) const ENTRY_TYPE: &str = "(usssssva(ss)bbst)";
 
 /// A notification in the history.
 #[derive(Debug, Clone, PartialEq)]
@@ -44,8 +46,6 @@ pub(crate) struct HistoryEntry {
     pub(crate) has_default: bool,
     /// Whether it stays after one of its actions is used.
     pub(crate) resident: bool,
-    /// Whether it has a reply field.
-    pub(crate) reply: bool,
     /// When it arrived, in seconds since the epoch.
     pub(crate) time: u64,
 }
@@ -204,7 +204,6 @@ impl HistoryEntry {
             bubble: notification.bubble.clone(),
             has_default: notification.has_default,
             resident: notification.resident,
-            reply: notification.reply,
             time,
         }
     }
@@ -246,7 +245,7 @@ impl HistoryEntry {
             actions.to_variant(),
             self.has_default.to_variant(),
             self.resident.to_variant(),
-            self.reply.to_variant(),
+            self.bubble.reply.as_deref().unwrap_or("").to_variant(),
             self.time.to_variant(),
         ])
     }
@@ -273,10 +272,11 @@ impl HistoryEntry {
                     .into_iter()
                     .map(|(key, label)| Action { key, label })
                     .collect(),
+                reply: text(10).filter(|placeholder| !placeholder.is_empty()),
+                progress: None,
             },
             has_default: variant.child_value(8).get()?,
             resident: variant.child_value(9).get()?,
-            reply: variant.child_value(10).get()?,
             time: variant.child_value(11).get()?,
         })
     }
@@ -369,10 +369,11 @@ mod tests {
                     key: "reply".to_owned(),
                     label: "Reply".to_owned(),
                 }],
+                reply: Some("Reply to Ann".to_owned()),
+                progress: None,
             },
             has_default: true,
             resident: false,
-            reply: true,
             time,
         }
     }

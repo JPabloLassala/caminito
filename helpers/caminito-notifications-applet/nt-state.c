@@ -23,6 +23,7 @@ nt_entry_free (NtEntry *entry)
   g_free (entry->summary);
   g_free (entry->body);
   g_free (entry->image_icon);
+  g_free (entry->reply);
   g_clear_pointer (&entry->image_pixels, g_variant_unref);
   g_ptr_array_unref (entry->actions);
   g_free (entry);
@@ -37,7 +38,7 @@ entry_from_variant (GVariant *variant)
   guint64 time;
   char *key, *label;
 
-  g_variant_get (variant, "(usssssva(ss)bbbt)", &entry->id, &entry->app, &entry->app_name,
+  g_variant_get (variant, "(usssssva(ss)bbst)", &entry->id, &entry->app, &entry->app_name,
                  &entry->app_icon, &entry->summary, &entry->body, &image, &actions,
                  &entry->has_default, &entry->resident, &entry->reply, &time);
   entry->time = (gint64) time;

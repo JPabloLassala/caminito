@@ -33,6 +33,8 @@ pub struct IconLookup {
     /// The themes an icon is looked for in, in order, for the theme in use.
     chain: Option<Vec<String>>,
     desktop_icons: HashMap<String, Option<String>>,
+    /// Each app id's desktop entry, by its desktop-file ID, and `None` for one without.
+    desktop_ids: HashMap<String, Option<String>>,
     /// Each icon file loaded, by its path and its size in device pixels, and `None` for
     /// one that couldn't be: an icon's decoded once, not at each label or frame drawn.
     loaded: HashMap<(PathBuf, i32), Option<ImageSurface>>,
@@ -54,6 +56,7 @@ impl IconLookup {
             themes: HashMap::new(),
             chain: None,
             desktop_icons: HashMap::new(),
+            desktop_ids: HashMap::new(),
             loaded: HashMap::new(),
         }
     }
@@ -125,6 +128,17 @@ impl IconLookup {
         icon
     }
 
+    /// The desktop-file ID, without `.desktop`, of the desktop entry for `app_id`, found as
+    /// [`IconLookup::desktop_icon`] finds it.
+    pub fn desktop_id(&mut self, app_id: &str) -> Option<String> {
+        if let Some(id) = self.desktop_ids.get(app_id) {
+            return id.clone();
+        }
+        let id = self.find_desktop_entry(app_id).map(|(id, _)| id);
+        self.desktop_ids.insert(app_id.to_owned(), id.clone());
+        id
+    }
+
     /// A window's icon file when it has no xdg-toplevel-icon: its desktop entry's icon,
     /// else `application-x-executable`.
     pub fn window_icon(&mut self, app_id: Option<&str>, size: i32, scale: i32) -> Option<PathBuf> {
@@ -183,6 +197,13 @@ impl IconLookup {
     }
 
     fn find_desktop_icon(&self, app_id: &str) -> Option<String> {
+        let (_, path) = self.find_desktop_entry(app_id)?;
+        desktop_entry_icon(&path)
+    }
+
+    /// The desktop entry for `app_id`, its desktop-file ID and its file: see
+    /// [`IconLookup::desktop_icon`].
+    fn find_desktop_entry(&self, app_id: &str) -> Option<(String, PathBuf)> {
         let lowercase = app_id.to_lowercase();
         let ids = std::iter::once(app_id).chain((lowercase != app_id).then_some(&lowercase[..]));
         for id in ids {
@@ -190,13 +211,13 @@ impl IconLookup {
                 .applications_dirs()
                 .find_map(|dir| desktop_file_by_id(&dir, id));
             if let Some(path) = found {
-                return desktop_entry_icon(&path);
+                return Some((id.to_owned(), path));
             }
         }
-        self.desktop_icon_by_wm_class(app_id)
+        self.desktop_entry_by_wm_class(app_id)
     }
 
-    fn desktop_icon_by_wm_class(&self, app_id: &str) -> Option<String> {
+    fn desktop_entry_by_wm_class(&self, app_id: &str) -> Option<(String, PathBuf)> {
         let app_id = app_id.to_lowercase();
         // An entry is shadowed by one with the same ID in an earlier dir.
         let mut seen = HashSet::new();
@@ -204,7 +225,7 @@ impl IconLookup {
             let mut entries = Vec::new();
             desktop_files(&dir, "", &mut entries);
             for (id, path) in entries {
-                if !seen.insert(id) {
+                if !seen.insert(id.clone()) {
                     continue;
                 }
                 let Some(entry) = read_desktop_entry(&path) else {
@@ -214,7 +235,7 @@ impl IconLookup {
                     .get("StartupWMClass")
                     .is_some_and(|class| class.to_lowercase() == app_id);
                 if matches {
-                    return entry.get("Icon").cloned();
+                    return Some((id, path));
                 }
             }
         }

@@ -6,8 +6,9 @@ use caminito_policy::{LayerSurfaceId, SwitchEntry, WindowId};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output};
 use smithay::output::Output;
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{IsAlive, Logical, Rectangle};
+use smithay::utils::{IsAlive, Logical, Rectangle, Serial};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::wlr_layer::{
     KeyboardInteractivity, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData,
@@ -203,9 +204,14 @@ impl Caminito {
         }
     }
 
-    /// A button was pressed on a layer surface. One with `on_demand` keyboard
-    /// interactivity takes the keyboard; any other leaves it where it is.
-    pub(crate) fn layer_pressed(&mut self, layer: &LayerSurface) {
+    /// A button was pressed on a layer surface, with `serial`. One with `on_demand` keyboard
+    /// interactivity takes the keyboard; any other leaves it where it is. Either way the press
+    /// ties the client's xdg-activation tokens to input (CMN-266).
+    pub(crate) fn layer_pressed(&mut self, layer: &LayerSurface, serial: Serial) {
+        self.layer_press = layer
+            .wl_surface()
+            .client()
+            .map(|client| (client.id(), serial));
         if takes_keyboard_on_demand(layer) {
             self.keyboard_layer = Some((layer.clone(), self.policy.focus(SEAT)));
         }

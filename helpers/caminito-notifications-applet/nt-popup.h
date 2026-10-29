@@ -1,8 +1,8 @@
 /*
  * The Notification center (CMN-260): the Notifications applet's popup, in the shared popup
  * window. The Notification history as a flat list, newest first, each entry with its app's
- * icon and name, its age, a close button, its summary, body and image, and its action
- * buttons; "No notifications" when it's empty; and "Clear all" at the bottom. Grouping by
+ * icon and name, its age, a close button, its summary, body and image, its action buttons
+ * and its reply field (CMN-266); "No notifications" when it's empty; and "Clear all" at the bottom. Grouping by
  * app (CMN-265) and the Do Not Disturb row (CMN-263) come later. It draws NtEntries and calls
  * back for what the user does, so that it knows nothing of D-Bus.
  */
@@ -17,8 +17,11 @@ typedef struct _NtPopup NtPopup;
 typedef struct
 {
   /* A click on an entry, for "default", or one of its action buttons, for the action's
-     key. The popup has closed before it's called. */
-  void (*invoke)    (guint32 id, const char *key, gpointer data);
+     key, with an xdg-activation token for the app to come forward with, or NULL. The popup
+     has closed before it's called. */
+  void (*invoke)    (guint32 id, const char *key, const char *token, gpointer data);
+  /* text, typed in an entry's reply field and sent. The popup stays. */
+  void (*reply)     (guint32 id, const char *text, gpointer data);
   /* An entry's close button. */
   void (*dismiss)   (guint32 id, gpointer data);
   /* "Clear all". */

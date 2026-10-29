@@ -220,10 +220,15 @@ nt_daemon_clear_all (NtDaemon *daemon)
 }
 
 void
-nt_daemon_invoke_action (NtDaemon *daemon, guint32 id, const char *key)
+nt_daemon_invoke_action (NtDaemon *daemon, guint32 id, const char *key, const char *token)
 {
-  /* No activation token: bringing the app forward is CMN-266's. */
-  call (daemon, "InvokeAction", g_variant_new ("(uss)", id, key, ""));
+  call (daemon, "InvokeAction", g_variant_new ("(uss)", id, key, token != NULL ? token : ""));
+}
+
+void
+nt_daemon_reply (NtDaemon *daemon, guint32 id, const char *text)
+{
+  call (daemon, "Reply", g_variant_new ("(us)", id, text));
 }
 
 gboolean

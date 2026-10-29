@@ -935,7 +935,7 @@ impl State {
             }
         }
         if let Some(Under::Layer(layer, ..)) = &under {
-            self.caminito.layer_pressed(layer);
+            self.caminito.layer_pressed(layer, serial);
             self.update_keyboard_focus();
         }
         // A press on what's no window, a layer surface or an output's bare background,

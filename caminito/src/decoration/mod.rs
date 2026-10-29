@@ -183,6 +183,11 @@ impl FrameContext {
         window_icon(&mut self.icons, source, size, scale)
     }
 
+    /// The desktop-file ID of the desktop entry for `app_id`, as frames find its icon by.
+    pub(crate) fn desktop_id(&mut self, app_id: &str) -> Option<String> {
+        self.icons.desktop_id(app_id)
+    }
+
     /// A window's title laid out in the title font, as the frame's style scales it.
     pub fn title(&self, frame_type: FrameType, flags: &FrameFlags, text: &str) -> Title {
         let scale = self.theme.title_scale(frame_type, flags);

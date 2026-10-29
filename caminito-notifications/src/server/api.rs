@@ -11,7 +11,7 @@ use std::rc::Weak;
 use gio::glib::{self, Variant};
 use gio::prelude::*;
 
-use super::{Reason, State, close, close_all, invoke, reply};
+use super::{Reason, State, click, close, close_all, invoke, reply};
 use crate::history::ENTRY_TYPE;
 
 const INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
@@ -77,26 +77,32 @@ pub(super) fn handle(
         }
         "InvokeAction" => {
             let (id, key, token) = (id(), text(1), text(2));
+            // "default" is a click, which every entry takes.
+            let is_click = key == crate::notification::DEFAULT_ACTION;
             let has_action = state.borrow().history.get(id).map(|entry| {
-                (key == crate::notification::DEFAULT_ACTION && entry.has_default)
-                    || entry.bubble.actions.iter().any(|action| action.key == key)
+                is_click || entry.bubble.actions.iter().any(|action| action.key == key)
             });
             match has_action {
                 None => return refuse(missing(id)),
                 Some(false) => return refuse(format!("notification {id} has no action {key}")),
                 Some(true) => {}
             }
-            invoke(
-                &state,
-                id,
-                &key,
-                Some(token).filter(|token| !token.is_empty()),
-            );
+            let token = Some(token).filter(|token| !token.is_empty());
+            if is_click {
+                click(&state, id, token);
+            } else {
+                invoke(&state, id, &key, token);
+            }
             invocation.return_value(None);
         }
         "Reply" => {
             let id = id();
-            match state.borrow().history.get(id).map(|entry| entry.reply) {
+            let has_field = state
+                .borrow()
+                .history
+                .get(id)
+                .map(|entry| entry.bubble.reply.is_some());
+            match has_field {
                 None => return refuse(missing(id)),
                 Some(false) => return refuse(format!("notification {id} has no reply field")),
                 Some(true) => {}

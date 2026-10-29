@@ -29,6 +29,19 @@ const API_PATH: &str = "/org/mate/Caminito/Notifications";
 /// millisecond or two, so this is many times what one needs.
 const QUIET: Duration = Duration::from_millis(100);
 
+/// Caminito's name and interface, which the daemon asks to bring an app forward.
+const CAMINITO: &str = "org.mate.Caminito";
+const CAMINITO_PATH: &str = "/org/mate/Caminito";
+const CAMINITO_INTERFACE: &str = r#"
+<node>
+  <interface name="org.mate.Caminito">
+    <method name="ActivateApplication">
+      <arg type="s" name="app" direction="in"/>
+    </method>
+  </interface>
+</node>
+"#;
+
 /// The seconds in a week, which the history keeps an entry for.
 const WEEK: u64 = 7 * 24 * 60 * 60;
 
@@ -101,6 +114,64 @@ struct FakeClock(Cell<u64>);
 impl Clock for FakeClock {
     fn now(&self) -> u64 {
         self.0.get()
+    }
+}
+
+/// Caminito on the bus, as much of it as the daemon calls: the apps it was asked to bring
+/// forward, in order.
+struct FakeCaminito {
+    activated: Rc<RefCell<Vec<String>>>,
+    connection: gio::DBusConnection,
+    registration: Option<gio::RegistrationId>,
+}
+
+impl FakeCaminito {
+    fn start(bus: &Bus) -> FakeCaminito {
+        let connection = bus.connect();
+        let node = gio::DBusNodeInfo::for_xml(CAMINITO_INTERFACE).unwrap();
+        let interface = node.lookup_interface(CAMINITO).unwrap();
+        let activated: Rc<RefCell<Vec<String>>> = Rc::default();
+        let registration = connection
+            .register_object(CAMINITO_PATH, &interface)
+            .method_call({
+                let activated = activated.clone();
+                move |_, _, _, _, _, parameters, invocation| {
+                    let app = parameters.child_value(0).str().unwrap_or("").to_owned();
+                    activated.borrow_mut().push(app);
+                    invocation.return_value(None);
+                }
+            })
+            .build()
+            .expect("the fake registers");
+        let reply = connection.call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "RequestName",
+            Some(&(CAMINITO, 0u32).to_variant()),
+            None,
+            gio::DBusCallFlags::NONE,
+            -1,
+            gio::Cancellable::NONE,
+        );
+        reply.expect("the fake owns Caminito's name");
+        FakeCaminito {
+            activated,
+            connection,
+            registration: Some(registration),
+        }
+    }
+
+    fn activated(&self) -> Vec<String> {
+        self.activated.borrow().clone()
+    }
+}
+
+impl Drop for FakeCaminito {
+    fn drop(&mut self) {
+        if let Some(registration) = self.registration.take() {
+            let _ = self.connection.unregister_object(registration);
+        }
     }
 }
 
@@ -228,7 +299,7 @@ type WireEntry = (
     Vec<(String, String)>,
     bool,
     bool,
-    bool,
+    String,
     u64,
 );
 
@@ -244,7 +315,8 @@ struct Listed {
     actions: Vec<(String, String)>,
     has_default: bool,
     resident: bool,
-    reply: bool,
+    /// The reply field's placeholder, or empty for none.
+    reply: String,
     time: u64,
 }
 
@@ -468,6 +540,7 @@ fn the_server_names_itself_and_its_capabilities() {
                 "body-hyperlinks",
                 "body-markup",
                 "icon-static",
+                "inline-reply",
                 "persistence",
                 "sound"
             ]
@@ -526,6 +599,8 @@ fn a_notification_gets_a_bubble_with_its_app_text_and_actions() {
                         label: "Later".to_owned()
                     },
                 ],
+                reply: None,
+                progress: None,
             }
         );
         let second = daemon.notify(notify("Another"));
@@ -576,6 +651,40 @@ fn a_replacement_changes_the_bubble_in_place_and_keeps_its_id() {
             ..notify("Three")
         });
         assert!(new != 9999 && new != first && new != other);
+    });
+}
+
+#[test]
+fn the_value_hint_is_a_progress_bar_that_a_replacement_moves_in_place() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let id = daemon.notify(notify("Copying").hint("value", 40i32));
+        assert_eq!(daemon.bubbles.bubble(id).progress, Some(40));
+
+        let replaced = daemon.notify(Notify {
+            replaces: id,
+            ..notify("Copying").hint("value", 75i32)
+        });
+
+        assert_eq!(replaced, id);
+        assert_eq!(daemon.bubbles.bubble(id).progress, Some(75));
+        assert_eq!(
+            *daemon.bubbles.calls.borrow(),
+            [format!("show {id}"), format!("update {id}")]
+        );
+        daemon.close(id);
+        // Out of range is kept to it, and no hint is no bar.
+        let over = daemon.notify(notify("Over").hint("value", 140i32));
+        let under = daemon.notify(notify("Under").hint("value", -5i32));
+        assert_eq!(daemon.bubbles.bubble(over).progress, Some(100));
+        assert_eq!(daemon.bubbles.bubble(under).progress, Some(0));
+        assert_eq!(
+            daemon
+                .bubbles
+                .bubble(daemon.notify(notify("Plain")))
+                .progress,
+            None
+        );
     });
 }
 
@@ -675,6 +784,7 @@ fn hovering_a_bubble_pauses_its_timeout() {
 #[test]
 fn closing_a_bubble_or_clicking_one_without_a_default_action_dismisses_it() {
     bus::run(|bus| {
+        // Outside a Session there's no Caminito to bring the app forward.
         let daemon = start(bus);
         let closed = daemon.notify(notify("Closed"));
         let clicked = daemon.notify(Notify {
@@ -697,6 +807,67 @@ fn closing_a_bubble_or_clicking_one_without_a_default_action_dismisses_it() {
                 signal("NotificationClosed", &format!("({clicked}, {DISMISSED})")),
             ]
         );
+    });
+}
+
+#[test]
+fn a_click_without_a_default_action_asks_caminito_to_bring_the_app_forward() {
+    bus::run(|bus| {
+        let caminito = FakeCaminito::start(bus);
+        let daemon = start(bus);
+        let by_entry = daemon.notify(notify("Mail").hint("desktop-entry", "org.gnome.Evolution"));
+        let by_name = daemon.notify(Notify {
+            app_name: "Pidgin",
+            ..notify("Chat")
+        });
+
+        daemon
+            .bubbles
+            .events(by_entry)
+            .click(Some("token".to_owned()));
+        daemon.bubbles.events(by_name).click(None);
+        bus.wait_until("two activations", || caminito.activated().len() == 2);
+        daemon.wait_for_signals(2);
+
+        assert_eq!(caminito.activated(), ["org.gnome.Evolution", "Pidgin"]);
+        // The app hears of no action it didn't offer, only that the notification went.
+        assert_eq!(
+            daemon.signals(),
+            [
+                signal("NotificationClosed", &format!("({by_entry}, {DISMISSED})")),
+                signal("NotificationClosed", &format!("({by_name}, {DISMISSED})")),
+            ]
+        );
+    });
+}
+
+#[test]
+fn a_click_with_a_default_action_does_not_ask_caminito() {
+    bus::run(|bus| {
+        let caminito = FakeCaminito::start(bus);
+        let daemon = start(bus);
+        let id = daemon.notify(Notify {
+            actions: vec!["default", "Open"],
+            ..notify("Mail")
+        });
+
+        daemon
+            .bubbles
+            .events(id)
+            .click(Some("xdg-token".to_owned()));
+        daemon.wait_for_signals(3);
+        bus.run_for(QUIET);
+
+        // The token first, so that the app has it as it acts and Caminito lets it in.
+        assert_eq!(
+            daemon.signals(),
+            [
+                signal("ActivationToken", &format!("({id}, 'xdg-token')")),
+                signal("ActionInvoked", &format!("({id}, 'default')")),
+                signal("NotificationClosed", &format!("({id}, {DISMISSED})")),
+            ]
+        );
+        assert!(caminito.activated().is_empty());
     });
 }
 
@@ -746,6 +917,66 @@ fn a_click_invokes_the_default_action_and_a_resident_notification_stays() {
             [signal("ActionInvoked", &format!("({id}, 'default')"))]
         );
         assert_eq!(daemon.bubbles.ids(), [id]);
+    });
+}
+
+#[test]
+fn an_inline_reply_action_is_a_reply_field_with_the_apps_placeholder() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+
+        let with_placeholder = daemon.notify(Notify {
+            actions: vec!["default", "Open", "inline-reply", "Send", "mute", "Mute"],
+            ..notify("Ana").hint("x-kde-reply-placeholder-text", "Reply to Ana…")
+        });
+        let without_placeholder = daemon.notify(Notify {
+            actions: vec!["inline-reply", "Send"],
+            ..notify("Bob")
+        });
+
+        let bubble = daemon.bubbles.bubble(with_placeholder);
+        assert_eq!(bubble.reply.as_deref(), Some("Reply to Ana…"));
+        // The field isn't a button.
+        assert_eq!(
+            bubble.actions,
+            [Action {
+                key: "mute".to_owned(),
+                label: "Mute".to_owned()
+            }]
+        );
+        // Without the hint, the action's label is the placeholder.
+        assert_eq!(
+            daemon.bubbles.bubble(without_placeholder).reply.as_deref(),
+            Some("Send")
+        );
+        assert_eq!(
+            daemon.bubbles.bubble(daemon.notify(notify("Plain"))).reply,
+            None
+        );
+    });
+}
+
+#[test]
+fn a_reply_from_the_bubble_reaches_the_app_and_closes_the_notification() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let id = daemon.notify(Notify {
+            actions: vec!["inline-reply", "Reply"],
+            ..notify("Ana")
+        });
+
+        daemon.bubbles.events(id).reply("On my way");
+        daemon.wait_for_signals(2);
+
+        assert_eq!(
+            daemon.signals(),
+            [
+                signal("NotificationReplied", &format!("({id}, 'On my way')")),
+                signal("NotificationClosed", &format!("({id}, {DISMISSED})")),
+            ]
+        );
+        assert!(daemon.bubbles.ids().is_empty());
+        assert!(daemon.summaries().is_empty());
     });
 }
 
@@ -855,7 +1086,14 @@ fn a_notification_enters_the_history_with_what_a_bubble_shows_unless_it_is_trans
         let id = daemon.notify(Notify {
             icon: "mail-unread",
             body: "From <b>Ann</b> & Bob",
-            actions: vec!["default", "Open", "reply", "Reply"],
+            actions: vec![
+                "default",
+                "Open",
+                "inline-reply",
+                "Reply",
+                "archive",
+                "Archive",
+            ],
             ..notify("New mail").hint("x-kde-reply-placeholder-text", "Reply to Ann")
         });
         daemon.notify(notify("Gone").hint("transient", true));
@@ -870,10 +1108,10 @@ fn a_notification_enters_the_history_with_what_a_bubble_shows_unless_it_is_trans
                 summary: "New mail".to_owned(),
                 body: "From <b>Ann</b> &amp; Bob".to_owned(),
                 image: String::new(),
-                actions: vec![("reply".to_owned(), "Reply".to_owned())],
+                actions: vec![("archive".to_owned(), "Archive".to_owned())],
                 has_default: true,
                 resident: false,
-                reply: true,
+                reply: "Reply to Ann".to_owned(),
                 time: 1_000_000,
             }]
         );
@@ -1346,12 +1584,7 @@ fn the_api_refuses_an_action_the_entry_doesnt_have_and_an_entry_that_isnt_there(
             ..notify("Message")
         });
 
-        // There's no default action here, and no such action.
-        assert!(
-            daemon
-                .try_api("InvokeAction", (id, "default", "").to_variant())
-                .is_err()
-        );
+        // There's no such action.
         assert!(
             daemon
                 .try_api("InvokeAction", (id, "other", "").to_variant())
@@ -1370,22 +1603,51 @@ fn the_api_refuses_an_action_the_entry_doesnt_have_and_an_entry_that_isnt_there(
 }
 
 #[test]
+fn the_api_clicking_an_entry_without_a_default_action_brings_its_app_forward() {
+    bus::run(|bus| {
+        let caminito = FakeCaminito::start(bus);
+        let daemon = start(bus);
+        let id = daemon.notify(Notify {
+            timeout: 0,
+            actions: vec!["open", "Open"],
+            ..notify("Mail").hint("desktop-entry", "org.gnome.Evolution.desktop")
+        });
+        daemon.forget_signals();
+
+        daemon.api("InvokeAction", (id, "default", "").to_variant());
+        bus.wait_until("the activation", || !caminito.activated().is_empty());
+        daemon.wait_for_signals(1);
+
+        assert_eq!(caminito.activated(), ["org.gnome.Evolution"]);
+        assert_eq!(
+            daemon.signals(),
+            [signal(
+                "NotificationClosed",
+                &format!("({id}, {DISMISSED})")
+            )]
+        );
+        assert!(daemon.summaries().is_empty());
+    });
+}
+
+#[test]
 fn the_api_replies_to_an_entry_with_a_reply_field_and_refuses_one_without() {
     bus::run(|bus| {
         let daemon = start(bus);
         let with = daemon.notify(Notify {
             timeout: 0,
-            ..notify("Chat").hint("x-kde-reply-placeholder-text", "Reply")
+            actions: vec!["inline-reply", "Reply"],
+            ..notify("Chat")
         });
+        // A placeholder without the action is no reply field.
         let without = daemon.notify(Notify {
             timeout: 0,
-            ..notify("Plain")
+            ..notify("Plain").hint("x-kde-reply-placeholder-text", "Reply")
         });
         let resident = daemon.notify(Notify {
             timeout: 0,
-            ..notify("Resident")
-                .hint("x-kde-reply-placeholder-text", "Reply")
-                .hint("resident", true)
+            actions: vec!["inline-reply", "Reply"],
+            ..notify("Resident").hint("resident", true)
         });
         daemon.forget_signals();
 
@@ -1444,6 +1706,8 @@ fn with_previews_off_a_bubble_shows_only_its_app_and_notification() {
                     key: "reply".to_owned(),
                     label: "Reply".to_owned()
                 }],
+                reply: None,
+                progress: None,
             }
         );
     });
