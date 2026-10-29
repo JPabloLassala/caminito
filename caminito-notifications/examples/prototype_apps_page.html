@@ -134,7 +134,7 @@ td.app { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
 button.send { font: inherit; font-weight: 700; color: var(--accent-fg); background: var(--accent); border: 0; border-radius: 6px; padding: 7px 16px; cursor: pointer; }
 button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .desktop {
-  --desk: #2d4a5e; --desk-2: #1d3242; --bubble: rgb(36 39 44 / .94); --center: rgb(30 33 38); --bubble-fg: #eef0f3; --bubble-muted: #aab2bf;
+  --desk: #2d4a5e; --desk-2: #1d3242; --bubble: rgb(36 39 44 / .94); --center: rgb(30 33 38); --stack1: rgb(58 62 70); --stack2: rgb(46 49 55); --bubble-fg: #eef0f3; --bubble-muted: #aab2bf;
   position: relative; height: 470px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line);
   background: linear-gradient(160deg, var(--desk), var(--desk-2)); color: var(--bubble-fg);
 }
@@ -178,7 +178,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 .bubble:hover .x, .bubble .x:focus-visible { opacity: 1; }
 .bubble.critical { box-shadow: 0 0 0 2px #e0654f, 0 6px 18px rgb(0 0 0 / .35); }
 .bubble .timer { height: 2px; background: rgb(255 255 255 / .25); border-radius: 1px; transform-origin: left; }
-.queued { position: absolute; bottom: 70px; right: 14px; font-size: 12px; color: var(--bubble-muted); }
+.queued { position: absolute; z-index: 6; top: 7px; right: 150px; font-size: 12px; color: var(--bubble-muted); }
 .dock { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; padding: 8px 12px; border-radius: 14px; background: rgb(0 0 0 / .4); }
 .dock .item { position: relative; }
 .dock .icon { width: 32px; height: 32px; border-radius: 8px; font-size: 14px; }
@@ -187,6 +187,25 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 .log li { display: flex; gap: 10px; align-items: baseline; }
 .log .chip { flex: none; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--chrome); border: 1px solid var(--line); }
 .log .chip.bubble-shown { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.bubble.stacked-1 { box-shadow: 0 6px 0 -2px var(--stack1), 0 6px 18px rgb(0 0 0 / .35); margin-bottom: 6px; }
+.bubble.stacked-2 { box-shadow: 0 6px 0 -2px var(--stack1), 0 12px 0 -5px var(--stack2), 0 6px 18px rgb(0 0 0 / .35); margin-bottom: 12px; }
+.bubble.critical.stacked-1, .bubble.critical.stacked-2 { box-shadow: 0 0 0 2px #e0654f; }
+.bubble .more { font: inherit; font-size: 12px; color: var(--bubble-fg); background: rgb(255 255 255 / .1); border: 0; border-radius: 6px; padding: 3px 9px; cursor: pointer; justify-self: start; margin-top: 2px; }
+.bubble .count-pill { margin-left: auto; margin-right: 18px; font-size: 11px; font-weight: 700; background: rgb(255 255 255 / .16); color: var(--bubble-fg); border-radius: 9px; padding: 0 7px; }
+.bubble .digest { list-style: none; margin: 4px 0 0; padding: 6px 0 0; border-top: 1px solid rgb(255 255 255 / .1); display: grid; gap: 2px; font-size: 13px; color: var(--bubble-muted); }
+.bubble .digest li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bubble .expanded { display: grid; gap: 6px; border-top: 1px solid rgb(255 255 255 / .1); padding-top: 6px; margin-top: 2px; }
+.bubble .older .summary { font-size: 14px; }
+.bubble .older .body { font-size: 13px; }
+.sub { font-size: 15px; margin: 4px 0 0; }
+.design-tile .bubble { animation: none; }
+.designs { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.design { text-align: left; color: var(--fg); background: var(--window); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 8px; align-content: start; cursor: pointer; }
+.design[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.design .d-name { font-weight: 700; }
+.design .d-desc { font-size: 13px; color: var(--muted); }
+.design-tile { --bubble: rgb(36 39 44 / .94); --bubble-fg: #eef0f3; --bubble-muted: #aab2bf; --stack1: rgb(58 62 70); --stack2: rgb(46 49 55);
+  background: linear-gradient(160deg, #2d4a5e, #1d3242); border-radius: 8px; padding: 12px 12px 18px; color: var(--bubble-fg); }
 @keyframes pop { from { transform: translateY(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 @media (max-width: 640px) {
@@ -225,7 +244,10 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
 
   <section class="try" aria-label="Send a test notification">
     <h2>Send a test notification</h2>
-    <p class="dim">The Notification center is open on the left with six example notifications: Firefox, Signal and Slack. Firefox and Signal are grouped; Slack has grouping off, so its two notifications stand alone among the groups by their time. Untick or tick Group in the table and the center regroups. The bell opens and closes it. Sent notifications follow the settings as they are now. Bubbles show top right, stay 7 seconds (critical ones until closed), pause while hovered, and at most 3 show at once.</p>
+    <p class="dim">Grouping covers bubbles and the Notification center. With Group on, an app's next notification joins its bubble on screen instead of opening another, and its timer starts again. With Group off, each gets its own bubble, unless one app sends more than 3 within 5 seconds. A critical notification always has a bubble of its own. The center on the left starts with six examples, and Slack starts ungrouped. Bubbles show top right, stay 7 seconds, pause while hovered, and at most 3 show at once.</p>
+    <h3 class="sub">Grouped bubble design</h3>
+    <p class="dim">Three Signal messages in a row, as one grouped bubble. Pick one; the desktop below uses it.</p>
+    <div class="designs" id="designs" role="radiogroup" aria-label="Grouped bubble design"></div>
     <div class="try-controls">
       <label class="field" for="try-app">From <select id="try-app"></select></label>
       <label class="field" for="try-site" id="try-site-field" hidden>Tab <select id="try-site"><option value="claude" selected>claude.ai</option><option value="github">github.com</option><option value="">None (Firefox itself)</option></select></label>
@@ -234,6 +256,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
       <label class="check" for="try-crit"><input type="checkbox" id="try-crit" checked>Critical notifications break through</label>
       <label class="check" for="try-sound"><input type="checkbox" id="try-sound">Play sounds out loud</label>
       <button type="button" class="send" id="try-send">Send notification</button>
+      <button type="button" class="plain" id="try-burst">Send 3 quickly</button>
       <button type="button" class="plain" id="try-clear">Clear all</button>
     </div>
     <div class="desktop" id="desktop">
@@ -257,7 +280,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
       <li><strong>Badge and Break through Do Not Disturb on the Default row.</strong>The global schema, <code>org.mate.Caminito.notifications</code>, has no default key for either, so here they're greyed out on the Default row. Either the schema gets the two keys, or the Default row shows five of the seven settings.</li>
       <li><strong>What applies under each Delivery.</strong>CMN-262 settles that "History only" plays no sound. Here, under History only, just Group and Badge stay editable, and under Off nothing does.</li>
     </ol>
-    <p class="dim">Settled: an app follows the default as a whole until it has its own settings; grouping is on or off per app, with no grouping by conversation in v1; bubble stacking ignores it.</p>
+    <p class="dim">Settled: an app follows the default as a whole until it has its own settings; grouping is on or off per app, for bubbles and the center alike, with no grouping by conversation in v1.</p>
   </section>
 </main>
 
@@ -268,7 +291,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     ["Play a sound", "Sound", "sound"],
     ["Show previews in bubbles", "Previews", "previews"],
     ["Show the app's icon in bubbles", "Icon", "icon"],
-    ["Group in the Notification center", "Group", "group"],
+    ["Group notifications", "Group", "group"],
     ["Show a badge on its Dock item", "Badge", "badge"],
     ["Break through Do Not Disturb", "Breaks DND", "dnd"],
   ];
@@ -470,6 +493,16 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     claude: { origin: "claude.ai", color: "#c96442", letter: "C", summary: "Claude", body: "Your answer is ready.", actions: [] },
     github: { origin: "github.com", color: "#2b3137", letter: "G", summary: "JPabloLassala/camino", body: "CI passed on master", actions: ["View"] },
   };
+  const MORE = {
+    "org.signal.Signal": [["Ana", "¿Venís a cenar el jueves?"], ["Ana", "Llevo postre"], ["Ana", "Avisame antes de las 6"]],
+    "slack": [["#camino-dev", "Mira the build is green again"], ["#camino-dev", "Who's reviewing CMN-262?"], ["Leo", "Lunch?"]],
+    "org.mozilla.Thunderbird": [["Linear", "CMN-262 was moved to In Progress"], ["Linear", "CMN-265 was moved to Todo"], ["GitHub", "New review on #41"]],
+    "code": [["Build finished", "cargo build: 0 errors, 2 warnings"], ["Tests finished", "cargo test: 214 passed"], ["Build failed", "cargo build: 1 error"]],
+  };
+  const seq = {};
+  const nextK = i => (seq[i] = (seq[i] || 0) + 1) - 1;
+  const textFor = (i, site, k) => site ? [SITES[site].summary, SITES[site].body]
+    : MORE[apps[i].id] ? MORE[apps[i].id][(k || 0) % MORE[apps[i].id].length] : SAMPLES[apps[i].id].slice(0, 2);
   const TIMEOUT = 7000, MAX = 3;
   // The Notification history: what the center shows and the badges count.
   let history = [], nextId = 1, logLines = [], queue = [], visible = [];
@@ -478,11 +511,12 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     const ago = m => Date.now() - m * 60000;
     // Examples, oldest first: Firefox (index 2), Signal (4) and Slack (5).
     [[2, "claude", 42], [5, "", 30], [2, "github", 18], [4, "", 12], [5, "", 6], [2, "", 3]]
-      .forEach(([i, site, m]) => history.push({ id: nextId++, i, site, time: ago(m) }));
+      .forEach(([i, site, m]) => history.push({ id: nextId++, i, site, time: ago(m), k: nextK(i) }));
   }
   const countOf = i => history.filter(h => h.i === i).length;
   const $ = id => document.getElementById(id);
   $("try-app").innerHTML = apps.slice(1).map((app, n) => `<option value="${n + 1}">${esc(app.name)}</option>`).join("");
+  $("try-app").value = "4";
 
   function beep() {
     if (!$("try-sound").checked) return;
@@ -499,6 +533,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   }
 
   function renderDesk() {
+    renderGallery();
     $("desk-dot").hidden = history.length === 0;
     $("desk-count").textContent = history.length ? String(history.length) : "";
     $("desk-bell").classList.toggle("dnd", $("try-dnd").checked);
@@ -513,12 +548,22 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
   }
   function log(chip, cls, text) { logLines.unshift([chip, cls, text]); renderDesk(); }
 
-  function showBubble(n) {
-    if (visible.length >= MAX) { queue.push(n); renderDesk(); return; }
+  // Bubbles. A grouped app's next notification joins its bubble; a critical one always has its own.
+  const DESIGNS = [["stack", "Stack"], ["digest", "Digest"], ["expand", "Expand"]];
+  const DESC = {
+    stack: "The newest on top, the others as card edges behind it, and a line saying how many more.",
+    digest: "The newest in full, then the two before it on a line each, with the count in the header.",
+    expand: "The newest in full, and a count that opens the others inside the bubble.",
+  };
+  let design = "stack";
+  const FLOOD = 3, FLOOD_WINDOW = 5000;
+  const opened = [];
+
+  function parts(n) {
     const app = apps[n.i], p = n.prefs;
     const site = n.site ? SITES[n.site] : null;
-    const [summary, body, image, actions] = site ? [site.summary, site.body, null, site.actions] : SAMPLES[app.id];
-    // The site's icon is the notification's image, so Previews hides it; the badge is the app icon.
+    const [summary, body] = textFor(n.i, n.site, n.k);
+    const [, , image, actions] = site ? [0, 0, null, site.actions] : SAMPLES[app.id];
     let lead = "", top = `${p.flags[2] ? icon(app) : ""}<span>${esc(app.name)}</span>`;
     if (site) {
       const appIcon = cls => `<span class="icon ${cls}" style="background:${app.color}" aria-hidden="true">${app.letter}</span>`;
@@ -528,50 +573,133 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
       lead = main ? `<span class="lead">${main}${badge}</span>` : "";
       top = `<span>${p.flags[1] ? esc(site.origin) + " · " : ""}${esc(app.name)}</span>`;
     }
-    const el = document.createElement("div");
-    el.className = "bubble" + (n.critical ? " critical" : "");
-    el.innerHTML = `<div class="top">${top}</div>
-      <div class="body-row">${lead}<div class="text">${p.flags[1]
-        ? `<div class="summary">${esc(summary)}</div><div class="body">${esc(body)}</div>`
-        : `<div class="summary">Notification</div>`}</div>
-        ${p.flags[1] && image ? `<span class="image" style="background:${image}" aria-hidden="true"></span>` : ""}</div>
-      ${actions.length ? `<div class="actions">${actions.map(a => `<span>${esc(a)}</span>`).join("")}</div>` : ""}
-      ${n.critical ? "" : '<div class="timer"></div>'}
+    const text = p.flags[1] ? `<div class="summary">${esc(summary)}</div><div class="body">${esc(body)}</div>` : `<div class="summary">Notification</div>`;
+    const img = p.flags[1] && image ? `<span class="image" style="background:${image}" aria-hidden="true"></span>` : "";
+    const acts = actions.length ? `<div class="actions">${actions.map(a => `<span>${esc(a)}</span>`).join("")}</div>` : "";
+    const line = p.flags[1] ? `${summary} · ${body}` : "Notification";
+    return { top, lead, text, img, acts, line };
+  }
+  function bubbleClass(b, d) {
+    const n = b.items.length;
+    return "bubble" + (b.critical ? " critical" : "") + (d === "stack" && n > 1 ? (n > 2 ? " stacked-2" : " stacked-1") : "");
+  }
+  function bubbleHtml(b, d) {
+    const items = b.items, q = parts(items[items.length - 1]), app = apps[b.i], more = items.length - 1;
+    const older = items.slice(0, -1).reverse();
+    const moreBtn = n => `<button type="button" class="more" data-more-of="${b.i}">+${n} more from ${esc(app.name)}</button>`;
+    let extra = "";
+    if (more && d === "stack") extra = moreBtn(more);
+    if (more && d === "digest") extra = `<ul class="digest">${older.slice(0, 2).map(n => `<li>${esc(parts(n).line)}</li>`).join("")}</ul>` + (older.length > 2 ? moreBtn(older.length - 2) : "");
+    if (more && d === "expand") extra = `<button type="button" class="more" data-toggle>${b.open ? "Show less" : `${items.length} notifications ▾`}</button>`
+      + (b.open ? `<div class="expanded">${older.map(n => `<div class="older">${parts(n).text}</div>`).join("")}</div>` : "");
+    const head = d === "digest" && more ? `${q.top}<span class="count-pill">${items.length}</span>` : q.top;
+    return `<div class="top">${head}</div>
+      <div class="body-row">${q.lead}<div class="text">${q.text}</div>${q.img}</div>
+      ${q.acts}${extra}
+      ${b.critical || !b.live ? "" : '<div class="timer"></div>'}
       <button type="button" class="x" aria-label="Close">×</button>`;
-    const box = $("desk-bubbles");
-    box.prepend(el);
-    visible.push(el);
-    let left = TIMEOUT, started = Date.now(), timer = null;
-    const bar = el.querySelector(".timer");
-    const close = () => {
-      clearTimeout(timer); el.remove(); visible = visible.filter(v => v !== el);
-      if (queue.length) showBubble(queue.shift());
-      renderDesk();
-    };
-    const run = () => {
-      if (n.critical) return;
-      started = Date.now(); timer = setTimeout(close, left);
-      if (bar) { bar.style.transition = `transform ${left}ms linear`; requestAnimationFrame(() => { bar.style.transform = "scaleX(0)"; }); }
-    };
-    el.addEventListener("mouseenter", () => {
-      if (n.critical) return;
-      clearTimeout(timer); left -= Date.now() - started;
-      if (bar) { const now = getComputedStyle(bar).transform; bar.style.transition = "none"; bar.style.transform = now; }
-    });
-    el.addEventListener("mouseleave", run);
-    el.querySelector(".x").addEventListener("click", close);
-    if (bar) bar.style.transform = "scaleX(1)";
-    run();
-    if (p.flags[0]) flashSound();
+  }
+  function paint(b) {
+    b.el.className = bubbleClass(b, design);
+    b.el.innerHTML = bubbleHtml(b, design);
+    b.bar = b.el.querySelector(".timer");
+    if (b.bar) b.bar.style.transform = `scaleX(${Math.max(0, b.left) / TIMEOUT})`;
+  }
+  function run(b) {
+    if (b.critical || !b.live || b.open) return;
+    clearTimeout(b.timer); b.started = Date.now();
+    b.timer = setTimeout(() => close(b), b.left);
+    if (b.bar) {
+      b.bar.style.transition = "none"; b.bar.style.transform = `scaleX(${b.left / TIMEOUT})`;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!b.bar) return;
+        b.bar.style.transition = `transform ${b.left}ms linear`; b.bar.style.transform = "scaleX(0)";
+      }));
+    }
+  }
+  function pause(b) {
+    if (b.critical || !b.live) return;
+    clearTimeout(b.timer); b.left = Math.max(0, b.left - (Date.now() - b.started));
+    if (b.bar) { b.bar.style.transition = "none"; b.bar.style.transform = `scaleX(${b.left / TIMEOUT})`; }
+  }
+  function close(b) {
+    clearTimeout(b.timer); b.live = false; if (b.el) b.el.remove();
+    visible = visible.filter(v => v !== b);
+    if (queue.length) open(queue.shift());
     renderDesk();
   }
+  function open(b) {
+    if (visible.length >= MAX) { queue.push(b); renderDesk(); return; }
+    b.live = true; b.left = TIMEOUT; b.started = Date.now();
+    b.el = document.createElement("div");
+    paint(b);
+    $("desk-bubbles").prepend(b.el);
+    visible.push(b);
+    b.el.addEventListener("mouseenter", () => pause(b));
+    b.el.addEventListener("mouseleave", () => run(b));
+    b.el.addEventListener("click", e => {
+      const t = e.target.closest("button"); if (!t) return;
+      if (t.classList.contains("x")) close(b);
+      else if (t.dataset.moreOf) { close(b); openCenterAt(b.i); }
+      else if (t.hasAttribute("data-toggle")) { b.open = !b.open; pause(b); paint(b); if (!b.open) run(b); }
+    });
+    run(b);
+    if (b.items[b.items.length - 1].prefs.flags[0]) flashSound();
+    renderDesk();
+  }
+  function join(b, n) {
+    b.items.push(n);
+    if (b.live) { b.left = TIMEOUT; paint(b); run(b); if (n.prefs.flags[0]) flashSound(); }
+    renderDesk();
+  }
+  // Returns how the notification was shown: "new", "joined" or "burst".
+  function deliver(n) {
+    if (!n.critical) {
+      const mine = [...visible, ...queue].filter(b => b.i === n.i && !b.critical);
+      const grouped = n.prefs.flags[3];
+      const target = mine.find(b => grouped || b.burst);
+      if (target) { join(target, n); return "joined"; }
+      if (!grouped) {
+        const now = Date.now();
+        const recent = opened.filter(o => o.i === n.i && now - o.time < FLOOD_WINDOW).length;
+        if (recent >= FLOOD && mine.length) { const last = mine[mine.length - 1]; last.burst = true; join(last, n); return "burst"; }
+      }
+    }
+    opened.push({ i: n.i, time: Date.now() });
+    open({ i: n.i, items: [n], critical: n.critical });
+    return "new";
+  }
+  function openCenterAt(i) {
+    $("desk-center").hidden = false; $("desk-bell").setAttribute("aria-expanded", "true");
+    expanded.add(i); renderDesk();
+  }
+  function renderGallery() {
+    const prefs = effective(4);
+    const sample = k => ({ i: 4, prefs, critical: false, site: "", k });
+    $("designs").innerHTML = DESIGNS.map(([key, name], d) => {
+      const b = { i: 4, items: [sample(0), sample(1), sample(2)], critical: false, live: false, open: false };
+      return `<div class="design" role="radio" tabindex="0" aria-checked="${key === design}" data-design="${key}">
+        <span class="d-name">${"ABC"[d]} · ${name}</span><span class="d-desc">${DESC[key]}</span>
+        <div class="design-tile" inert><div class="${bubbleClass(b, key)}">${bubbleHtml(b, key)}</div></div></div>`;
+    }).join("");
+  }
+  function pick(key) {
+    design = key; renderGallery();
+    visible.forEach(b => { pause(b); b.open = false; paint(b); run(b); });
+  }
+  $("designs").addEventListener("click", e => { const c = e.target.closest("[data-design]"); if (c) pick(c.dataset.design); });
+  $("designs").addEventListener("keydown", e => {
+    const c = e.target.closest("[data-design]"); if (!c) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(c.dataset.design); }
+  });
 
   $("try-send").addEventListener("click", () => {
     const i = +$("try-app").value, app = apps[i], prefs = effective(i);
     const critical = $("try-urgency").value === "critical", dnd = $("try-dnd").checked;
     const site = app.id === "firefox" ? $("try-site").value : "";
     if (prefs.delivery === "off") { log("Off", "", `${app.name}: nothing shown and not kept.`); return; }
-    history.push({ id: nextId++, i, site, time: Date.now() });
+    const k = nextK(i);
+    history.push({ id: nextId++, i, site, time: Date.now(), k });
     const badge = prefs.flags[4] ? " Its Dock item shows the count." : " Badge off, so no count on its Dock item.";
     if (prefs.delivery === "history") { log("History only", "", `${app.name}: no bubble, added to the Notification center.${badge}`); return; }
     const why = critical && $("try-crit").checked ? "critical" : prefs.flags[5] ? "the app breaks through" : null;
@@ -582,12 +710,15 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     if (!prefs.flags[1]) notes.push("previews off");
     if (!prefs.flags[2]) notes.push("no app icon");
     if (site) notes.unshift(`from the ${SITES[site].origin} tab`);
-    log("Bubble", "bubble-shown", `${app.name}: ${notes.join(", ")}.${badge}`);
-    showBubble({ i, prefs, critical, site });
+    const how = deliver({ i, prefs, critical, site, k });
+    if (how === "joined") notes.unshift("joined its bubble");
+    if (how === "burst") notes.unshift("more than 3 in 5 seconds, so it joined the last bubble");
+    log(how === "new" ? "Bubble" : "Grouped", "bubble-shown", `${app.name}: ${notes.join(", ")}.${badge}`);
   });
+  $("try-burst").addEventListener("click", () => { for (let n = 0; n < 3; n++) $("try-send").click(); });
   $("try-clear").addEventListener("click", () => {
     history = []; expanded.clear();
-    queue = []; visible.forEach(el => el.remove()); visible = []; logLines = [];
+    queue = []; visible.forEach(b => { clearTimeout(b.timer); b.el.remove(); }); visible = []; logLines = [];
     renderDesk();
   });
   const SHOWN = 2;
@@ -595,11 +726,7 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
     const m = Math.floor((Date.now() - time) / 60000);
     return m < 1 ? "now" : `${m} min ago`;
   }
-  function textOf(h) {
-    if (h.site) return [SITES[h.site].summary, SITES[h.site].body];
-    const [summary, body] = SAMPLES[apps[h.i].id];
-    return [summary, body];
-  }
+  function textOf(h) { return textFor(h.i, h.site, h.k); }
   function entryHtml(h) {
     const [summary, body] = textOf(h);
     return `<div class="c-entry"><span class="s">${esc(summary)}</span><span class="b">${esc(body)}</span><span class="age">${age(h.time)}</span>
@@ -618,10 +745,10 @@ button.plain { font: inherit; font-size: 14px; color: var(--fg); background: var
       if (effective(h.i).flags[3]) {
         if (!groups.has(h.i)) groups.set(h.i, { i: h.i, items: [] });
         groups.get(h.i).items.push(h);
-      } else units.push({ one: h, time: h.time });
+      } else units.push({ one: h, time: h.time, id: h.id });
     });
-    groups.forEach(g => { g.items.sort((a, b) => b.time - a.time); g.time = g.items[0].time; units.push(g); });
-    units.sort((a, b) => b.time - a.time);
+    groups.forEach(g => { g.items.sort((a, b) => b.time - a.time || b.id - a.id); g.time = g.items[0].time; g.id = g.items[0].id; units.push(g); });
+    units.sort((a, b) => b.time - a.time || b.id - a.id);
     return top + units.map(u => {
       if (u.one) return `<div class="c-one">${headHtml(u.one.i, '<span>Not grouped</span>')}${entryHtml(u.one)}</div>`;
       const open = expanded.has(u.i), shown = open ? u.items : u.items.slice(0, SHOWN), more = u.items.length - shown.length;
