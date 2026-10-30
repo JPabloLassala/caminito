@@ -40,6 +40,7 @@ mod global_menu;
 mod grabs;
 mod gtk_shell;
 mod headless;
+mod headless_gles;
 mod hot_corners;
 mod idle;
 mod image_capture;

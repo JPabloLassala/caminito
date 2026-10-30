@@ -1,11 +1,17 @@
-//! The headless backend: virtual outputs of any size and scale, rendered with pixman into
-//! memory, for tests (14, 15).
+//! The headless backend: virtual outputs of any size and scale, rendered into memory, for
+//! tests (14, 15). It draws with pixman, or, for a test of a shader's pixels, with GLES on
+//! surfaceless EGL, Mesa's llvmpipe where there's no GPU (CMN-230).
 
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::egl::native::EGLSurfacelessDisplay;
+use smithay::backend::egl::{self, EGLContext, EGLDisplay};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElementStates;
+use smithay::backend::renderer::gles::{GlesError, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::pixman::PixmanRenderer;
-use smithay::backend::renderer::{Bind, Color32F, ExportMem, Offscreen};
+use smithay::backend::renderer::{
+    Bind, Color32F, ExportMem, ImportAll, ImportMem, Offscreen, Renderer,
+};
 use smithay::output::{Mode, Output};
 use smithay::reexports::pixman::Image;
 use smithay::utils::{Buffer, Physical, Point, Raw, Rectangle, Size, Transform};
@@ -14,9 +20,56 @@ use crate::output::{DEFAULT_REFRESH, virtual_output};
 use crate::scene::{self, CLEAR_COLOR};
 use crate::state::Caminito;
 
-/// The pixman renderer and every virtual output.
+/// Why the GLES renderer can't be had.
+#[derive(Debug)]
+pub enum Error {
+    /// There's no surfaceless EGL display, or no context on it.
+    Egl(egl::Error),
+    /// The context can't run Smithay's GLES renderer.
+    Gles(GlesError),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Egl(err) => write!(f, "can't create surfaceless EGL: {err}"),
+            Error::Gles(err) => write!(f, "can't start the GLES renderer: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+/// What the headless backend draws with, and the memory of each output.
+pub enum Drawing {
+    /// Pixman, which every test draws with unless it chooses GLES.
+    Pixman(PixmanRenderer, Vec<Image<'static, 'static>>),
+    /// GLES, which runs the scene's shaders.
+    Gles(Box<GlesRenderer>, Vec<GlesTexture>),
+}
+
+/// Runs `$body` with `$renderer` as the drawing's renderer and `$texture` as its texture
+/// type, and `$memory` as its outputs' memory, whichever it draws with.
+macro_rules! drawing {
+    ($drawing:expr, $renderer:ident, $memory:ident, $texture:ident => $body:expr) => {
+        match $drawing {
+            $crate::backend::headless::Drawing::Pixman($renderer, $memory) => {
+                type $texture = smithay::reexports::pixman::Image<'static, 'static>;
+                $body
+            }
+            $crate::backend::headless::Drawing::Gles($renderer, $memory) => {
+                let $renderer = &mut **$renderer;
+                type $texture = smithay::backend::renderer::gles::GlesTexture;
+                $body
+            }
+        }
+    };
+}
+pub(crate) use drawing;
+
+/// The renderer and every virtual output.
 pub struct Headless {
-    renderer: PixmanRenderer,
+    drawing: Drawing,
     targets: Vec<Target>,
     /// How many outputs were ever plugged in, which names the next one.
     plugged: usize,
@@ -31,10 +84,10 @@ pub struct Headless {
     gamma_size: Option<u32>,
 }
 
-/// A virtual output and the memory it renders into.
+/// A virtual output. The memory it renders into is the drawing's, at its index.
 struct Target {
     output: Output,
-    buffer: Image<'static, 'static>,
+    size: Size<i32, Buffer>,
     damage_tracker: OutputDamageTracker,
     rendered: bool,
     /// Whether it was found and is yet to be lit, as a monitor on the tty is until the
@@ -49,9 +102,27 @@ struct Target {
 }
 
 impl Default for Headless {
+    /// Drawing with pixman.
     fn default() -> Self {
+        let renderer = PixmanRenderer::new().expect("pixman renderer");
+        Self::drawing(Drawing::Pixman(renderer, Vec::new()))
+    }
+}
+
+impl Headless {
+    /// Drawing with GLES on surfaceless EGL, or the reason it can't.
+    pub fn gles() -> Result<Self, Error> {
+        // Safety: no other code in the tests creates EGL displays.
+        let display = unsafe { EGLDisplay::new(EGLSurfacelessDisplay) }.map_err(Error::Egl)?;
+        let context = EGLContext::new(&display).map_err(Error::Egl)?;
+        // Safety: the context is new, and only this renderer makes it current.
+        let renderer = unsafe { GlesRenderer::new(context) }.map_err(Error::Gles)?;
+        Ok(Self::drawing(Drawing::Gles(Box::new(renderer), Vec::new())))
+    }
+
+    fn drawing(drawing: Drawing) -> Self {
         Self {
-            renderer: PixmanRenderer::new().expect("pixman renderer"),
+            drawing,
             targets: Vec::new(),
             plugged: 0,
             refused: Vec::new(),
@@ -59,11 +130,10 @@ impl Default for Headless {
             gamma_size: None,
         }
     }
-}
 
-impl Headless {
-    pub fn renderer(&mut self) -> &mut PixmanRenderer {
-        &mut self.renderer
+    /// What it draws with, for the code generic over a renderer.
+    pub(crate) fn renderer(&mut self) -> &mut Drawing {
+        &mut self.drawing
     }
 
     /// Plugs in a virtual monitor whose EDID says it's `physical_size` millimetres, with
@@ -100,14 +170,12 @@ impl Headless {
             });
         }
 
-        let buffer = self
-            .renderer
-            .create_buffer(Fourcc::Argb8888, (mode.w, mode.h).into())
-            .expect("pixman buffer");
+        let size = (mode.w, mode.h).into();
+        drawing!(&mut self.drawing, renderer, memory, _T => memory.push(create(renderer, size)));
         self.targets.push(Target {
             damage_tracker: OutputDamageTracker::from_output(&output),
             output: output.clone(),
-            buffer,
+            size,
             rendered: false,
             unlit: true,
             mode_sets: Vec::new(),
@@ -196,11 +264,13 @@ impl Headless {
         if self.refused.contains(&(output.name(), mode)) {
             return false;
         }
-        let target = target_mut(&mut self.targets, output).expect("a headless output");
-        target.buffer = self
-            .renderer
-            .create_buffer(Fourcc::Argb8888, (mode.size.w, mode.size.h).into())
-            .expect("pixman buffer");
+        let index = target_index(&self.targets, output).expect("a headless output");
+        let size = (mode.size.w, mode.size.h).into();
+        drawing!(&mut self.drawing, renderer, memory, _T => {
+            memory[index] = create(renderer, size);
+        });
+        let target = &mut self.targets[index];
+        target.size = size;
         target.rendered = false;
         target.mode_sets.push(mode);
         true
@@ -259,35 +329,30 @@ impl Headless {
 
     /// Unplugs a virtual monitor.
     pub fn unplug(&mut self, caminito: &mut Caminito, output: &Output) {
-        self.targets.retain(|target| target.output != *output);
+        if let Some(index) = target_index(&self.targets, output) {
+            self.targets.remove(index);
+            drawing!(&mut self.drawing, _renderer, memory, _T => {
+                memory.remove(index);
+            });
+        }
         caminito.remove_output(output);
     }
 
     /// Renders `output`, and returns how each element was drawn.
     pub fn render(&mut self, caminito: &mut Caminito, output: &Output) -> RenderElementStates {
-        let target = target_mut(&mut self.targets, output).expect("a headless output");
-        let mut framebuffer = self.renderer.bind(&mut target.buffer).expect("bind");
-        let elements = scene::output_elements(&mut self.renderer, caminito, output);
-        let states = target
-            .damage_tracker
-            .render_output(
-                &mut self.renderer,
-                &mut framebuffer,
-                0,
-                &elements,
-                CLEAR_COLOR,
-            )
-            .expect("render")
-            .states;
+        let index = target_index(&self.targets, output).expect("a headless output");
+        let target = &mut self.targets[index];
+        let states = drawing!(&mut self.drawing, renderer, memory, _T => {
+            render(renderer, &mut memory[index], &mut target.damage_tracker, caminito, output)
+        });
         target.rendered = true;
         states
     }
 
     /// The output's pixels as ARGB8888, row by row, or `None` before it's first rendered.
     pub fn pixels(&mut self, output: &Output) -> Option<Vec<u32>> {
-        let target = target_mut(&mut self.targets, output)?;
-        let size = (target.buffer.width() as i32, target.buffer.height() as i32);
-        self.read(output, Rectangle::from_size(size.into()))
+        let size = self.targets.iter().find(|t| t.output == *output)?.size;
+        self.read(output, Rectangle::from_size(size))
     }
 
     /// The output's pixel at `at` as ARGB8888, or `None` before it's first rendered.
@@ -299,25 +364,69 @@ impl Headless {
 
     /// The output's pixels in `rect` as ARGB8888, row by row.
     fn read(&mut self, output: &Output, rect: Rectangle<i32, Buffer>) -> Option<Vec<u32>> {
-        let target = target_mut(&mut self.targets, output)?;
-        if !target.rendered {
+        let index = target_index(&self.targets, output)?;
+        if !self.targets[index].rendered {
             return None;
         }
-        let framebuffer = self.renderer.bind(&mut target.buffer).ok()?;
-        let mapping = self
-            .renderer
-            .copy_framebuffer(&framebuffer, rect, Fourcc::Argb8888)
-            .ok()?;
-        let bytes = self.renderer.map_texture(&mapping).ok()?;
-        Some(
-            bytes
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|p| u32::from_le_bytes(*p))
-                .collect(),
-        )
+        drawing!(&mut self.drawing, renderer, memory, _T => {
+            read(renderer, &mut memory[index], rect)
+        })
     }
+}
+
+/// New memory of `size` for an output.
+fn create<R, T>(renderer: &mut R, size: Size<i32, Buffer>) -> T
+where
+    R: Offscreen<T>,
+{
+    renderer
+        .create_buffer(Fourcc::Argb8888, size)
+        .expect("the headless renderer makes memory for an output")
+}
+
+/// Renders `output` into `memory`, and returns how each element was drawn.
+fn render<R, T>(
+    renderer: &mut R,
+    memory: &mut T,
+    damage_tracker: &mut OutputDamageTracker,
+    caminito: &Caminito,
+    output: &Output,
+) -> RenderElementStates
+where
+    R: Renderer + ImportAll + ImportMem + Bind<T>,
+    R::TextureId: Send + Clone + 'static,
+{
+    let mut framebuffer = renderer.bind(memory).expect("bind");
+    let elements = scene::output_elements(renderer, caminito, output);
+    damage_tracker
+        .render_output(renderer, &mut framebuffer, 0, &elements, CLEAR_COLOR)
+        .expect("render")
+        .states
+}
+
+/// The pixels of `memory` in `rect` as ARGB8888, row by row from the top. GLES's mapping
+/// says it's flipped, but Smithay draws into a texture top row first, so it isn't here.
+fn read<R, T>(renderer: &mut R, memory: &mut T, rect: Rectangle<i32, Buffer>) -> Option<Vec<u32>>
+where
+    R: Bind<T> + ExportMem,
+{
+    let framebuffer = renderer.bind(memory).ok()?;
+    let mapping = renderer
+        .copy_framebuffer(&framebuffer, rect, Fourcc::Argb8888)
+        .ok()?;
+    let bytes = renderer.map_texture(&mapping).ok()?;
+    Some(
+        bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| u32::from_le_bytes(*p))
+            .collect(),
+    )
+}
+
+fn target_index(targets: &[Target], output: &Output) -> Option<usize> {
+    targets.iter().position(|t| t.output == *output)
 }
 
 fn target_mut<'a>(targets: &'a mut [Target], output: &Output) -> Option<&'a mut Target> {

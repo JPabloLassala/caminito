@@ -545,15 +545,16 @@ impl State {
         Ok(state)
     }
 
-    /// Starts with no outputs; tests add them with `add_headless_output`. Frames use the
-    /// themes vendored for the goldens (14), no palette cache, and only the built-in
-    /// cursor.
+    /// Starts on `headless` with no outputs; tests add them with `add_headless_output`.
+    /// Frames use the themes vendored for the goldens (14), no palette cache, and only the
+    /// built-in cursor.
     #[cfg(test)]
     pub fn new_headless(
         event_loop: &EventLoop<'static, State>,
         display: Display<State>,
         settings: settings::Source,
         player: Box<dyn Player>,
+        headless: crate::backend::headless::Headless,
     ) -> Self {
         let themes = ThemeDirs::new(vec![
             concat!(env!("CARGO_MANIFEST_DIR"), "/../tests").into(),
@@ -568,7 +569,7 @@ impl State {
             player,
         )
         .expect("the settings start");
-        let backend = Backend::Headless(crate::backend::headless::Headless::default());
+        let backend = Backend::Headless(Box::new(headless));
         Self { backend, caminito }
     }
 
@@ -653,15 +654,19 @@ impl State {
     /// The number of render elements the scene has for `output`.
     #[cfg(test)]
     pub fn scene_element_count(&mut self, output: &Output) -> usize {
-        let renderer = self.backend.headless_mut().renderer();
-        crate::scene::output_elements(renderer, &self.caminito, output).len()
+        let drawing = self.backend.headless_mut().renderer();
+        crate::backend::headless::drawing!(drawing, renderer, _memory, _T => {
+            crate::scene::output_elements(renderer, &self.caminito, output).len()
+        })
     }
 
     /// The layer of each of the scene's render elements for `output`, front to back.
     #[cfg(test)]
     pub(crate) fn scene_layers(&mut self, output: &Output) -> Vec<crate::scene::SceneLayer> {
-        let renderer = self.backend.headless_mut().renderer();
-        crate::scene::output_element_layers(renderer, &self.caminito, output)
+        let drawing = self.backend.headless_mut().renderer();
+        crate::backend::headless::drawing!(drawing, renderer, _memory, _T => {
+            crate::scene::output_element_layers(renderer, &self.caminito, output)
+        })
     }
 
     /// The refresh pass, after each loop dispatch: brings the outward views up to date with

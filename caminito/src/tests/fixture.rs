@@ -33,6 +33,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::xwayland::X11Surface;
 use x11rb::protocol::Event;
 
+use crate::backend::headless::Headless;
 use crate::decoration::control::FrameControl;
 use crate::input::{AxisScroll, Scroll, V120_CLICK, WHEEL_CLICK};
 use crate::output::saved::{self, SavedLayouts};
@@ -454,13 +455,35 @@ impl Fixture {
         Self::on_schemas(marco_master_schemas(), initial)
     }
 
+    /// Caminito as `new` has it, drawing with GLES instead of pixman, for a test of a
+    /// shader's pixels (CMN-230). Where surfaceless EGL can't be created, it says the test
+    /// is skipped and returns `None`, and the test returns.
+    pub fn on_gles() -> Option<Self> {
+        match Headless::gles() {
+            Ok(headless) => Some(Self::on_backend(test_schemas(), Vec::new(), headless)),
+            Err(err) => {
+                eprintln!("skipped, with no GLES to draw with: {err}");
+                None
+            }
+        }
+    }
+
     /// Caminito with no outputs and no clients, on the schemas compiled into `schema_dir`,
     /// with `center-new-windows`, `workspaces-per-output`, `workspace-slide`,
     /// `overview-animation`, `open-close-animation`, `maximize-animation` and
     /// `popup-slide` off unless `initial` sets them.
     fn on_schemas(
         schema_dir: &std::path::Path,
+        initial: Vec<(&'static str, String, Value)>,
+    ) -> Self {
+        Self::on_backend(schema_dir, initial, Headless::default())
+    }
+
+    /// Caminito as `on_schemas` has it, drawing as `headless` does.
+    fn on_backend(
+        schema_dir: &std::path::Path,
         mut initial: Vec<(&'static str, String, Value)>,
+        headless: Headless,
     ) -> Self {
         for off in [
             (MARCO_GENERAL, "center-new-windows"),
@@ -489,6 +512,7 @@ impl Fixture {
             Display::new().unwrap(),
             settings,
             Box::new(sounds.clone()),
+            headless,
         );
         Self {
             event_loop,

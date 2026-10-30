@@ -8,8 +8,6 @@ use smithay::backend::renderer::element::RenderElementStates;
 use smithay::backend::renderer::gles::GlesTexture;
 use smithay::input::keyboard::LedState;
 use smithay::output::{Mode, Output};
-#[cfg(test)]
-use smithay::reexports::pixman::Image;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Buffer, Rectangle};
@@ -53,9 +51,9 @@ pub enum Backend {
     Tty(Box<tty::Tty>),
     /// A window inside another desktop, as one output.
     Winit(Box<winit::Winit>),
-    /// Virtual outputs rendered with pixman, for tests.
+    /// Virtual outputs rendered into memory, for tests.
     #[cfg(test)]
-    Headless(headless::Headless),
+    Headless(Box<headless::Headless>),
 }
 
 impl Backend {
@@ -102,12 +100,11 @@ impl Backend {
                 capture::copy::<_, GlesTexture>(winit.renderer(), caminito, shot, buffer)
             }
             #[cfg(test)]
-            Backend::Headless(headless) => capture::copy::<_, Image<'static, 'static>>(
-                headless.renderer(),
-                caminito,
-                shot,
-                buffer,
-            ),
+            Backend::Headless(headless) => {
+                headless::drawing!(headless.renderer(), renderer, _memory, T => {
+                    capture::copy::<_, T>(renderer, caminito, shot, buffer)
+                })
+            }
         }
     }
 
@@ -119,7 +116,9 @@ impl Backend {
             Backend::Winit(winit) => take_picture::<_, GlesTexture>(winit.renderer(), caminito, id),
             #[cfg(test)]
             Backend::Headless(headless) => {
-                take_picture::<_, Image<'static, 'static>>(headless.renderer(), caminito, id)
+                headless::drawing!(headless.renderer(), renderer, _memory, T => {
+                    take_picture::<_, T>(renderer, caminito, id)
+                })
             }
         }
     }
@@ -140,11 +139,11 @@ impl Backend {
                 take_popup_picture::<_, GlesTexture>(winit.renderer(), surface, scale)
             }
             #[cfg(test)]
-            Backend::Headless(headless) => take_popup_picture::<_, Image<'static, 'static>>(
-                headless.renderer(),
-                surface,
-                scale,
-            ),
+            Backend::Headless(headless) => {
+                headless::drawing!(headless.renderer(), renderer, _memory, T => {
+                    take_popup_picture::<_, T>(renderer, surface, scale)
+                })
+            }
         }
     }
 
