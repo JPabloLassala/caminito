@@ -3967,3 +3967,23 @@ They are the developer's to run.
 - **Debug tool:** `busctl --user call org.mate.Caminito.Notifications
   /org/mate/Caminito/Notifications org.mate.Caminito.Notifications DoNotDisturb`, and
   `busctl --user monitor org.mate.Caminito.Notifications` for its signals.
+
+### Esmeril shows blurred behind a see-through frame
+
+- **Milestone:** M9
+- **Steps:**
+  1. Start a Nested run with `tools/dev-nested`, on a Marco theme whose titlebar is part
+     see-through. Run `gsettings get org.mate.Caminito esmeril`, which prints `true`, and
+     `gsettings get org.mate.Caminito esmeril-strength`, which prints `15`.
+  2. Open two windows and move one so its titlebar is over the other's edge, then move the
+     one beneath.
+  3. Run `gsettings set org.mate.Caminito esmeril-strength 1`, then
+     `gsettings set org.mate.Caminito esmeril false`, then set `esmeril` back to `true` and
+     run `gsettings set org.mate.Marco.general reduced-resources true`.
+  4. On the tty backend, at the default strength, move a window over a still screen.
+  5. Turn an output with `caminito-displays`, and look at the titlebar over the edge again.
+- **Expected:** What's beneath the see-through parts of the titlebar shows blurred, more
+  saturated and more contrasted, and follows the window beneath as it moves. The strength of
+  1 blurs it far less, at once. `esmeril` off and `reduced-resources` on each leave a sharp
+  picture beneath, at once. Rounded corners stay clear. Moving a window drops no frames. On
+  the turned output the blur still lines up with what's beneath.

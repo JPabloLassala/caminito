@@ -33,6 +33,7 @@ use smithay::wayland::shm::with_buffer_contents;
 use crate::decoration::control::FrameControl;
 use crate::decoration::shadow::{ShadowInputs, ShadowType};
 use crate::decoration::style::{FrameFacts, frame_style};
+use crate::esmeril::Mask;
 use crate::icons::IconLookup;
 use crate::settings::Settings;
 use crate::settings::translate::{Antialiasing, FontRendering, Hinting, RgbaOrder};
@@ -369,6 +370,8 @@ struct FrameInputs {
 struct StripBuffer {
     rect: Rectangle<i32, Logical>,
     buffer: MemoryRenderBuffer,
+    /// Where Esmeril goes behind it, if it has see-through pixels (ADR 0048).
+    esmeril: Option<Mask>,
 }
 
 /// The window's icons at mini and full size, and what they were loaded for.
@@ -593,6 +596,7 @@ impl WindowFrame {
                     Transform::Normal,
                     None,
                 ),
+                esmeril: None,
             })
             .collect();
         self.shadow = Some((shadow, bands));
@@ -670,6 +674,14 @@ impl WindowFrame {
     /// Each strip's buffer, and where it goes from the window geometry's origin.
     pub fn strips(&self) -> impl Iterator<Item = (Rectangle<i32, Logical>, &MemoryRenderBuffer)> {
         self.strips.iter().map(|strip| (strip.rect, &strip.buffer))
+    }
+
+    /// The mask of each strip with see-through pixels (ADR 0048), and where the strip goes
+    /// from the window geometry's origin.
+    pub(crate) fn esmeril(&self) -> impl Iterator<Item = (Rectangle<i32, Logical>, &Mask)> {
+        self.strips
+            .iter()
+            .filter_map(|strip| Some((strip.rect, strip.esmeril.as_ref()?)))
     }
 
     /// The frame's visible rectangle, from the window geometry's origin, if it's showing.
@@ -762,15 +774,17 @@ impl WindowFrame {
                 if rect.width <= 0 || rect.height <= 0 {
                     return None;
                 }
-                let surface = theme
+                let mut surface = theme
                     .render_strip(&frame, strip, inputs.scale)
                     .inspect_err(|err| {
                         tracing::warn!("can't draw a frame's {strip:?} strip: {err}")
                     })
                     .ok()?;
+                let esmeril = Mask::of(&mut surface);
                 Some(StripBuffer {
                     rect: from_frame_origin(geometry, rect),
                     buffer: memory_buffer(surface, inputs.scale)?,
+                    esmeril,
                 })
             })
             .collect()

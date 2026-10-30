@@ -16,6 +16,7 @@ use smithay::output::{Mode, Output};
 use smithay::reexports::pixman::Image;
 use smithay::utils::{Buffer, Physical, Point, Raw, Rectangle, Size, Transform};
 
+use crate::esmeril::DrawsEsmeril;
 use crate::output::{DEFAULT_REFRESH, virtual_output};
 use crate::scene::{self, CLEAR_COLOR};
 use crate::state::Caminito;
@@ -397,7 +398,7 @@ fn render<R, T>(
     output: &Output,
 ) -> RenderElementStates
 where
-    R: Renderer + ImportAll + ImportMem + Bind<T>,
+    R: Renderer + ImportAll + ImportMem + DrawsEsmeril + Bind<T>,
     R::TextureId: Send + Clone + 'static,
 {
     let mut framebuffer = renderer

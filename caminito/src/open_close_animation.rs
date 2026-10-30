@@ -55,6 +55,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
+use crate::esmeril::DrawsEsmeril;
 use crate::maximize_animation::scaled_into;
 use crate::output::{output_geometry, output_id};
 use crate::scene::{self, SceneElement, SceneLayer};
@@ -210,7 +211,7 @@ pub(crate) fn take_picture<R, T>(
     id: WindowId,
 ) -> Option<Picture>
 where
-    R: Renderer + ImportAll + ImportMem + Offscreen<T> + Bind<T>,
+    R: Renderer + ImportAll + ImportMem + DrawsEsmeril + Offscreen<T> + Bind<T>,
     R::TextureId: Send + Clone + From<T> + 'static,
 {
     let main = caminito.policy.window(id)?.main_output();
@@ -229,7 +230,7 @@ pub(crate) fn take_popup_picture<R, T>(
     scale: f64,
 ) -> Option<Picture>
 where
-    R: Renderer + ImportAll + ImportMem + Offscreen<T> + Bind<T>,
+    R: Renderer + ImportAll + ImportMem + DrawsEsmeril + Offscreen<T> + Bind<T>,
     R::TextureId: Send + Clone + From<T> + 'static,
 {
     let (elements, area) = scene::popup_picture_elements(renderer, surface, scale)?;
@@ -244,7 +245,7 @@ fn draw_picture<R, T>(
     scale: f64,
 ) -> Option<Picture>
 where
-    R: Renderer + ImportAll + ImportMem + Offscreen<T> + Bind<T>,
+    R: Renderer + ImportAll + ImportMem + DrawsEsmeril + Offscreen<T> + Bind<T>,
     R::TextureId: Send + Clone + From<T> + 'static,
 {
     let size = area.size.to_physical_precise_round(scale);

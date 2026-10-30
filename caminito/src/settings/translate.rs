@@ -12,6 +12,7 @@ use caminito_policy::{
 };
 use caminito_theme::ButtonLayout;
 
+use crate::esmeril;
 use crate::input::bindings::button_modifier::ButtonModifier;
 use crate::input::bindings::{Bindings, CAMINITO_KEYS};
 use crate::input::remaps::{KeyRemaps, Unremappable};
@@ -440,6 +441,9 @@ pub struct Settings {
     /// `org.mate.Caminito`'s `popup-slide` on, and the minimise animation's three keys as it
     /// needs them.
     pub popup_slide: bool,
+    /// The strength of Esmeril (ADR 0048), while it's drawn: `org.mate.Caminito`'s `esmeril`
+    /// on and `reduced-resources` off. `enable-animations` doesn't touch it.
+    pub esmeril: Option<u32>,
     pub interface: Interface,
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
@@ -1256,6 +1260,16 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     let open_close_animation = minimize_animation && r.bool(CAMINITO, "open-close-animation", true);
     let maximize_animation = minimize_animation && r.bool(CAMINITO, "maximize-animation", true);
     let popup_slide = minimize_animation && r.bool(CAMINITO, "popup-slide", true);
+    let esmeril_strength = r.uint_clamped(
+        CAMINITO,
+        "esmeril-strength",
+        esmeril::DEFAULT_STRENGTH,
+        1,
+        esmeril::MAX_STRENGTH,
+    );
+    let esmeril = (r.bool(CAMINITO, "esmeril", true)
+        && !r.bool(MARCO_GENERAL, "reduced-resources", false))
+    .then_some(esmeril_strength);
 
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");
     let titlebar_font = r.non_empty(MARCO_GENERAL, "titlebar-font", "Sans Bold 10");
@@ -1357,6 +1371,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         open_close_animation,
         maximize_animation,
         popup_slide,
+        esmeril,
         interface: Interface {
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),
             font_name,

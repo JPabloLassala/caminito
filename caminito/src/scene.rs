@@ -43,6 +43,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
+use crate::esmeril::{DrawsEsmeril, Esmeril};
 use crate::open_close_animation::{Closing, Picture};
 use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
@@ -102,7 +103,7 @@ type ThumbnailPart<R> =
     CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowPart<R>>>>;
 
 render_elements! {
-    pub SceneElement<R> where R: ImportAll + ImportMem;
+    pub SceneElement<R> where R: ImportAll + ImportMem + DrawsEsmeril;
     /// A client's surface: a window's, a layer surface's, the cursor's, or a drag icon's.
     Window = WaylandSurfaceRenderElement<R>,
     /// A frame's strip, one of Caminito's cursors, or frame debug's label.
@@ -122,6 +123,8 @@ render_elements! {
     /// The Window menu or its submenu as it slides out of its edge or back into it (ADR
     /// 0037).
     MenuSlide = MenuSlidePart<R>,
+    /// Esmeril behind a strip of a frame (ADR 0048).
+    Esmeril = Esmeril,
 }
 
 /// The Window menu or its submenu as it slides (ADR 0037): its buffer moved off its place
@@ -1799,6 +1802,21 @@ fn window_elements<R>(
             one_window_elements(
                 renderer, mapped, origin, shown, scale, 1.0, slides, elements,
             );
+            // Behind the strips, and only on the output (ADR 0048): a capture of the window
+            // and a thumbnail are the window with its frame, and the animations leave it out.
+            if let Some(strength) = caminito.settings.esmeril {
+                for (mut rect, mask) in mapped.frame().esmeril() {
+                    rect.loc += origin;
+                    elements.extend(
+                        rect.overlaps(shown)
+                            .then(|| {
+                                Esmeril::new(mask, rect, output_geometry.size, scale, strength)
+                            })
+                            .flatten()
+                            .map(SceneElement::Esmeril),
+                    );
+                }
+            }
             // The shadow is the output's alone: a capture of the window and its thumbnail
             // are the window with its frame (103, 171).
             let shadow = mapped.frame().shadow();

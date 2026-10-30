@@ -19,4 +19,6 @@ Each is laid out as its build installs it:
   `metacity-theme-1.xml`, and symlinks `metacity-theme-2.xml` and `metacity-theme-3.xml` to it,
   so Marco loads it as format 3.
 
+EsmerilGlass and EsmerilSolid aren't golden themes and come from no project: they're Caminito's own, from its built-in theme, for the tests of Esmeril (ADR 0048), which need a frame with known see-through pixels and one with none.
+
 These are test data only; nothing here is built into Caminito.

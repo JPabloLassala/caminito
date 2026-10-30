@@ -39,6 +39,7 @@ use smithay::reexports::wayland_server::protocol::wl_shm::Format;
 use smithay::utils::{Buffer, Physical, Rectangle, Size};
 use smithay::wayland::shm::{with_buffer_contents, with_buffer_contents_mut};
 
+use crate::esmeril::DrawsEsmeril;
 use crate::scene::{self, CLEAR_COLOR, SceneElement};
 use crate::state::Caminito;
 
@@ -118,7 +119,7 @@ fn elements<R>(
     shot: &Shot<'_>,
 ) -> (Vec<SceneElement<R>>, Color32F)
 where
-    R: Renderer + ImportAll + ImportMem,
+    R: Renderer + ImportAll + ImportMem + DrawsEsmeril,
     R::TextureId: Send + Clone + 'static,
 {
     let cursors = shot.paint_cursors;
@@ -151,7 +152,7 @@ pub(crate) fn copy<R, T>(
     buffer: &WlBuffer,
 ) -> Result<Option<Vec<Rectangle<i32, Buffer>>>, Error>
 where
-    R: Renderer + ImportAll + ImportMem + Offscreen<T> + ExportMem,
+    R: Renderer + ImportAll + ImportMem + DrawsEsmeril + Offscreen<T> + ExportMem,
     R::TextureId: Send + Clone + 'static,
 {
     let size = shot.size;

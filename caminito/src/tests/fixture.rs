@@ -459,8 +459,13 @@ impl Fixture {
     /// shader's pixels (CMN-230). Where surfaceless EGL can't be created, it says on stderr
     /// that the test is skipped and returns `None`, and the test returns.
     pub fn on_gles() -> Option<Self> {
+        Self::on_gles_with(Vec::new())
+    }
+
+    /// Caminito as `with_settings` has it, drawing with GLES as `on_gles` does.
+    pub fn on_gles_with(initial: Vec<(&'static str, String, Value)>) -> Option<Self> {
         match Headless::gles() {
-            Ok(headless) => Some(Self::on_backend(test_schemas(), Vec::new(), headless)),
+            Ok(headless) => Some(Self::on_backend(test_schemas(), initial, headless)),
             Err(err) => {
                 // Past libtest's capture, which takes only the print macros, so that a run
                 // that passes shows it too.

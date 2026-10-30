@@ -104,6 +104,17 @@
       <summary>Slide menus and other popups as they open</summary>
       <description>When true, a menu, a tooltip or another popup that opens slides out of what it is attached to. When false, it is there at once, as in Marco. The slide also needs compositing-manager on and reduced-resources off in org.mate.Marco.general, and enable-animations on in org.mate.interface.</description>
     </key>
+    <key name="esmeril" type="b">
+      <default>true</default>
+      <summary>Draw Esmeril behind see-through frames</summary>
+      <description>When true, what's beneath the see-through parts of a window's frame shows through blurred, with raised saturation and contrast. It isn't drawn while reduced-resources is on in org.mate.Marco.general; enable-animations doesn't touch it.</description>
+    </key>
+    <key name="esmeril-strength" type="u">
+      <range min="1" max="15"/>
+      <default>15</default>
+      <summary>How strong Esmeril's blur is</summary>
+      <description>From 1, the least blur, to 15, the most, as the steps of Plasma's Blur effect.</description>
+    </key>
     <!--
       The Overview's shortcut (241). It's here since Marco has no such action, in the
       syntax of Marco's keybinding keys, and System Shortcuts lists it.
