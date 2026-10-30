@@ -2,7 +2,8 @@
 //! behind the see-through parts of a frame. It's Plasma's Blur effect and its Background
 //! contrast effect, whose behaviour and numbers are taken and whose code isn't: the passes
 //! and offsets of each strength step from KWin's `src/plugins/blur/blur.cpp`, and the colour
-//! transform and the saturation from `src/plugins/backgroundcontrast/contrast.cpp`. The
+//! transform from `src/plugins/backgroundcontrast/contrast.cpp`, with libplasma's default
+//! saturation (`src/plasma/theme.cpp`) and a contrast of Caminito's own. The
 //! shaders are written from the dual Kawase algorithm, as Marius Bjørge published it
 //! ("Bandwidth-Efficient Rendering", SIGGRAPH 2015).
 //!
@@ -27,6 +28,7 @@ use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesPixelProgram, GlesRenderer, GlesTexture, Uniform, UniformName,
     UniformType, UniformValue, ffi, link_program,
 };
+#[cfg(test)]
 use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Frame, FrameContext, ImportMem, Offscreen, Renderer, Texture};
@@ -63,25 +65,21 @@ struct Step {
     reach: i32,
 }
 
-/// What each iteration count allows, as KWin's `initBlurStrengthValues` has it:
-/// the smallest offset, the largest, and the reach.
-const ITERATIONS: [(f32, f32, i32); 4] = [
-    (1.0, 2.0, 10),
-    (2.0, 3.0, 20),
-    (2.0, 5.0, 50),
-    (3.0, 8.0, 150),
+/// What each iteration count allows, as KWin's `initBlurStrengthValues` has it: the smallest
+/// offset, the largest, the reach, and how many of the steps it has, which in KWin's
+/// arithmetic is its share of the offsets' ranges, rounded up, with what's over taken from
+/// the last.
+const ITERATIONS: [(f32, f32, i32, usize); 4] = [
+    (1.0, 2.0, 10, 2),
+    (2.0, 3.0, 20, 2),
+    (2.0, 5.0, 50, 5),
+    (3.0, 8.0, 150, 6),
 ];
-
-/// How many of the steps each iteration count has, in KWin's arithmetic: its share of the
-/// offsets' ranges, rounded up, with what's over taken from the last.
-const STEPS_OF_ITERATIONS: [usize; 4] = [2, 2, 5, 6];
 
 /// The step of a `strength` from 1 to [`MAX_STRENGTH`].
 fn step(strength: u32) -> Step {
     let mut left = strength.clamp(1, MAX_STRENGTH) as usize;
-    for (index, (&(min, max, reach), &steps)) in
-        ITERATIONS.iter().zip(&STEPS_OF_ITERATIONS).enumerate()
-    {
+    for (index, &(min, max, reach, steps)) in ITERATIONS.iter().enumerate() {
         if left <= steps {
             return Step {
                 iterations: index + 1,
@@ -243,6 +241,7 @@ impl<R: DrawsEsmeril> RenderElement<R> for Esmeril {
     }
 }
 
+#[cfg(test)]
 impl DrawsEsmeril for PixmanRenderer {
     fn capture(
         _frame: &mut Self::Frame<'_, '_>,
@@ -556,8 +555,9 @@ impl DrawsEsmeril for GlesRenderer {
             .capabilities()
             .contains(&smithay::backend::renderer::gles::Capability::Instancing);
         frame.with_context(|gl| {
-            // Safety: the renderer's context is current in `with_context`, and all the state
-            // the passes change is put back for Smithay, which assumes it's as it left it.
+            // Safety: the renderer's context is current in `with_context`. The target, the
+            // viewport, the scissor and the blending are put back, as Smithay sets them only
+            // at a frame's start; it sets the rest again at each of its draws.
             unsafe {
                 let mut target = 0;
                 gl.GetIntegerv(ffi::FRAMEBUFFER_BINDING, &mut target);

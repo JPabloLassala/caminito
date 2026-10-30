@@ -1,5 +1,7 @@
 //! Esmeril behind frames (ADR 0048): where it goes and its damage on Pixman, where it draws
-//! nothing, and its pixels on GLES, skipped where surfaceless EGL can't be created.
+//! nothing, and its pixels on GLES, skipped where surfaceless EGL can't be created. These run
+//! with xdg toplevels only: a frame's strips are drawn from its theme alone, whichever kind
+//! of window has them, and frames.rs runs what a frame does on both kinds.
 
 use caminito_test_client::layer_shell::{Layer, LayerSpec};
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -99,7 +101,7 @@ fn saturated_and_contrasted(color: u32) -> [f64; 3] {
 
 #[test]
 fn a_see_through_strip_gets_esmeril_behind_it_where_the_blur_reads() {
-    let mut f = Fixture::with_settings(settings("EsmerilGlass", 15));
+    let mut f = Fixture::with_settings(settings("EsmerilSeeThrough", 15));
     let output = desk(&mut f);
     let elements = esmerils(&mut f, &output);
     let [esmeril] = elements.as_slice() else {
@@ -139,7 +141,7 @@ fn a_theme_with_no_see_through_pixels_gets_none() {
 
 #[test]
 fn esmeril_off_removes_it_at_once_and_on_brings_it_back() {
-    let mut f = Fixture::with_settings(settings("EsmerilGlass", 15));
+    let mut f = Fixture::with_settings(settings("EsmerilSeeThrough", 15));
     let output = desk(&mut f);
     f.set_setting(CAMINITO, "esmeril", Value::Bool(false));
     f.dispatch_until(|f| f.state.caminito.settings.esmeril.is_none());
@@ -151,7 +153,7 @@ fn esmeril_off_removes_it_at_once_and_on_brings_it_back() {
 
 #[test]
 fn reduced_resources_removes_it_at_once_and_animations_off_doesnt() {
-    let mut f = Fixture::with_settings(settings("EsmerilGlass", 15));
+    let mut f = Fixture::with_settings(settings("EsmerilSeeThrough", 15));
     let output = desk(&mut f);
     f.set_setting(MARCO_GENERAL, "reduced-resources", Value::Bool(true));
     f.dispatch_until(|f| f.state.caminito.settings.esmeril.is_none());
@@ -169,7 +171,7 @@ fn reduced_resources_removes_it_at_once_and_animations_off_doesnt() {
 
 #[test]
 fn a_new_strength_changes_its_reach_and_damages_it_at_once() {
-    let mut f = Fixture::with_settings(settings("EsmerilGlass", 15));
+    let mut f = Fixture::with_settings(settings("EsmerilSeeThrough", 15));
     let output = desk(&mut f);
     let before = esmerils(&mut f, &output).remove(0);
     f.set_setting(CAMINITO, "esmeril-strength", Value::Uint(1));
@@ -182,7 +184,7 @@ fn a_new_strength_changes_its_reach_and_damages_it_at_once() {
 
 #[test]
 fn what_changes_where_the_blur_reads_damages_all_it_reads() {
-    let mut f = Fixture::with_settings(settings("EsmerilGlass", 15));
+    let mut f = Fixture::with_settings(settings("EsmerilSeeThrough", 15));
     let output = desk(&mut f);
     let esmeril = esmerils(&mut f, &output).remove(0);
     let (strip, read) = (esmeril.strip(), esmeril.geometry(SCALE));
@@ -215,7 +217,7 @@ fn what_changes_where_the_blur_reads_damages_all_it_reads() {
 
 #[test]
 fn a_see_through_pixel_shows_what_is_beneath_saturated_and_contrasted() {
-    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilGlass", 1)) else {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSeeThrough", 1)) else {
         return;
     };
     let output = desk_over(&mut f, BENEATH);
@@ -239,11 +241,11 @@ fn a_see_through_pixel_shows_what_is_beneath_saturated_and_contrasted() {
 
 #[test]
 fn an_opaque_pixel_and_a_clear_one_look_as_they_do_with_esmeril_off() {
-    let on = Fixture::on_gles_with(settings("EsmerilGlass", 1));
+    let on = Fixture::on_gles_with(settings("EsmerilSeeThrough", 1));
     let Some(mut on) = on else {
         return;
     };
-    let mut off_settings = settings("EsmerilGlass", 1);
+    let mut off_settings = settings("EsmerilSeeThrough", 1);
     off_settings.push((CAMINITO, "esmeril".into(), Value::Bool(false)));
     let Some(mut off) = Fixture::on_gles_with(off_settings) else {
         return;
@@ -273,7 +275,7 @@ fn an_opaque_pixel_and_a_clear_one_look_as_they_do_with_esmeril_off() {
 
 #[test]
 fn what_is_beneath_shows_blurred_live_and_by_its_strength() {
-    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilGlass", 1)) else {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSeeThrough", 1)) else {
         return;
     };
     let output = desk_over(&mut f, BENEATH);
@@ -283,8 +285,8 @@ fn what_is_beneath_shows_blurred_live_and_by_its_strength() {
     let middle = OUTPUT.0 / 2;
     let before = pixel(&mut f, &output, at(middle - 30));
 
-    // A band mapped beneath the middle of the strip: a sharp edge at 100 and 300 would be at
-    // full strength a pixel on either side of it.
+    // A band mapped beneath the middle of the strip: a sharp edge at its side, 30 pixels from
+    // the middle, would be at full strength a pixel on either side of it.
     let id = f.connect(Kind::Xdg);
     f.map_layer(id, LayerSpec::floating(Layer::Bottom, (60, 280)), OTHER);
     f.draw(&output);
@@ -311,7 +313,7 @@ fn what_is_beneath_shows_blurred_live_and_by_its_strength() {
         spread(a, b)
     );
 
-    // Stronger, the edge spreads further: 30 pixels out of it isn't what's far from it.
+    // Stronger, the edge spreads further: 15 pixels out of it isn't what it was.
     let edge_out = at(middle - 45);
     let weak = pixel(&mut f, &output, edge_out);
     f.set_setting(CAMINITO, "esmeril-strength", Value::Uint(15));
@@ -323,7 +325,7 @@ fn what_is_beneath_shows_blurred_live_and_by_its_strength() {
 
 #[test]
 fn what_is_beneath_shows_the_right_way_up() {
-    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilGlass", 1)) else {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSeeThrough", 1)) else {
         return;
     };
     let output = desk_over(&mut f, BENEATH);

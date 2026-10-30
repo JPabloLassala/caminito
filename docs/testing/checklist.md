@@ -3970,7 +3970,7 @@ They are the developer's to run.
 
 ### Esmeril shows blurred behind a see-through frame
 
-- **Milestone:** M9
+- **Milestone:** esmeril
 - **Steps:**
   1. Start a Nested run with `tools/dev-nested`, on a Marco theme whose titlebar is part
      see-through. Run `gsettings get org.mate.Caminito esmeril`, which prints `true`, and
@@ -3980,7 +3980,7 @@ They are the developer's to run.
   3. Run `gsettings set org.mate.Caminito esmeril-strength 1`, then
      `gsettings set org.mate.Caminito esmeril false`, then set `esmeril` back to `true` and
      run `gsettings set org.mate.Marco.general reduced-resources true`.
-  4. On the tty backend, at the default strength, move a window over a still screen.
+  4. On the tty backend, at the default strength, move a window with nothing else moving.
   5. Turn an output with `caminito-displays`, and look at the titlebar over the edge again.
 - **Expected:** What's beneath the see-through parts of the titlebar shows blurred, more
   saturated and more contrasted, and follows the window beneath as it moves. The strength of

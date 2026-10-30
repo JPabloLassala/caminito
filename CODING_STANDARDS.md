@@ -103,6 +103,7 @@ Where each tier lives, per ticket 15's test seams:
 | The mate-panel patch's own `wayland-intellihide.c` understood by Caminito, in a probe on GDK's Wayland backend (CMN-224) | `caminito/src/tests/mate_panel_intellihide.rs`, through `Fixture`, ignored unless `CAMINITO_INTELLIHIDE_PROBE` names the probe `.scratch/checks/CMN-224/run.sh` builds from the patch |
 | Headless integration, X11 tier, D-Bus | `caminito/src/tests/`, through `Fixture` |
 | A shader's pixels, on the headless backend drawing with GLES on surfaceless EGL, skipped with a message where that can't be created (CMN-230) | `caminito/src/tests/headless_gles.rs`, through `Fixture::on_gles` |
+| Esmeril's place and damage on Pixman, and its pixels on GLES (CMN-231) | `caminito/src/tests/esmeril.rs` |
 | The version string, and where a build's revision comes from | `caminito-version/src/string.rs`, which the build script compiles too |
 | The `caminito` binary's own arguments, such as `--version` | `caminito/tests/`, running the binary |
 | Theme goldens and the palette | `caminito-theme/tests/`, with files under `tests/goldens/` (ADR 0009) |

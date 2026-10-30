@@ -2,7 +2,7 @@
 <!-- A titlebar with no borders, in rows: 2 wholly clear, 2 opaque, the rest half see-through. Test data only (ADR 0048): see tests/themes/README.md. -->
 <metacity_theme>
   <info>
-    <name>EsmerilGlass</name>
+    <name>EsmerilSeeThrough</name>
     <author>The Caminito authors</author>
     <copyright>GPL-3.0-or-later</copyright>
     <date>2026</date>
