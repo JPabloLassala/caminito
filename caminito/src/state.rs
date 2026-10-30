@@ -654,7 +654,7 @@ impl State {
     /// The number of render elements the scene has for `output`.
     #[cfg(test)]
     pub fn scene_element_count(&mut self, output: &Output) -> usize {
-        let drawing = self.backend.headless_mut().renderer();
+        let drawing = self.backend.headless_mut().drawing();
         crate::backend::headless::drawing!(drawing, renderer, _memory, _T => {
             crate::scene::output_elements(renderer, &self.caminito, output).len()
         })
@@ -663,7 +663,7 @@ impl State {
     /// The layer of each of the scene's render elements for `output`, front to back.
     #[cfg(test)]
     pub(crate) fn scene_layers(&mut self, output: &Output) -> Vec<crate::scene::SceneLayer> {
-        let drawing = self.backend.headless_mut().renderer();
+        let drawing = self.backend.headless_mut().drawing();
         crate::backend::headless::drawing!(drawing, renderer, _memory, _T => {
             crate::scene::output_element_layers(renderer, &self.caminito, output)
         })

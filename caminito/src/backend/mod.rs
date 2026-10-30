@@ -101,7 +101,7 @@ impl Backend {
             }
             #[cfg(test)]
             Backend::Headless(headless) => {
-                headless::drawing!(headless.renderer(), renderer, _memory, T => {
+                headless::drawing!(headless.drawing(), renderer, _memory, T => {
                     capture::copy::<_, T>(renderer, caminito, shot, buffer)
                 })
             }
@@ -116,7 +116,7 @@ impl Backend {
             Backend::Winit(winit) => take_picture::<_, GlesTexture>(winit.renderer(), caminito, id),
             #[cfg(test)]
             Backend::Headless(headless) => {
-                headless::drawing!(headless.renderer(), renderer, _memory, T => {
+                headless::drawing!(headless.drawing(), renderer, _memory, T => {
                     take_picture::<_, T>(renderer, caminito, id)
                 })
             }
@@ -140,7 +140,7 @@ impl Backend {
             }
             #[cfg(test)]
             Backend::Headless(headless) => {
-                headless::drawing!(headless.renderer(), renderer, _memory, T => {
+                headless::drawing!(headless.drawing(), renderer, _memory, T => {
                     take_popup_picture::<_, T>(renderer, surface, scale)
                 })
             }

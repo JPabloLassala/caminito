@@ -105,22 +105,26 @@ impl Default for Headless {
     /// Drawing with pixman.
     fn default() -> Self {
         let renderer = PixmanRenderer::new().expect("pixman renderer");
-        Self::drawing(Drawing::Pixman(renderer, Vec::new()))
+        Self::with_drawing(Drawing::Pixman(renderer, Vec::new()))
     }
 }
 
 impl Headless {
     /// Drawing with GLES on surfaceless EGL, or the reason it can't.
     pub fn gles() -> Result<Self, Error> {
-        // Safety: no other code in the tests creates EGL displays.
+        // Safety: only Smithay gets EGL displays in the tests, and it tracks them, so none is
+        // terminated under another.
         let display = unsafe { EGLDisplay::new(EGLSurfacelessDisplay) }.map_err(Error::Egl)?;
         let context = EGLContext::new(&display).map_err(Error::Egl)?;
         // Safety: the context is new, and only this renderer makes it current.
         let renderer = unsafe { GlesRenderer::new(context) }.map_err(Error::Gles)?;
-        Ok(Self::drawing(Drawing::Gles(Box::new(renderer), Vec::new())))
+        Ok(Self::with_drawing(Drawing::Gles(
+            Box::new(renderer),
+            Vec::new(),
+        )))
     }
 
-    fn drawing(drawing: Drawing) -> Self {
+    fn with_drawing(drawing: Drawing) -> Self {
         Self {
             drawing,
             targets: Vec::new(),
@@ -132,7 +136,7 @@ impl Headless {
     }
 
     /// What it draws with, for the code generic over a renderer.
-    pub(crate) fn renderer(&mut self) -> &mut Drawing {
+    pub(crate) fn drawing(&mut self) -> &mut Drawing {
         &mut self.drawing
     }
 
@@ -351,7 +355,7 @@ impl Headless {
 
     /// The output's pixels as ARGB8888, row by row, or `None` before it's first rendered.
     pub fn pixels(&mut self, output: &Output) -> Option<Vec<u32>> {
-        let size = self.targets.iter().find(|t| t.output == *output)?.size;
+        let size = self.targets[target_index(&self.targets, output)?].size;
         self.read(output, Rectangle::from_size(size))
     }
 
@@ -396,11 +400,13 @@ where
     R: Renderer + ImportAll + ImportMem + Bind<T>,
     R::TextureId: Send + Clone + 'static,
 {
-    let mut framebuffer = renderer.bind(memory).expect("bind");
+    let mut framebuffer = renderer
+        .bind(memory)
+        .expect("the headless renderer binds its own memory");
     let elements = scene::output_elements(renderer, caminito, output);
     damage_tracker
         .render_output(renderer, &mut framebuffer, 0, &elements, CLEAR_COLOR)
-        .expect("render")
+        .expect("the headless renderer draws the scene")
         .states
 }
 

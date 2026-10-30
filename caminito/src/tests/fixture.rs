@@ -456,13 +456,16 @@ impl Fixture {
     }
 
     /// Caminito as `new` has it, drawing with GLES instead of pixman, for a test of a
-    /// shader's pixels (CMN-230). Where surfaceless EGL can't be created, it says the test
-    /// is skipped and returns `None`, and the test returns.
+    /// shader's pixels (CMN-230). Where surfaceless EGL can't be created, it says on stderr
+    /// that the test is skipped and returns `None`, and the test returns.
     pub fn on_gles() -> Option<Self> {
         match Headless::gles() {
             Ok(headless) => Some(Self::on_backend(test_schemas(), Vec::new(), headless)),
             Err(err) => {
-                eprintln!("skipped, with no GLES to draw with: {err}");
+                // Past libtest's capture, which takes only the print macros, so that a run
+                // that passes shows it too.
+                let skipped = format!("skipped, with no GLES to draw with: {err}\n");
+                std::io::Write::write_all(&mut std::io::stderr(), skipped.as_bytes()).unwrap();
                 None
             }
         }
