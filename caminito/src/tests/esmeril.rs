@@ -1,7 +1,9 @@
 //! Esmeril behind frames and layer surfaces (ADR 0048): where it goes and its damage on Pixman,
 //! where it draws nothing, and its pixels on GLES, skipped where surfaceless EGL can't be
 //! created. These run with xdg toplevels only: a frame's strips are drawn from its theme alone,
-//! whichever kind of window has them, and frames.rs runs what a frame does on both kinds.
+//! whichever kind of window has them, and frames.rs runs what a frame does on both kinds. A
+//! layer surface is a Wayland client's, and the window that hides an Intellihide panel only
+//! has to overlap it.
 
 use std::time::Duration;
 

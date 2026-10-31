@@ -137,13 +137,7 @@ impl Client {
         let size = *layer.configures.last().expect("configured");
         let serial = layer.last_serial.expect("configured");
         layer.layer_surface.ack_configure(serial);
-        let size = (size.0 as i32, size.1 as i32);
-        let (pool, buffer) = self.shm_buffer(size, argb);
-        let layer = &mut self.state.layer_surfaces[id.0];
-        layer.surface.attach(Some(&buffer), 0, 0);
-        layer.surface.damage_buffer(0, 0, size.0, size.1);
-        layer.surface.commit();
-        layer.buffers.push(Buffer { buffer, pool });
+        self.commit_layer_buffer(id, (size.0 as i32, size.1 as i32), argb);
     }
 
     /// Commits a new buffer of the mapped layer surface's size, filled with `argb`.
@@ -153,7 +147,10 @@ impl Client {
             .configures
             .last()
             .expect("configured");
-        let size = (size.0 as i32, size.1 as i32);
+        self.commit_layer_buffer(id, (size.0 as i32, size.1 as i32), argb);
+    }
+
+    fn commit_layer_buffer(&mut self, id: LayerId, size: (i32, i32), argb: u32) {
         let (pool, buffer) = self.shm_buffer(size, argb);
         let layer = &mut self.state.layer_surfaces[id.0];
         layer.surface.attach(Some(&buffer), 0, 0);

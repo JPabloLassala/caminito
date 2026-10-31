@@ -103,8 +103,8 @@ fn step(strength: u32) -> Step {
     unreachable!("the steps of the iterations add up to the strongest strength")
 }
 
-/// A strip's alpha, which says where Esmeril goes on it, for a strip that has see-through
-/// pixels. One strip's mask keeps its [`Id`], and so its blur, for as long as the strip is
+/// A strip's or a surface's alpha, which says where Esmeril goes on it, for one that has
+/// see-through pixels. One strip's mask keeps its [`Id`], and so its blur, for as long as the strip is
 /// the same, and a surface's for as long as the surface lives.
 #[derive(Debug, Clone)]
 pub(crate) struct Mask {
@@ -134,6 +134,11 @@ struct SurfaceMask {
     see_through: bool,
 }
 
+/// Whether a pixel whose alpha is its last byte is neither opaque nor wholly clear.
+fn is_part_clear(pixel: &[u8; 4]) -> bool {
+    pixel[3] != 0 && pixel[3] != 0xff
+}
+
 /// Whether a surface's `buffer` can have see-through pixels: every pixel of an shm one is read,
 /// and a dmabuf's aren't reachable, so its format says.
 fn is_see_through(buffer: &WlBuffer) -> bool {
@@ -142,8 +147,9 @@ fn is_see_through(buffer: &WlBuffer) -> bool {
     }
     with_buffer_contents(buffer, |ptr, len, data| {
         match data.format {
-            ShmFormat::Argb8888 => {}
-            ShmFormat::Xrgb8888 => return false,
+            // Alpha is each pixel's last byte in both.
+            ShmFormat::Argb8888 | ShmFormat::Abgr8888 => {}
+            ShmFormat::Xrgb8888 | ShmFormat::Xbgr8888 => return false,
             _ => return true,
         }
         let (width, height, stride) = (data.width as usize, data.height as usize, data.stride);
@@ -156,7 +162,7 @@ fn is_see_through(buffer: &WlBuffer) -> bool {
         pool[offset..offset + stride * height]
             .chunks(stride)
             .flat_map(|line| line[..width * 4].as_chunks::<4>().0)
-            .any(|pixel| pixel[3] != 0 && pixel[3] != 0xff)
+            .any(is_part_clear)
     })
     // A buffer of neither kind is a single pixel's, which has its own alpha.
     .unwrap_or(true)
@@ -176,11 +182,7 @@ impl Mask {
         }
         // Cairo's ARGB32 is native-endian, as ARGB8888 is little-endian, on what Caminito
         // runs on: alpha is each pixel's last byte.
-        let see_through = pixels
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .any(|pixel| pixel[3] != 0 && pixel[3] != 0xff);
+        let see_through = pixels.as_chunks::<4>().0.iter().any(is_part_clear);
         see_through.then(|| Self {
             id: Id::new(),
             source: Source::Pixels {
@@ -191,15 +193,16 @@ impl Mask {
     }
 
     /// The mask of `surface` as last committed, with its rectangle from the surface's origin,
-    /// or `None` if it has no see-through pixels or it turns its buffer, which no client that
-    /// gets Esmeril does.
+    /// or `None` if it has no see-through pixels, or it turns or crops its buffer, as the mask
+    /// is all of the texture the right way round, and no client that gets Esmeril does either.
     pub(crate) fn of_surface(surface: &WlSurface) -> Option<(Self, Rectangle<i32, Logical>)> {
         with_states(surface, |states| {
             let state = states.data_map.get::<RendererSurfaceStateUserData>()?;
             let state = state.lock().unwrap();
             let view = state.view()?;
             let buffer = state.buffer()?;
-            if state.buffer_transform() != Transform::Normal {
+            let whole = Rectangle::from_size(state.buffer_size()?.to_f64());
+            if state.buffer_transform() != Transform::Normal || view.src != whole {
                 return None;
             }
             let commit = state.current_commit();
@@ -245,7 +248,7 @@ impl Mask {
     }
 }
 
-/// Esmeril behind one strip of a frame, for one frame of an output.
+/// Esmeril behind one strip of a frame, or one surface, for one frame of an output.
 #[derive(Debug, Clone)]
 pub struct Esmeril {
     mask: Mask,
