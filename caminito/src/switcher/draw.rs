@@ -9,6 +9,7 @@ use smithay::utils::{Logical, Rectangle};
 
 use super::layout::{CellStyle, Grid};
 use crate::decoration::memory_buffer;
+use crate::esmeril::Mask;
 
 /// The width of the popup's border.
 const BORDER: f64 = 1.0;
@@ -39,7 +40,7 @@ pub(crate) struct Entry {
 /// marks, the title, and the icons of an icons-only grid), and `over` is in front of them
 /// (the thumbnails' corner icons).
 pub(crate) struct Chrome {
-    pub(crate) under: MemoryRenderBuffer,
+    pub(crate) under: PopupDrawing,
     pub(crate) over: Option<MemoryRenderBuffer>,
 }
 
@@ -135,9 +136,28 @@ pub(crate) fn draw(
     let buffer =
         |surface: ImageSurface| memory_buffer(surface, scale).ok_or(cairo::Error::NoMemory);
     Ok(Chrome {
-        under: buffer(under)?,
+        under: PopupDrawing::of(under, scale)?,
         over: over.map(buffer).transpose()?,
     })
+}
+
+/// A popup's drawing, as a buffer at its output's scale, with where Esmeril goes behind it if
+/// it has see-through pixels (ADR 0048).
+#[derive(Debug)]
+pub(crate) struct PopupDrawing {
+    pub(crate) buffer: MemoryRenderBuffer,
+    pub(crate) esmeril: Option<Mask>,
+}
+
+impl PopupDrawing {
+    /// What was drawn on `surface`, at `scale`.
+    pub(crate) fn of(mut surface: ImageSurface, scale: i32) -> Result<Self, cairo::Error> {
+        let esmeril = Mask::of(&mut surface);
+        Ok(Self {
+            buffer: memory_buffer(surface, scale).ok_or(cairo::Error::NoMemory)?,
+            esmeril,
+        })
+    }
 }
 
 /// A transparent surface that covers `popup` at `scale`.

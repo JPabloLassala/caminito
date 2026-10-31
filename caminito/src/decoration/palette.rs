@@ -74,6 +74,12 @@ impl<D: PaletteState> PaletteSource<D> {
         &self.palette
     }
 
+    /// Uses `palette`, as if the helper had reported it.
+    #[cfg(test)]
+    pub(crate) fn set_palette(&mut self, palette: Palette) {
+        self.palette = palette;
+    }
+
     pub fn cache(&self) -> Option<&PaletteCache> {
         self.cache.as_ref()
     }

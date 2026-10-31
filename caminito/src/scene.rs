@@ -51,6 +51,7 @@ use crate::overview::transition::between;
 use crate::overview::{DrawnWindow, Laid, Overview};
 use crate::popup_slide::{ClosingPopup, Popup, PopupSlides, Slid};
 use crate::state::{Caminito, SEAT};
+use crate::switcher::draw::PopupDrawing;
 use crate::switcher::layout::{CellStyle, Grid};
 use crate::window::Mapped;
 use crate::window_menu::slide::Part;
@@ -123,8 +124,8 @@ render_elements! {
     /// The Window menu or its submenu as it slides out of its edge or back into it (ADR
     /// 0037).
     MenuSlide = MenuSlidePart<R>,
-    /// Esmeril behind a strip of a frame, or a surface of a listed window, a layer surface
-    /// or its popup (ADR 0048).
+    /// Esmeril behind a strip of a frame, a popup of Caminito's, or a surface of a listed window,
+    /// a layer surface or its popup (ADR 0048).
     Esmeril = Esmeril,
 }
 
@@ -1121,7 +1122,15 @@ fn switcher_elements<R>(
     if grid.style == CellStyle::Thumbnails {
         thumbnail_elements(renderer, caminito, grid, scale, elements);
     }
-    chrome_element(renderer, &chrome.under, elements);
+    chrome_element(renderer, &chrome.under.buffer, elements);
+    // Behind the background alone: the thumbnails are the window with its frame (ADR 0048).
+    elements.extend(popup_esmeril(
+        caminito,
+        output,
+        &chrome.under,
+        grid.popup,
+        None,
+    ));
 }
 
 /// The Workspace popup (152), if it's on `output`: one buffer, drawn in the refresh pass.
@@ -1147,7 +1156,7 @@ fn workspace_popup_elements<R>(
     let element = MemoryRenderBufferRenderElement::from_buffer(
         renderer,
         location.to_f64(),
-        chrome,
+        &chrome.buffer,
         None,
         None,
         Some(rect.size),
@@ -1158,6 +1167,33 @@ fn workspace_popup_elements<R>(
         // Every frame while the popup shows, so not above `debug!`.
         Err(err) => tracing::debug!("can't draw the workspace popup: {err:?}"),
     }
+    elements.extend(popup_esmeril(caminito, output, chrome, rect, None));
+}
+
+/// Esmeril behind a popup of Caminito's drawn as `drawing` at `rect` on `output` (ADR 0048),
+/// moved, cut off at `rect` and faded with it while it's `slid` (ADR 0037).
+fn popup_esmeril<R>(
+    caminito: &Caminito,
+    output: &Output,
+    drawing: &PopupDrawing,
+    rect: Rectangle<i32, Logical>,
+    slid: Option<Slid>,
+) -> Option<SceneElement<R>>
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let (offset, alpha) = slid.map_or((Point::default(), 1.0), |slid| (slid.offset, slid.alpha));
+    let esmeril = Esmeril::sliding(
+        drawing.esmeril.as_ref()?,
+        Rectangle::new(rect.loc + offset, rect.size),
+        rect,
+        alpha,
+        output_geometry(output).size,
+        output.current_scale().fractional_scale(),
+        caminito.settings.esmeril?,
+    )?;
+    Some(SceneElement::Esmeril(esmeril))
 }
 
 /// The window menu (161), if it's on `output`, front to back: its submenu, then the menu,
@@ -1199,7 +1235,7 @@ fn window_menu_elements<R>(
         let element = MemoryRenderBufferRenderElement::from_buffer(
             renderer,
             location.to_f64(),
-            chrome,
+            &chrome.buffer,
             slid.map(|slid| slid.alpha),
             None,
             Some(rect.size),
@@ -1215,12 +1251,13 @@ fn window_menu_elements<R>(
         };
         if slid.is_none() {
             elements.push(SceneElement::Frame(element));
-            continue;
+        } else {
+            let crop = rect.to_physical_precise_round(scale);
+            if let Some(element) = CropRenderElement::from_element(element, scale, crop) {
+                elements.push(SceneElement::MenuSlide(element));
+            }
         }
-        let crop = rect.to_physical_precise_round(scale);
-        if let Some(element) = CropRenderElement::from_element(element, scale, crop) {
-            elements.push(SceneElement::MenuSlide(element));
-        }
+        elements.extend(popup_esmeril(caminito, output, chrome, rect, slid));
     }
 }
 
@@ -1521,11 +1558,8 @@ fn layer_surface_esmeril<R>(
         if !esmeril::has_see_through_pixels(states) {
             return;
         }
-        let esmeril = Esmeril::behind_surface(surface, states, at, output, scale, strength, alpha);
-        let esmeril = match cut {
-            Some(cut) => esmeril.and_then(|esmeril| esmeril.cut_to(cut)),
-            None => esmeril,
-        };
+        let esmeril =
+            Esmeril::behind_surface(surface, states, at, output, scale, strength, alpha, cut);
         elements.extend(esmeril.map(SceneElement::Esmeril));
     });
 }
@@ -1931,8 +1965,10 @@ fn surface_esmeril_elements<R>(
     let location = (origin - window.geometry().loc).to_f64().to_physical(scale);
     for_each_surface_in_tree(&root, location, scale, |surface, states, location| {
         elements.extend(
-            Esmeril::behind_surface(surface, states, location, output, scale, strength, 1.0)
-                .map(SceneElement::Esmeril),
+            Esmeril::behind_surface(
+                surface, states, location, output, scale, strength, 1.0, None,
+            )
+            .map(SceneElement::Esmeril),
         );
     });
 }

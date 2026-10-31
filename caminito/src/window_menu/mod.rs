@@ -16,7 +16,6 @@ pub(crate) mod slide;
 use caminito_policy::{MenuEntry, MenuItem, MenuKey, MenuSelection, WindowId, WindowMenu};
 use caminito_theme::{PaletteColors, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
-use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle};
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle};
@@ -25,6 +24,7 @@ use self::labels::Label;
 use self::layout::Layout;
 use crate::output::output_geometry;
 use crate::state::{Caminito, SEAT, State};
+use crate::switcher::draw::PopupDrawing;
 
 /// The compositor's side of the open window menu.
 pub(crate) struct OpenWindowMenu {
@@ -63,7 +63,7 @@ pub(crate) struct Pane {
     /// Its rectangles, from the output's corner.
     pub(crate) layout: Layout,
     /// It as last drawn, unless cairo couldn't draw it.
-    pub(crate) chrome: Option<MemoryRenderBuffer>,
+    pub(crate) chrome: Option<PopupDrawing>,
 }
 
 /// The words of an item.

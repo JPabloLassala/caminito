@@ -1,31 +1,38 @@
-//! Esmeril behind frames, listed windows and layer surfaces (ADR 0048): where it goes and its damage on
-//! Pixman, where it draws nothing, and its pixels on GLES, skipped where surfaceless EGL can't
-//! be created. Those of frames run with xdg toplevels only: a frame's strips are drawn from
-//! its theme alone, whichever kind of window has them, and frames.rs runs what a frame does on
-//! both kinds. What decides whether a listed window gets it runs on both, as their app ids come
-//! each its own way; subsurfaces and popups are xdg's own, and once a window has it, its pixels
-//! and its place in the stack don't depend on the kind. A layer surface is a Wayland client's,
-//! and the window that hides an Intellihide panel only has to overlap it.
+//! Esmeril behind frames, Caminito's own popups, listed windows and layer surfaces (ADR 0048): where it goes
+//! and its damage on Pixman, where it draws nothing, and its pixels on GLES, skipped where
+//! surfaceless EGL can't be created. Those of frames and popups run with xdg toplevels only: a
+//! frame's strips are drawn from its theme alone, and a popup from the palette, whichever kind
+//! of window there is, and frames.rs runs what a frame does on both kinds. What decides whether
+//! a listed window gets it runs on both, as their app ids come each its own way; subsurfaces and
+//! popups are xdg's own, and once a window has it, its pixels and its place in the stack don't
+//! depend on the kind. A layer surface is a Wayland client's, and the window that hides an
+//! Intellihide panel only has to overlap it.
 
 use std::time::Duration;
 
 use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
 use caminito_test_client::{Anchor, ConstraintAdjustment, Gravity, Positioner};
+use caminito_theme::{GtkState, Palette, PaletteColors, Rgba, StateColors};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::Element;
 use smithay::output::Output;
 use smithay::utils::{Physical, Point, Rectangle, Scale};
 
 use super::fixture::{
-    ClientWindow, Fixture, KEY_F10, KEY_LEFTALT, Kind, WindowSpec, on_both_kinds,
+    ClientWindow, Fixture, KEY_ESC, KEY_F10, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, KEY_TAB, Kind,
+    WindowSpec, on_both_kinds,
 };
 use super::maximise_animation::asked_size;
 use super::overview;
+use super::popup_slide::{PART_WAY, the_closing, the_slide};
+use super::window_menu::{alt_space, menu, rect, tap};
 use crate::backend::headless::{Drawing, drawing};
 use crate::esmeril::Esmeril;
+use crate::popup_slide::LENGTH;
 use crate::scene::{self, SceneElement};
 use crate::settings::Value;
 use crate::settings::translate::{CAMINITO, MARCO_GENERAL};
+use crate::switcher::POPUP_DELAY;
 
 const OUTPUT: (i32, i32) = (400, 300);
 const BENEATH: u32 = 0xff_80_60_40;
@@ -650,6 +657,249 @@ fn what_is_beneath_a_listed_surface_shows_blurred_and_follows() {
     );
 }
 
+/// `colors` with a background of `alpha` in every state.
+fn with_background_alpha(colors: &PaletteColors, alpha: f64) -> PaletteColors {
+    let states = GtkState::ALL.map(|state| StateColors {
+        background: Rgba {
+            alpha,
+            ..colors.background(state)
+        },
+        text: colors.text(state),
+    });
+    PaletteColors::new(states, Default::default())
+}
+
+/// Has the GTK theme's `window.background` at half alpha, as a translucent theme's is.
+fn translucent_palette(f: &mut Fixture) {
+    let neutral = Palette::neutral();
+    f.state.caminito.palette.set_palette(Palette {
+        default: with_background_alpha(&neutral.default, 0.5),
+        dark: with_background_alpha(&neutral.dark, 0.5),
+    });
+}
+
+/// One 1280 × 800 output with a window with no frame, and the first output's Workspace popup
+/// open, in the palette the fixture has after `palette`.
+fn workspace_popup(palette: impl FnOnce(&mut Fixture)) -> (Fixture, Output) {
+    let mut f = Fixture::with_settings(vec![(
+        MARCO_GENERAL,
+        "num-workspaces".into(),
+        Value::Int(4),
+    )]);
+    let output = f.add_output((1280, 800), 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map(id, WindowSpec::plain((400, 300)));
+    palette(&mut f);
+    f.key(KEY_LEFTCTRL, true);
+    f.key(KEY_LEFTALT, true);
+    tap(&mut f, KEY_RIGHT);
+    f.draw(&output);
+    (f, output)
+}
+
+#[test]
+fn a_see_through_workspace_popup_gets_esmeril_behind_all_of_it() {
+    let (mut f, output) = workspace_popup(translucent_palette);
+    let whole = f
+        .state
+        .caminito
+        .workspace_popup
+        .as_ref()
+        .unwrap()
+        .layout
+        .popup;
+    let elements = esmerils(&mut f, &output);
+    let [esmeril] = elements.as_slice() else {
+        panic!("the popup is see-through: {elements:?}");
+    };
+    assert_eq!(esmeril.strip(), whole.to_physical(1));
+}
+
+#[test]
+fn an_opaque_workspace_popup_gets_none() {
+    let (mut f, output) = workspace_popup(|_| {});
+    assert!(esmerils(&mut f, &output).is_empty());
+}
+
+/// Two windows with see-through frames on a 1280 × 800 output, in the palette the fixture has
+/// after `palette`, and how many Esmerils they have before the Window switcher opens, as it
+/// has by the end.
+fn switcher_over_see_through_frames(
+    palette: impl FnOnce(&mut Fixture),
+) -> (Fixture, Output, usize) {
+    let mut f = Fixture::with_settings(settings("EsmerilSeeThrough", 15));
+    let output = f.add_output((1280, 800), 1.0);
+    let id = f.connect(Kind::Xdg);
+    for _ in 0..2 {
+        f.map(id, WindowSpec::default());
+    }
+    palette(&mut f);
+    f.draw(&output);
+    let frames = esmerils(&mut f, &output).len();
+    assert!(frames > 0, "the frames are see-through");
+    f.key(KEY_LEFTALT, true);
+    tap(&mut f, KEY_TAB);
+    f.advance_clock(POPUP_DELAY);
+    assert!(f.state.caminito.visible_switcher().is_some());
+    f.draw(&output);
+    (f, output, frames)
+}
+
+#[test]
+fn a_see_through_switcher_gets_esmeril_right_behind_its_background() {
+    let (mut f, output, frames) = switcher_over_see_through_frames(translucent_palette);
+    let whole = f.state.caminito.visible_switcher().unwrap().grid.popup;
+    let elements = esmerils(&mut f, &output);
+    assert_eq!(elements.len(), frames + 1);
+    // The popup is over the windows, so its Esmeril is the first.
+    assert_eq!(elements[0].strip(), whole.to_physical(1));
+
+    let Drawing::Pixman(renderer, _) = f.state.backend.headless_mut().drawing() else {
+        panic!("it draws with pixman");
+    };
+    let elements = scene::output_elements(renderer, &f.state.caminito, &output);
+    let at = elements
+        .iter()
+        .position(|element| matches!(element, SceneElement::Esmeril(_)))
+        .unwrap();
+    assert!(matches!(elements[at - 1], SceneElement::Frame(_)));
+    assert!(
+        elements[..at]
+            .iter()
+            .any(|element| matches!(element, SceneElement::Thumbnail(_))),
+        "the thumbnails are over it"
+    );
+}
+
+#[test]
+fn an_opaque_switcher_gets_none_and_nor_do_the_see_through_frames_in_its_previews() {
+    let (mut f, output, frames) = switcher_over_see_through_frames(|_| {});
+    assert_eq!(esmerils(&mut f, &output).len(), frames);
+}
+
+/// `f` with one 1280 × 800 output over `BENEATH`, a window with no frame, small enough that
+/// most of its Window menu is over `BENEATH` too, and that menu asked for with the clock
+/// stopped, in the palette the fixture has after `palette`.
+fn window_menu(mut f: Fixture, palette: impl FnOnce(&mut Fixture)) -> (Fixture, Output) {
+    let output = f.add_output((1280, 800), 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map_layer(id, LayerSpec::covering(Layer::Background, "test"), BENEATH);
+    f.map(id, WindowSpec::plain((20, 20)));
+    f.stop_clock();
+    palette(&mut f);
+    alt_space(&mut f);
+    f.draw(&output);
+    (f, output)
+}
+
+fn popup_slide_on() -> Vec<(&'static str, String, Value)> {
+    vec![(CAMINITO, "popup-slide".into(), Value::Bool(true))]
+}
+
+#[test]
+fn a_see_through_window_menu_gets_esmeril_behind_all_of_it() {
+    let (mut f, output) = window_menu(Fixture::with_settings(Vec::new()), translucent_palette);
+    let whole = rect(&menu(&f)["rect"]);
+    let elements = esmerils(&mut f, &output);
+    let [esmeril] = elements.as_slice() else {
+        panic!("the menu is see-through, and there are {}", elements.len());
+    };
+    assert_eq!(esmeril.strip(), whole.to_physical(1));
+    assert_eq!(esmeril.shown(), whole.to_physical(1));
+    assert_eq!(esmeril.alpha(), 1.0);
+}
+
+#[test]
+fn an_opaque_window_menu_gets_none() {
+    let (mut f, output) = window_menu(Fixture::with_settings(Vec::new()), |_| {});
+    assert!(esmerils(&mut f, &output).is_empty());
+}
+
+/// `esmeril` is where `slide` has what it's behind: moved off its place, cut off at it, and
+/// faded, and it reads around what shows of it.
+#[track_caller]
+fn slides_with(esmeril: &Esmeril, slide: &super::popup_slide::Sliding) {
+    let place = slide.rect.to_physical(1);
+    let mut strip = place;
+    strip.loc += slide.offset.to_physical(1);
+    assert_eq!(esmeril.strip(), strip);
+    let shown = strip.intersection(place).unwrap();
+    assert_eq!(esmeril.shown(), shown);
+    assert!((f64::from(esmeril.alpha()) - slide.alpha).abs() < 1e-6);
+    let mut read = shown;
+    read.loc -= Point::from((150, 150));
+    read.size += (300, 300).into();
+    let on_output = Rectangle::from_size((1280, 800).into());
+    assert_eq!(
+        esmeril.geometry(SCALE),
+        read.intersection(on_output).unwrap()
+    );
+}
+
+#[test]
+fn a_window_menu_carries_its_esmeril_as_it_slides_out_and_back() {
+    let f = Fixture::with_settings(popup_slide_on());
+    let (mut f, output) = window_menu(f, translucent_palette);
+
+    f.advance_clock(PART_WAY);
+    let slide = the_slide(&f);
+    assert_ne!(slide.offset, Point::default(), "part way");
+    assert!(slide.alpha < 1.0, "part way");
+    slides_with(&esmerils(&mut f, &output)[0], &slide);
+
+    f.advance_clock(LENGTH);
+    let whole = rect(&menu(&f)["rect"]).to_physical(1);
+    assert_eq!(esmerils(&mut f, &output)[0].shown(), whole);
+
+    tap(&mut f, KEY_ESC);
+    f.advance_clock(PART_WAY);
+    let picture = the_closing(&f);
+    let elements = esmerils(&mut f, &output);
+    assert_eq!(elements.len(), 1, "with the picture of the closed menu");
+    slides_with(&elements[0], &picture);
+
+    f.advance_clock(LENGTH);
+    assert!(esmerils(&mut f, &output).is_empty());
+}
+
+#[test]
+fn what_is_past_a_sliding_menus_place_looks_as_it_does_with_esmeril_off() {
+    let mut pictures = Vec::new();
+    for esmeril in [true, false] {
+        let mut settings = popup_slide_on();
+        settings.push((CAMINITO, "esmeril".into(), Value::Bool(esmeril)));
+        settings.push((CAMINITO, "esmeril-strength".into(), Value::Uint(1)));
+        // Away from the output's top, so there's a row above the menu.
+        settings.push((
+            MARCO_GENERAL,
+            "center-new-windows".into(),
+            Value::Bool(true),
+        ));
+        let Some(f) = Fixture::on_gles_with(settings) else {
+            return;
+        };
+        let (mut f, output) = window_menu(f, translucent_palette);
+        f.advance_clock(PART_WAY);
+        f.draw(&output);
+        let slide = the_slide(&f);
+        let pixels = f.state.backend.headless_mut().pixels(&output).unwrap();
+        pictures.push((pixels, slide));
+    }
+    let [(on, slide), (off, _)] = &pictures[..] else {
+        unreachable!();
+    };
+    let at = |x: i32, y: i32| (y * 1280 + x) as usize;
+    let place = slide.rect;
+    // At its right, far from the window, whose pure green Esmeril leaves as it is.
+    let x = place.loc.x + place.size.w - 5;
+    // It slides down out of the top of its place, so it'd be over this row uncut.
+    assert!(slide.offset.y < 0);
+    let above = place.loc.y - 1;
+    assert_eq!(on[at(x, above)], off[at(x, above)], "past its place");
+    let inside = place.loc.y + place.size.h / 2 + slide.offset.y;
+    assert_ne!(on[at(x, inside)], off[at(x, inside)], "inside it");
+}
+
 /// A see-through colour of a surface: half black, premultiplied.
 const TINT: u32 = 0x80_00_00_00;
 
@@ -748,7 +998,7 @@ fn a_commit_of_the_surface_keeps_its_element_and_can_end_it() {
 }
 
 /// A menu hanging below a bar at the top of the output, as mate-panel's are.
-fn menu() -> Positioner {
+fn panel_menu() -> Positioner {
     Positioner {
         size: (200, 100),
         anchor_rect: (50, 0, 20, 28),
@@ -768,7 +1018,7 @@ fn esmerils_with_a_popup(namespace: &'static str, bar: u32, popup: u32) -> Vec<E
         ..LayerSpec::top_bar(28)
     };
     let parent = f.map_layer(id, spec, bar);
-    let menu = f.client(id).create_layer_popup(parent, menu(), None);
+    let menu = f.client(id).create_layer_popup(parent, panel_menu(), None);
     f.roundtrip(id);
     f.client(id).map_popup(menu, popup);
     f.roundtrip(id);
@@ -886,7 +1136,7 @@ fn a_popups_esmeril_slides_with_it_and_rests_at_its_place() {
     let id = f.connect(Kind::Xdg);
     f.stop_clock();
     let parent = f.map_layer(id, LayerSpec::top_bar(28), 0xff_20_40_60);
-    let popup = f.client(id).create_layer_popup(parent, menu(), None);
+    let popup = f.client(id).create_layer_popup(parent, panel_menu(), None);
     f.roundtrip(id);
     f.client(id).map_popup(popup, TINT);
     f.roundtrip(id);

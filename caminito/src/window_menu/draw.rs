@@ -4,14 +4,12 @@
 use caminito_policy::MenuMark;
 use caminito_theme::cairo::{self, Context};
 use caminito_theme::{GtkState, PaletteColors, Rgba, Title, pango, pangocairo};
-use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::utils::{Logical, Rectangle};
 
 use super::labels::Label;
 use super::layout::{ARROW_COLUMN, Layout, MARK_COLUMN};
-use crate::decoration::memory_buffer;
 use crate::switcher::draw::{
-    context, draw_background, fill_selected, selection_shows, set_color, surface,
+    PopupDrawing, context, draw_background, fill_selected, selection_shows, set_color, surface,
 };
 
 /// How much of the text colour a separator's line is.
@@ -72,7 +70,7 @@ pub(crate) fn draw(
     selected: Option<usize>,
     colors: &PaletteColors,
     scale: i32,
-) -> Result<MemoryRenderBuffer, cairo::Error> {
+) -> Result<PopupDrawing, cairo::Error> {
     let surface = surface(layout.rect, scale)?;
     {
         let cr = context(&surface, layout.rect, scale)?;
@@ -117,7 +115,7 @@ pub(crate) fn draw(
             }
         }
     }
-    memory_buffer(surface, scale).ok_or(cairo::Error::NoMemory)
+    PopupDrawing::of(surface, scale)
 }
 
 /// `text` from `left`, in the middle of `row`'s height.

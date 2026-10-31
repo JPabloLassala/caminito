@@ -14,7 +14,6 @@ pub(crate) mod layout;
 use caminito_policy::{Action, Interaction, default_workspace_name};
 use caminito_theme::{PaletteColors, Title, Variant, pango};
 use smithay::backend::input::{ButtonState, InputTime};
-use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::input::keyboard::{FilterResult, Keycode, KeysymHandle, ModifiersState};
 use smithay::output::Output;
 use smithay::utils::{Logical, Rectangle, Size};
@@ -26,6 +25,7 @@ use crate::input::{Bound, press_keysyms};
 use crate::output::{output_geometry, output_id};
 use crate::state::{Caminito, SEAT, State};
 use crate::switcher::Holding;
+use crate::switcher::draw::PopupDrawing;
 
 /// The open Workspace popup, on the output it appeared on. It doesn't follow the pointer
 /// to another. Policy has whether a move opened it.
@@ -37,7 +37,7 @@ pub(crate) struct WorkspacePopup {
     /// Its rectangles there, as last laid out.
     pub(crate) layout: Layout,
     /// The popup as last drawn, unless cairo couldn't draw it.
-    pub(crate) chrome: Option<MemoryRenderBuffer>,
+    pub(crate) chrome: Option<PopupDrawing>,
     /// What it was drawn from, to draw it again only when that changes.
     drawn: Option<Drawn>,
 }
@@ -352,7 +352,7 @@ impl Caminito {
     }
 
     /// Draws the popup from `drawn`.
-    fn draw_workspace_popup(&self, drawn: &Drawn) -> Option<MemoryRenderBuffer> {
+    fn draw_workspace_popup(&self, drawn: &Drawn) -> Option<PopupDrawing> {
         let font = pango::FontDescription::from_string(&drawn.font);
         let context = self.frame_context.text_context();
         let workspaces: Vec<Workspace> = drawn

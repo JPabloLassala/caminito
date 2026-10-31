@@ -3,13 +3,12 @@
 
 use caminito_theme::cairo::{self, Context};
 use caminito_theme::{GtkState, PaletteColors, Title};
-use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::utils::{Logical, Rectangle, Size};
 
 use super::layout::Layout;
-use crate::decoration::memory_buffer;
 use crate::switcher::draw::{
-    context, draw_background, draw_text, fill_selected, selection_shows, set_color, surface,
+    PopupDrawing, context, draw_background, draw_text, fill_selected, selection_shows, set_color,
+    surface,
 };
 
 /// How much of the text colour tints a preview, to set the workspace off from the popup.
@@ -36,7 +35,7 @@ pub(crate) fn draw(
     output: Size<i32, Logical>,
     colors: &PaletteColors,
     scale: i32,
-) -> Result<MemoryRenderBuffer, cairo::Error> {
+) -> Result<PopupDrawing, cairo::Error> {
     let surface = surface(layout.popup, scale)?;
     {
         let cr = context(&surface, layout.popup, scale)?;
@@ -57,7 +56,7 @@ pub(crate) fn draw(
             draw_text(&cr, cell.name, &workspace.name, color);
         }
     }
-    memory_buffer(surface, scale).ok_or(cairo::Error::NoMemory)
+    PopupDrawing::of(surface, scale)
 }
 
 /// A workspace in small: the output, tinted, and each window's frame where it is on the

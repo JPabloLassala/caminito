@@ -1,6 +1,6 @@
 //! Esmeril (ADR 0048): a blur of what's beneath, with raised saturation and contrast, drawn
-//! behind the see-through parts of a frame and of the windows of the listed applications. It's
-//! Plasma's Blur effect and its Background
+//! behind the see-through parts of a frame, of a popup of Caminito's and of the windows of the
+//! listed applications. It's Plasma's Blur effect and its Background
 //! contrast effect, whose behaviour and numbers are taken and whose code isn't: the passes
 //! and offsets of each strength step from KWin's `src/plugins/blur/blur.cpp`, and the colour
 //! transform from `src/plugins/backgroundcontrast/contrast.cpp`, with libplasma's default
@@ -12,6 +12,10 @@
 //! as much as the blur reads, so that the damage tracker redraws all of that whenever any of
 //! it changes, and captures it again. What's captured is blurred once, into textures the
 //! tracker keeps for the element, and only the strip's own rectangle is drawn.
+//!
+//! A popup that slides (ADR 0037) carries its Esmeril with it, cut off at its place and faded
+//! as the popup is. That's done here and not by Smithay's `CropRenderElement`, which would cut
+//! the element's geometry, and so what the damage tracker redraws of what the blur reads.
 //!
 //! The alpha of a strip, or of a listed window's surface, says where it's drawn: wherever that
 //! has any alpha at all. The strip or the surface is drawn over it, so an opaque pixel hides it
@@ -225,20 +229,22 @@ enum Behind {
 /// lives. The surface's own element has the id of its resource.
 struct SurfaceId(Id);
 
-/// Esmeril behind one strip of a frame or one surface, of a listed window or a layer surface,
-/// for one frame of an output.
+/// Esmeril behind one strip of a frame, one popup of Caminito's or one surface, of a listed
+/// window or a layer surface, for one frame of an output.
 #[derive(Debug, Clone)]
 pub struct Esmeril {
     id: Id,
     behind: Behind,
     strength: u32,
-    /// How much of it shows, as what's in front of it fades.
-    alpha: f32,
     /// The rectangle of the strip or the surface.
     strip: Rectangle<i32, Physical>,
-    /// The part of that it's drawn on.
+    /// The part of the strip that's drawn: all of it, but for a popup that slides, Caminito's
+    /// or a layer surface's, which is cut off at its place.
     shown: Rectangle<i32, Physical>,
-    /// The rectangle the blur reads: the strip's, widened by its reach, on the output.
+    /// How much of it shows, as a popup that slides or a panel in the Overview's way fades.
+    alpha: f32,
+    /// The rectangle the blur reads: the part that's shown, widened by its reach, on the
+    /// output.
     read: Rectangle<i32, Physical>,
     /// The output's size, in the coordinates of the two rectangles.
     output: Size<i32, Physical>,
@@ -254,13 +260,31 @@ impl Esmeril {
         scale: f64,
         strength: u32,
     ) -> Option<Self> {
+        Self::sliding(mask, strip, strip, 1.0, output, scale, strength)
+    }
+
+    /// As [`Esmeril::new`], for a popup that slides (ADR 0037): the strip is moved off its
+    /// `place`, cut off at it, and shows `alpha` of itself. `None` too if none of it shows.
+    pub(crate) fn sliding(
+        mask: &Mask,
+        strip: Rectangle<i32, Logical>,
+        place: Rectangle<i32, Logical>,
+        alpha: f32,
+        output: Size<i32, Logical>,
+        scale: f64,
+        strength: u32,
+    ) -> Option<Self> {
         let strip = strip.to_f64().to_physical_precise_round(scale);
+        let place: Rectangle<i32, Physical> = place.to_f64().to_physical_precise_round(scale);
+        let shown = strip.intersection(place)?;
+        let output = output.to_f64().to_physical_precise_round(scale);
         let behind = Behind::Strip(mask.clone());
-        Self::at(mask.id.clone(), behind, strip, output, scale, strength, 1.0)
+        Self::at(mask.id.clone(), behind, strip, shown, alpha, output, strength)
     }
 
     /// Esmeril behind `surface`, with its origin at `location` on an output of the logical size
-    /// `output`, at `scale` and `alpha`, or `None` if it has no view yet or is off the output.
+    /// `output`, at `scale` and `alpha`, cut off at `cut` if it has one, or `None` if it has no
+    /// view yet or none of it shows.
     pub(crate) fn behind_surface(
         surface: &WlSurface,
         states: &SurfaceData,
@@ -269,6 +293,7 @@ impl Esmeril {
         scale: f64,
         strength: u32,
         alpha: f32,
+        cut: Option<Rectangle<i32, Physical>>,
     ) -> Option<Self> {
         let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
         let view = data.lock().unwrap().view()?;
@@ -285,21 +310,24 @@ impl Esmeril {
             .insert_if_missing_threadsafe(|| SurfaceId(Id::new()));
         let id = states.data_map.get::<SurfaceId>()?.0.clone();
         let behind = Behind::Surface(surface.clone());
-        Self::at(id, behind, strip, output, scale, strength, alpha)
+        let shown = match cut {
+            Some(cut) => strip.intersection(cut)?,
+            None => strip,
+        };
+        Self::at(id, behind, strip, shown, alpha, on_output, strength)
     }
 
     fn at(
         id: Id,
         behind: Behind,
         strip: Rectangle<i32, Physical>,
-        output: Size<i32, Logical>,
-        scale: f64,
-        strength: u32,
+        shown: Rectangle<i32, Physical>,
         alpha: f32,
+        output: Size<i32, Physical>,
+        strength: u32,
     ) -> Option<Self> {
-        let output: Size<i32, Physical> = output.to_f64().to_physical_precise_round(scale);
         let reach = step(strength).reach;
-        let mut read = strip;
+        let mut read = shown;
         read.loc -= (reach, reach).into();
         read.size += (2 * reach, 2 * reach).into();
         let read = read.intersection(Rectangle::from_size(output))?;
@@ -307,24 +335,24 @@ impl Esmeril {
             id,
             behind,
             strength,
-            alpha,
             strip,
-            shown: strip,
+            shown,
+            alpha,
             read,
             output,
         })
-    }
-
-    /// As it is, drawn only inside `place`, or `None` if nothing of it is.
-    pub(crate) fn cut_to(mut self, place: Rectangle<i32, Physical>) -> Option<Self> {
-        self.shown = self.strip.intersection(place)?;
-        Some(self)
     }
 
     /// The rectangle of the strip or the surface, on the output.
     #[cfg(test)]
     pub(crate) fn strip(&self) -> Rectangle<i32, Physical> {
         self.strip
+    }
+
+    /// The part of the strip that's drawn, on the output.
+    #[cfg(test)]
+    pub(crate) fn shown(&self) -> Rectangle<i32, Physical> {
+        self.shown
     }
 }
 
@@ -338,16 +366,17 @@ impl Element for Esmeril {
         CommitCounter::from(self.strength as usize)
     }
 
-    fn alpha(&self) -> f32 {
-        self.alpha
-    }
-
     fn src(&self) -> Rectangle<f64, Buffer> {
         Rectangle::from_size((f64::from(self.read.size.w), f64::from(self.read.size.h)).into())
     }
 
     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
         self.read
+    }
+
+    /// Changes with a popup's fade, which then damages it.
+    fn alpha(&self) -> f32 {
+        self.alpha
     }
 
     fn is_framebuffer_effect(&self) -> bool {
@@ -851,16 +880,17 @@ impl DrawsEsmeril for GlesRenderer {
             }
         };
 
-        // From the corner of what it reads to the corner of the strip.
+        // From the corner of what it reads to the corner of the strip, of which only what's
+        // shown is drawn.
         let strip = esmeril.strip;
         let to_strip = esmeril.read.loc - strip.loc;
-        let whole = Rectangle::new(esmeril.shown.loc - strip.loc, esmeril.shown.size);
+        let shown = Rectangle::new(esmeril.shown.loc - strip.loc, esmeril.shown.size);
         let damage: Vec<_> = damage
             .iter()
             .filter_map(|rect| {
                 let mut rect = *rect;
                 rect.loc += to_strip;
-                rect.intersection(whole)
+                rect.intersection(shown)
             })
             .collect();
         if damage.is_empty() {
