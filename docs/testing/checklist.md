@@ -3968,6 +3968,24 @@ They are the developer's to run.
   /org/mate/Caminito/Notifications org.mate.Caminito.Notifications DoNotDisturb`, and
   `busctl --user monitor org.mate.Caminito.Notifications` for its signals.
 
+### Esmeril shows blurred behind a translucent panel and the other layer surfaces
+
+- **Milestone:** esmeril
+- **Steps:**
+  1. Start a Nested run with `tools/dev-nested`. In a mate-panel's Properties, on Background,
+     choose a solid colour and lower its opacity.
+  2. Move a window under the panel, then open one of the panel's menus over a window.
+  3. Change the volume with its key, right-click the desktop, and run
+     `notify-send hello` with a theme that gives each some alpha.
+  4. Raise the panel's opacity all the way.
+  5. Turn on Intellihide in the panel's Properties and maximise a window.
+- **Expected:** What's beneath the panel shows blurred, more saturated and more contrasted,
+  windows and wallpaper both, and follows the window as it moves. So it does beneath a
+  see-through menu, the volume display, the desktop menu and a bubble. A menu's own client-side
+  shadow shows no hard edge of blur. The desktop never shows blur. The opaque panel looks as it
+  did with `esmeril` off. The Intellihide panel keeps the blur under it as it slides out and
+  leaves no trace of it behind.
+
 ### Esmeril shows blurred behind a see-through frame
 
 - **Milestone:** esmeril

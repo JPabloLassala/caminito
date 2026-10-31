@@ -146,6 +146,22 @@ impl Client {
         layer.buffers.push(Buffer { buffer, pool });
     }
 
+    /// Commits a new buffer of the mapped layer surface's size, filled with `argb`.
+    pub fn redraw_layer_surface(&mut self, id: LayerId, argb: u32) {
+        let size = *self
+            .layer_surface(id)
+            .configures
+            .last()
+            .expect("configured");
+        let size = (size.0 as i32, size.1 as i32);
+        let (pool, buffer) = self.shm_buffer(size, argb);
+        let layer = &mut self.state.layer_surfaces[id.0];
+        layer.surface.attach(Some(&buffer), 0, 0);
+        layer.surface.damage_buffer(0, 0, size.0, size.1);
+        layer.surface.commit();
+        layer.buffers.push(Buffer { buffer, pool });
+    }
+
     /// Attaches no buffer and commits, which unmaps the layer surface.
     pub fn unmap_layer_surface(&self, id: LayerId) {
         let surface = &self.layer_surface(id).surface;

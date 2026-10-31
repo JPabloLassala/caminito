@@ -43,7 +43,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
-use crate::esmeril::{DrawsEsmeril, Esmeril};
+use crate::esmeril::{DrawsEsmeril, Esmeril, Mask};
 use crate::open_close_animation::{Closing, Picture};
 use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
@@ -123,7 +123,7 @@ render_elements! {
     /// The Window menu or its submenu as it slides out of its edge or back into it (ADR
     /// 0037).
     MenuSlide = MenuSlidePart<R>,
-    /// Esmeril behind a strip of a frame (ADR 0048).
+    /// Esmeril behind a strip of a frame, or a layer surface or its popup (ADR 0048).
     Esmeril = Esmeril,
 }
 
@@ -205,6 +205,13 @@ pub(crate) enum SceneLayer {
 /// caminito-wallpaperd draws it under msd's background plugin's namespace, which it took
 /// over (210).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
+
+/// The layer surfaces that get Esmeril behind them and their popups (ADR 0048): mate-panel,
+/// mate-settings-daemon's volume and brightness display, caja's desktop menu, and
+/// caminito-notifications' bubbles, whose namespace is `NAMESPACE` in its `src/bubbles.rs`.
+/// Any other doesn't, the desktop and the wallpaper above all.
+const ESMERIL_NAMESPACES: [&str; 4] =
+    ["panel", "mate-osd", "desktop-menu", "caminito-notification"];
 
 pub(crate) const LAYERS: [SceneLayer; 18] = [
     SceneLayer::Blank,
@@ -1483,8 +1490,33 @@ pub(crate) fn window_is_in(caminito: &Caminito, id: WindowId, layer: SceneLayer)
     fullscreen == (layer == SceneLayer::FullscreenWindows)
 }
 
+/// Esmeril behind a surface of a layer surface's, with its origin at `origin` from the corner
+/// of `output`, if it has see-through pixels and is on the output. While it slides as `slid`
+/// has it, Esmeril goes with it and is cut off at its place, as it is.
+fn layer_surface_esmeril(
+    surface: &WlSurface,
+    origin: Point<i32, Logical>,
+    output: Size<i32, Logical>,
+    scale: f64,
+    (strength, alpha): (u32, f32),
+    slid: Option<Slid>,
+) -> Option<Esmeril> {
+    let (mask, mut place) = Mask::of_surface(surface)?;
+    place.loc += origin;
+    let Some(slid) = slid else {
+        return place
+            .overlaps(Rectangle::from_size(output))
+            .then(|| Esmeril::new(&mask, place, output, scale, strength, alpha))
+            .flatten();
+    };
+    let cut = place.to_f64().to_physical_precise_round(scale);
+    let mut moved = place;
+    moved.loc += slid.offset;
+    Esmeril::new(&mask, moved, output, scale, strength, alpha * slid.alpha)?.cut_to(cut)
+}
+
 /// `output`'s layer surfaces in one of the scene's layers that hold them, each under its
-/// popups where the layer has both.
+/// popups where the layer has both, and each of them over its Esmeril if it gets it.
 fn layer_shell_elements<R>(
     layer: SceneLayer,
     renderer: &mut R,
@@ -1513,11 +1545,26 @@ fn layer_shell_elements<R>(
             closing_popups_on(caminito, wl_surface, origin, scale, now, elements);
         }
         let slides = Some((&caminito.popup_slides, now));
+        let esmeril = caminito
+            .settings
+            .esmeril
+            .filter(|_| ESMERIL_NAMESPACES.contains(&surface.namespace()))
+            .map(|strength| (strength, alpha));
         for (popup, offset) in popups {
             let location = (origin + offset).to_f64().to_physical(scale);
             elements.extend(popup_elements(
                 renderer, &popup, location, scale, alpha, slides,
             ));
+            let slid = caminito.popup_slides.slid(&Popup::Xdg(popup.clone()), now);
+            elements.extend(
+                esmeril
+                    .and_then(|esmeril| {
+                        let origin = origin + offset;
+                        let size = output_geometry.size;
+                        layer_surface_esmeril(&popup, origin, size, scale, esmeril, slid)
+                    })
+                    .map(SceneElement::Esmeril),
+            );
         }
         if part.contains(WindowSurfaceType::TOPLEVEL) {
             let location = origin.to_f64().to_physical(scale);
@@ -1525,6 +1572,14 @@ fn layer_shell_elements<R>(
                 surface_tree_elements(renderer, wl_surface, location, scale, alpha)
                     .into_iter()
                     .map(SceneElement::Window),
+            );
+            elements.extend(
+                esmeril
+                    .and_then(|esmeril| {
+                        let size = output_geometry.size;
+                        layer_surface_esmeril(wl_surface, origin, size, scale, esmeril, None)
+                    })
+                    .map(SceneElement::Esmeril),
             );
         }
     }
@@ -1810,7 +1865,7 @@ fn window_elements<R>(
                     elements.extend(
                         rect.overlaps(shown)
                             .then(|| {
-                                Esmeril::new(mask, rect, output_geometry.size, scale, strength)
+                                Esmeril::new(mask, rect, output_geometry.size, scale, strength, 1.0)
                             })
                             .flatten()
                             .map(SceneElement::Esmeril),

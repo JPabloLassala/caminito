@@ -1,15 +1,20 @@
-//! Esmeril behind frames (ADR 0048): where it goes and its damage on Pixman, where it draws
-//! nothing, and its pixels on GLES, skipped where surfaceless EGL can't be created. These run
-//! with xdg toplevels only: a frame's strips are drawn from its theme alone, whichever kind
-//! of window has them, and frames.rs runs what a frame does on both kinds.
+//! Esmeril behind frames and layer surfaces (ADR 0048): where it goes and its damage on Pixman,
+//! where it draws nothing, and its pixels on GLES, skipped where surfaceless EGL can't be
+//! created. These run with xdg toplevels only: a frame's strips are drawn from its theme alone,
+//! whichever kind of window has them, and frames.rs runs what a frame does on both kinds.
 
-use caminito_test_client::layer_shell::{Layer, LayerSpec};
+use std::time::Duration;
+
+use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
+use caminito_test_client::{Anchor, ConstraintAdjustment, Gravity, Positioner};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::Element;
 use smithay::output::Output;
 use smithay::utils::{Physical, Point, Rectangle, Scale};
 
-use super::fixture::{Fixture, Kind, WindowSpec};
+use super::fixture::{Fixture, KEY_F10, KEY_LEFTALT, Kind, WindowSpec};
+use super::maximise_animation::asked_size;
+use super::overview;
 use crate::backend::headless::{Drawing, drawing};
 use crate::esmeril::Esmeril;
 use crate::scene::{self, SceneElement};
@@ -347,4 +352,262 @@ fn what_is_beneath_shows_the_right_way_up() {
     let blue = |f: &mut Fixture, y: i32| channels(pixel(f, &output, (x, y).into()))[2];
     let (upper, lower) = (blue(&mut f, upper), blue(&mut f, lower));
     assert!(lower > upper, "{lower} under the band, {upper} above it");
+}
+
+/// A see-through colour of a surface: half black, premultiplied.
+const TINT: u32 = 0x80_00_00_00;
+
+/// How many Esmeril elements a surface of `namespace` in `color` gets on the top layer.
+fn esmerils_of(namespace: &'static str, color: u32) -> usize {
+    let mut f = Fixture::with_settings(vec![]);
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map_layer(id, LayerSpec::covering(Layer::Top, namespace), color);
+    f.draw(&output);
+    esmerils(&mut f, &output).len()
+}
+
+#[test]
+fn a_see_through_layer_surface_gets_esmeril_by_its_namespace() {
+    for (namespace, count) in [
+        ("panel", 1),
+        ("mate-osd", 1),
+        ("desktop-menu", 1),
+        ("caminito-notification", 1),
+        ("desktop", 0),
+        ("mate-background", 0),
+        ("something-else", 0),
+    ] {
+        assert_eq!(esmerils_of(namespace, TINT), count, "{namespace}");
+    }
+}
+
+#[test]
+fn a_layer_surface_with_no_see_through_pixels_gets_none() {
+    assert_eq!(esmerils_of("panel", 0xff_20_40_60), 0, "wholly opaque");
+    assert_eq!(esmerils_of("panel", 0x00_00_00_00), 0, "wholly clear");
+}
+
+#[test]
+fn a_layer_surfaces_esmeril_is_under_it_at_its_place() {
+    let mut f = Fixture::with_settings(vec![]);
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map_layer(id, LayerSpec::top_bar(28), TINT);
+    f.draw(&output);
+    let elements = esmerils(&mut f, &output);
+    let [esmeril] = elements.as_slice() else {
+        panic!("the panel is see-through: {elements:?}");
+    };
+    let strip = Rectangle::new((0, 0).into(), (OUTPUT.0, 28).into());
+    assert_eq!(esmeril.strip(), strip);
+    assert_eq!(
+        esmeril.geometry(SCALE),
+        Rectangle::new((0, 0).into(), (OUTPUT.0, 178).into())
+    );
+
+    let Drawing::Pixman(renderer, _) = f.state.backend.headless_mut().drawing() else {
+        panic!("it draws with pixman");
+    };
+    let elements = scene::output_elements(renderer, &f.state.caminito, &output);
+    let at = elements
+        .iter()
+        .position(|element| matches!(element, SceneElement::Esmeril(_)))
+        .unwrap();
+    assert!(matches!(elements[at - 1], SceneElement::Window(_)));
+}
+
+#[test]
+fn esmeril_off_removes_a_layer_surfaces_too() {
+    let mut f = Fixture::with_settings(vec![]);
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map_layer(id, LayerSpec::top_bar(28), TINT);
+    f.draw(&output);
+    assert_eq!(esmerils(&mut f, &output).len(), 1);
+    f.set_setting(CAMINITO, "esmeril", Value::Bool(false));
+    f.dispatch_until(|f| f.state.caminito.settings.esmeril.is_none());
+    assert!(esmerils(&mut f, &output).is_empty());
+}
+
+#[test]
+fn a_commit_of_the_surface_keeps_its_element_damages_it_and_can_end_it() {
+    let mut f = Fixture::with_settings(vec![]);
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    let panel = f.map_layer(id, LayerSpec::top_bar(28), TINT);
+    f.draw(&output);
+    let before = esmerils(&mut f, &output).remove(0);
+    assert_eq!(
+        esmerils(&mut f, &output).remove(0).current_commit(),
+        before.current_commit(),
+        "nothing was committed"
+    );
+
+    f.client(id).redraw_layer_surface(panel, 0x40_00_00_00);
+    f.roundtrip(id);
+    f.draw(&output);
+    let after = esmerils(&mut f, &output).remove(0);
+    assert_eq!(before.id(), after.id());
+    assert_ne!(before.current_commit(), after.current_commit());
+
+    f.client(id).redraw_layer_surface(panel, 0xff_20_40_60);
+    f.roundtrip(id);
+    f.draw(&output);
+    assert!(esmerils(&mut f, &output).is_empty(), "it's opaque now");
+}
+
+/// A menu hanging below a bar at the top of the output, as mate-panel's are.
+fn menu() -> Positioner {
+    Positioner {
+        size: (200, 100),
+        anchor_rect: (50, 0, 20, 28),
+        anchor: Anchor::BottomLeft,
+        gravity: Gravity::BottomRight,
+        constraint_adjustment: ConstraintAdjustment::None,
+    }
+}
+
+/// The Esmeril elements of a bar of `namespace` in `bar` with a popup in `popup`.
+fn esmerils_with_a_popup(namespace: &'static str, bar: u32, popup: u32) -> Vec<Esmeril> {
+    let mut f = Fixture::with_settings(vec![]);
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    let spec = LayerSpec {
+        namespace,
+        ..LayerSpec::top_bar(28)
+    };
+    let parent = f.map_layer(id, spec, bar);
+    let menu = f.client(id).create_layer_popup(parent, menu(), None);
+    f.roundtrip(id);
+    f.client(id).map_popup(menu, popup);
+    f.roundtrip(id);
+    f.draw(&output);
+    esmerils(&mut f, &output)
+}
+
+#[test]
+fn a_panels_see_through_popup_gets_esmeril_at_its_place() {
+    let elements = esmerils_with_a_popup("panel", 0xff_20_40_60, TINT);
+    let [esmeril] = elements.as_slice() else {
+        panic!("only the popup is see-through: {elements:?}");
+    };
+    let place = Rectangle::new((50, 28).into(), (200, 100).into());
+    assert_eq!(esmeril.strip(), place);
+}
+
+#[test]
+fn an_opaque_popup_and_the_desktops_get_none() {
+    let opaque = esmerils_with_a_popup("panel", 0xff_20_40_60, 0xff_20_40_60);
+    assert!(opaque.is_empty(), "{opaque:?}");
+    let desktop = esmerils_with_a_popup("desktop", TINT, TINT);
+    assert!(desktop.is_empty(), "{desktop:?}");
+}
+
+#[test]
+fn an_intellihide_panels_esmeril_slides_with_it_and_goes_when_it_has() {
+    let mut f = Fixture::with_settings(vec![(CAMINITO, "popup-slide".into(), Value::Bool(true))]);
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.stop_clock();
+    f.roundtrip(id);
+    let window = f.map(id, WindowSpec::plain((100, 50)));
+    let spec = LayerSpec {
+        layer: Layer::Top,
+        namespace: "panel",
+        output: None,
+        anchor: LayerAnchor::Bottom | LayerAnchor::Left | LayerAnchor::Right,
+        size: (0, 28),
+        exclusive_zone: 0,
+        keyboard: KeyboardInteractivity::None,
+    };
+    let panel = f.map_layer(id, spec, TINT);
+    f.client(id).ask_for_intellihide(panel);
+    f.roundtrip(id);
+    let rest = OUTPUT.1 - 28;
+    let at_rest = esmerils(&mut f, &output).remove(0);
+    assert_eq!(at_rest.strip().loc.y, rest);
+
+    f.chord(&[KEY_LEFTALT, KEY_F10]);
+    let size = asked_size(&f, window);
+    f.draw_at_asked_size(window, size);
+    // A slide into the edge starts slowly.
+    f.advance_clock(Duration::from_millis(150));
+    let moving = esmerils(&mut f, &output).remove(0);
+    let y = moving.strip().loc.y;
+    assert!(rest < y && y < OUTPUT.1, "on its way out, at {y}");
+    assert_eq!(moving.id(), at_rest.id());
+
+    f.advance_clock(Duration::from_millis(50));
+    let gone = esmerils(&mut f, &output);
+    assert!(gone.is_empty(), "the panel is off the output: {gone:?}");
+}
+
+#[test]
+fn a_panels_esmeril_fades_with_it_as_the_overview_opens() {
+    let mut f = Fixture::with_settings(vec![(
+        CAMINITO,
+        "overview-animation".into(),
+        Value::Bool(true),
+    )]);
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.stop_clock();
+    f.map_layer(id, LayerSpec::top_bar(28), TINT);
+    f.draw(&output);
+    assert_eq!(esmerils(&mut f, &output).remove(0).alpha(), 1.0);
+
+    overview::open(&mut f);
+    f.advance_clock(Duration::from_millis(50));
+    let alpha = esmerils(&mut f, &output).remove(0).alpha();
+    assert!(0.0 < alpha && alpha < 1.0, "part-way: {alpha}");
+
+    f.advance_clock(Duration::from_millis(250));
+    assert!(esmerils(&mut f, &output).is_empty());
+}
+
+#[test]
+fn a_see_through_panel_shows_what_is_beneath_saturated_and_contrasted() {
+    let settings = vec![(CAMINITO, "esmeril-strength".into(), Value::Uint(1))];
+    let Some(mut f) = Fixture::on_gles_with(settings) else {
+        return;
+    };
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map_layer(id, LayerSpec::covering(Layer::Background, "test"), BENEATH);
+    // Covering it, as a bar's exclusive zone would push what's beneath out from under it.
+    f.map_layer(id, LayerSpec::covering(Layer::Top, "panel"), TINT);
+    f.draw(&output);
+
+    let got = channels(pixel(&mut f, &output, (200, 50).into()));
+    let want = saturated_and_contrasted(BENEATH).map(|c| c * (1.0 - 128.0 / 255.0));
+    for (got, want) in got.into_iter().zip(want) {
+        assert!(
+            (f64::from(got) - want).abs() <= 3.0,
+            "{got:?} and not {want:?}"
+        );
+    }
+}
+
+#[test]
+fn a_popups_esmeril_slides_with_it_and_rests_at_its_place() {
+    let mut f = Fixture::with_settings(vec![(CAMINITO, "popup-slide".into(), Value::Bool(true))]);
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.stop_clock();
+    let parent = f.map_layer(id, LayerSpec::top_bar(28), 0xff_20_40_60);
+    let popup = f.client(id).create_layer_popup(parent, menu(), None);
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, TINT);
+    f.roundtrip(id);
+    f.draw(&output);
+    let place = Rectangle::new((50, 28).into(), (200, 100).into());
+
+    f.advance_clock(Duration::from_millis(20));
+    let sliding = esmerils(&mut f, &output).remove(0);
+    assert!(sliding.strip().loc.y < 28, "{:?}", sliding.strip());
+
+    f.advance_clock(Duration::from_millis(400));
+    let resting = esmerils(&mut f, &output).remove(0);
+    assert_eq!(resting.strip(), place);
 }
