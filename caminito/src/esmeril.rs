@@ -279,7 +279,15 @@ impl Esmeril {
         let shown = strip.intersection(place)?;
         let output = output.to_f64().to_physical_precise_round(scale);
         let behind = Behind::Strip(mask.clone());
-        Self::at(mask.id.clone(), behind, strip, shown, alpha, output, strength)
+        Self::at(
+            mask.id.clone(),
+            behind,
+            strip,
+            shown,
+            alpha,
+            output,
+            strength,
+        )
     }
 
     /// Esmeril behind `surface`, with its origin at `location` on an output of the logical size
