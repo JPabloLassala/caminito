@@ -1,0 +1,18 @@
+== 01-default: see-through row y=342, x=300..556, every 16 pixels (red channel)
+22 25 29 36 44 54 66 79 255 105 118 128 128 128 128 128 128 
+Window 6291468
+  Position: 428,255 (screen: 0)
+  Geometry: 424x316
+== 02-moved: see-through row y=342, x=300..556, every 16 pixels (red channel)
+39 48 58 68 80 91 103 113 255 128 128 128 128 128 128 128 128 
+== 03-strength-1: see-through row y=342, x=300..556, every 16 pixels (red channel)
+18 18 18 18 17 128 128 128 255 128 128 128 128 128 128 128 128 
+== 04-off: see-through row y=342, x=300..556, every 16 pixels (red channel)
+26 26 26 26 22 112 112 112 255 112 112 112 112 112 112 112 112 
+== 05-on-again: see-through row y=342, x=300..556, every 16 pixels (red channel)
+18 18 18 18 17 128 128 128 255 128 128 128 128 128 128 128 128 
+== 06-reduced: see-through row y=342, x=300..556, every 16 pixels (red channel)
+26 26 26 26 22 112 112 112 255 112 112 112 112 112 112 112 112 
+== caminito's warnings
+2026-10-31T02:18:31.272057Z  WARN winit_x11::xdisplay: error setting XSETTINGS; Xft options won't reload automatically
+caminito still runs
