@@ -29,7 +29,7 @@ A stream with no `value120`, as a touchpad sends, is worse: GTK3's discrete-only
 - **One frame per refresh** of the output under the pointer, and only once the client has drawn the last: a slow client gets fewer, larger frames, and the glide still ends on time.
 - **A click during a glide adds its step** to what's left and starts the curve again from where the view is. **A click the other way** drops what's left and starts a new glide. **A change of the pointer's focus** drops what's left.
 - **Left as they are**: a click with Ctrl, Alt or Super held, which goes as a whole click so that zooming by event doesn't overshoot; the finger, continuous and tilt sources; and the titlebar's scroll actions, which still act once per click.
-- **Settings in `org.mate.Caminito`**: `wheel-glide`, on by default, and `wheel-glide-exceptions`, the app ids whose windows get whole clicks because they glide the wheel themselves. Its default is `firefox`, `chromium`, `google-chrome`, `brave-browser`, `code` and `code-oss`. As the animations of ADR 0033 do, it doesn't run when `org.mate.interface enable-animations` is off or `reduced-resources` is on.
+- **Settings in `org.mate.Caminito`**: `wheel-glide`, on by default, and `wheel-glide-exceptions`, the app ids whose windows get whole clicks because they glide the wheel themselves. An app id is a native window's app id or an Xwayland window's `WM_CLASS` class, compared without regard to ASCII case, as `esmeril-applications` compares it (ADR 0048). Its default is `firefox`, `chromium`, `google-chrome`, `brave-browser`, `code` and `code-oss`. As the animations of ADR 0033 do, it doesn't run when `org.mate.interface enable-animations` is off or `reduced-resources` is on.
 
 ## Consequences
 

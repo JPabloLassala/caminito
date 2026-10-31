@@ -109,7 +109,7 @@ fn step(strength: u32) -> Step {
 /// Whether a window with `app_id`, a native window's app id or an Xwayland window's `WM_CLASS`
 /// class, is one of `esmeril-applications`, without regard to ASCII case: mate-terminal's class
 /// is `Mate-terminal`.
-pub(crate) fn lists(applications: &[String], app_id: Option<&str>) -> bool {
+pub(crate) fn is_listed(applications: &[String], app_id: Option<&str>) -> bool {
     app_id.is_some_and(|app_id| {
         applications
             .iter()
@@ -820,7 +820,7 @@ impl DrawsEsmeril for GlesRenderer {
         };
         // A strip's mask, imported once, or a surface's texture, as it is now: a surface with
         // none, as one of a single-pixel buffer, gets nothing.
-        let mask = match &esmeril.behind {
+        let surface_texture = match &esmeril.behind {
             Behind::Strip(mask) => {
                 if blur.mask.is_none() {
                     let mut renderer = frame.renderer();
@@ -889,7 +889,7 @@ impl DrawsEsmeril for GlesRenderer {
                 gl.ActiveTexture(ffi::TEXTURE0);
             }
         })?;
-        if let Some((texture, src, transform)) = mask {
+        if let Some((texture, src, transform)) = surface_texture {
             return frame.render_texture_from_to(
                 &texture,
                 src,

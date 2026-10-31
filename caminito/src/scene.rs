@@ -1863,8 +1863,9 @@ fn window_elements<R>(
             one_window_elements(
                 renderer, mapped, origin, shown, scale, 1.0, slides, elements,
             );
-            // Behind the strips, and only on the output (ADR 0048): a capture of the window
-            // and a thumbnail are the window with its frame, and the animations leave it out.
+            // Behind the strips and a listed window's surfaces, and only on the output (ADR
+            // 0048): a capture of the window and a thumbnail are the window with its frame, and
+            // the animations leave it out.
             if let Some(strength) = caminito.settings.esmeril {
                 for (mut rect, mask) in mapped.frame().esmeril() {
                     rect.loc += origin;
@@ -1905,7 +1906,8 @@ fn window_elements<R>(
 
 /// Esmeril behind each of `mapped`'s own surfaces if its app id is listed, front to back, with
 /// the window geometry's origin at `origin` (ADR 0048): the toplevel and its subsurfaces, under
-/// all of them, and not its popups, which aren't in its surface tree.
+/// all of them, and not its popups, which aren't in its surface tree. Where a see-through
+/// subsurface is over a see-through toplevel, the two blurs add up.
 fn surface_esmeril_elements<R>(
     caminito: &Caminito,
     mapped: &Mapped,
@@ -1919,7 +1921,7 @@ fn surface_esmeril_elements<R>(
     R::TextureId: Send + Clone + 'static,
 {
     let applications = &caminito.settings.esmeril_applications;
-    if mapped.is_shaded() || !esmeril::lists(applications, mapped.app_id().as_deref()) {
+    if mapped.is_shaded() || !esmeril::is_listed(applications, mapped.app_id().as_deref()) {
         return;
     }
     let window = mapped.window();

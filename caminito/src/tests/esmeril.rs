@@ -2,9 +2,10 @@
 //! Pixman, where it draws nothing, and its pixels on GLES, skipped where surfaceless EGL can't
 //! be created. Those of frames run with xdg toplevels only: a frame's strips are drawn from
 //! its theme alone, whichever kind of window has them, and frames.rs runs what a frame does on
-//! both kinds. Those of listed windows run on both, as their app ids come from each its own
-//! way. A layer surface is a Wayland client's, and the window that hides an Intellihide panel
-//! only has to overlap it.
+//! both kinds. What decides whether a listed window gets it runs on both, as their app ids come
+//! each its own way; subsurfaces and popups are xdg's own, and once a window has it, its pixels
+//! and its place in the stack don't depend on the kind. A layer surface is a Wayland client's,
+//! and the window that hides an Intellihide panel only has to overlap it.
 
 use std::time::Duration;
 
@@ -107,6 +108,16 @@ fn saturated_and_contrasted(color: u32) -> [f64; 3] {
     let [r, g, b] = channels(color).map(|c| f64::from(c) / 255.0);
     let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     [r, g, b].map(|c| ((luma + (c - luma) * 1.7) * 1.2 - 0.1).clamp(0.0, 1.0) * 255.0)
+}
+
+/// Each channel of `got` within 3 of `want`'s.
+fn assert_near(got: [i32; 3], want: [f64; 3]) {
+    for (got, want) in got.into_iter().zip(want) {
+        assert!(
+            (f64::from(got) - want).abs() <= 3.0,
+            "{got:?} and not {want:?}"
+        );
+    }
 }
 
 #[test]
@@ -241,12 +252,7 @@ fn a_see_through_pixel_shows_what_is_beneath_saturated_and_contrasted() {
     let got = channels(pixel(&mut f, &output, middle));
     // The theme's half black tint over it.
     let want = saturated_and_contrasted(BENEATH).map(|c| c * 0.5);
-    for (got, want) in got.into_iter().zip(want) {
-        assert!(
-            (f64::from(got) - want).abs() <= 3.0,
-            "{got:?} and not {want:?}"
-        );
-    }
+    assert_near(got, want);
 }
 
 #[test]
@@ -359,8 +365,7 @@ fn what_is_beneath_shows_the_right_way_up() {
     assert!(lower > upper, "{lower} under the band, {upper} above it");
 }
 
-/// A theme with no see-through pixels and a centred window with `app_id` on an output of
-/// `OUTPUT`, so that any Esmeril there is the window's own.
+/// A window with `app_id` and a frame on an output of `OUTPUT`, in the middle of it.
 fn desk_with(f: &mut Fixture, kind: Kind, app_id: &'static str) -> (Output, ClientWindow) {
     let output = f.add_output(OUTPUT, 1.0);
     let id = f.connect(kind);
@@ -525,12 +530,7 @@ fn a_see_through_surface_of_a_listed_window_shows_what_is_beneath_saturated_and_
     f.draw(&output);
     let got = channels(pixel(&mut f, &output, middle));
     let want = saturated_and_contrasted(BENEATH).map(|c| c * (1.0 - 128.0 / 255.0));
-    for (got, want) in got.into_iter().zip(want) {
-        assert!(
-            (f64::from(got) - want).abs() <= 3.0,
-            "{got:?} and not {want:?}"
-        );
-    }
+    assert_near(got, want);
 }
 
 #[test]
@@ -542,12 +542,7 @@ fn an_unlisted_see_through_surface_shows_what_is_beneath_as_it_is() {
     f.draw(&output);
     let got = channels(pixel(&mut f, &output, middle));
     let want = channels(BENEATH).map(|c| f64::from(c) * (1.0 - 128.0 / 255.0));
-    for (got, want) in got.into_iter().zip(want) {
-        assert!(
-            (f64::from(got) - want).abs() <= 3.0,
-            "{got:?} and not {want:?}"
-        );
-    }
+    assert_near(got, want);
 }
 
 #[test]
@@ -605,12 +600,54 @@ fn a_commit_that_changes_a_listed_surface_s_alpha_shows_at_once() {
     f.draw(&output);
     let got = channels(pixel(&mut f, &output, middle));
     let want = saturated_and_contrasted(BENEATH).map(|c| c * (1.0 - 128.0 / 255.0));
-    for (got, want) in got.into_iter().zip(want) {
-        assert!(
-            (f64::from(got) - want).abs() <= 3.0,
-            "{got:?} and not {want:?}"
-        );
-    }
+    assert_near(got, want);
+}
+
+#[test]
+fn a_listed_window_with_a_see_through_frame_gets_both_once_each() {
+    let mut f = Fixture::with_settings(settings("EsmerilSeeThrough", 15));
+    let (output, window) = desk_with(&mut f, Kind::Xdg, "mate-terminal");
+    let geometry = f.geometry(window);
+    let elements = esmerils(&mut f, &output);
+    let [first, second] = elements.as_slice() else {
+        panic!("one for the strip and one for the surface: {elements:?}");
+    };
+    assert_eq!(second.strip(), geometry.to_physical(1), "the surface's");
+    assert!(!first.strip().overlaps(second.strip()), "{elements:?}");
+}
+
+#[test]
+fn what_is_beneath_a_listed_surface_shows_blurred_and_follows() {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSolid", 1)) else {
+        return;
+    };
+    let (output, middle) = glass_over_beneath(&mut f, "mate-terminal", 0x80_00_00_00);
+    let before = pixel(&mut f, &output, middle);
+
+    // A band beneath the middle of the surface, with a sharp edge at each side.
+    let id = f.connect(Kind::Xdg);
+    f.map_layer(id, LayerSpec::floating(Layer::Bottom, (60, 280)), OTHER);
+    f.draw(&output);
+    let at = |x: i32| Point::from((x, middle.y));
+    let centre = pixel(&mut f, &output, at(OUTPUT.0 / 2));
+    assert_ne!(centre, before, "it follows what's beneath");
+    let spread = |p: u32, q: u32| {
+        channels(p)
+            .into_iter()
+            .zip(channels(q))
+            .map(|(p, q)| (p - q).abs())
+            .max()
+            .unwrap()
+    };
+    let far = pixel(&mut f, &output, at(OUTPUT.0 / 2 - 90));
+    let inside = pixel(&mut f, &output, at(OUTPUT.0 / 2 - 28));
+    let outside = pixel(&mut f, &output, at(OUTPUT.0 / 2 - 32));
+    assert!(
+        spread(inside, outside) < spread(far, centre),
+        "4 pixels across the edge {} of the {} across all of it",
+        spread(inside, outside),
+        spread(far, centre),
+    );
 }
 
 /// A see-through colour of a surface: half black, premultiplied.
