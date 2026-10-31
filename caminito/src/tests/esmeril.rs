@@ -1,9 +1,10 @@
-//! Esmeril behind frames and layer surfaces (ADR 0048): where it goes and its damage on Pixman,
-//! where it draws nothing, and its pixels on GLES, skipped where surfaceless EGL can't be
-//! created. These run with xdg toplevels only: a frame's strips are drawn from its theme alone,
-//! whichever kind of window has them, and frames.rs runs what a frame does on both kinds. A
-//! layer surface is a Wayland client's, and the window that hides an Intellihide panel only
-//! has to overlap it.
+//! Esmeril behind frames, listed windows and layer surfaces (ADR 0048): where it goes and its damage on
+//! Pixman, where it draws nothing, and its pixels on GLES, skipped where surfaceless EGL can't
+//! be created. Those of frames run with xdg toplevels only: a frame's strips are drawn from
+//! its theme alone, whichever kind of window has them, and frames.rs runs what a frame does on
+//! both kinds. Those of listed windows run on both, as their app ids come from each its own
+//! way. A layer surface is a Wayland client's, and the window that hides an Intellihide panel
+//! only has to overlap it.
 
 use std::time::Duration;
 
@@ -14,7 +15,9 @@ use smithay::backend::renderer::element::Element;
 use smithay::output::Output;
 use smithay::utils::{Physical, Point, Rectangle, Scale};
 
-use super::fixture::{Fixture, KEY_F10, KEY_LEFTALT, Kind, WindowSpec};
+use super::fixture::{
+    ClientWindow, Fixture, KEY_F10, KEY_LEFTALT, Kind, WindowSpec, on_both_kinds,
+};
 use super::maximise_animation::asked_size;
 use super::overview;
 use crate::backend::headless::{Drawing, drawing};
@@ -356,6 +359,260 @@ fn what_is_beneath_shows_the_right_way_up() {
     assert!(lower > upper, "{lower} under the band, {upper} above it");
 }
 
+/// A theme with no see-through pixels and a centred window with `app_id` on an output of
+/// `OUTPUT`, so that any Esmeril there is the window's own.
+fn desk_with(f: &mut Fixture, kind: Kind, app_id: &'static str) -> (Output, ClientWindow) {
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(kind);
+    let window = f.map(
+        id,
+        WindowSpec {
+            size: (200, 100),
+            app_id: Some(app_id),
+            ..WindowSpec::default()
+        },
+    );
+    f.draw(&output);
+    (output, window)
+}
+
+on_both_kinds! {
+    fn a_listed_window_gets_esmeril_behind_its_surface_and_an_unlisted_one_doesnt(kind: Kind) {
+        let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+        let (output, window) = desk_with(&mut f, kind, "mate-terminal");
+        let elements = esmerils(&mut f, &output);
+        let [esmeril] = elements.as_slice() else {
+            panic!("the window's surface has one: {elements:?}");
+        };
+        let geometry = f.geometry(window);
+        let surface = Rectangle::new(geometry.loc, geometry.size);
+        assert_eq!(esmeril.strip(), surface.to_physical(1));
+
+        let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+        let (output, _) = desk_with(&mut f, kind, "pluma");
+        assert!(esmerils(&mut f, &output).is_empty());
+    }
+}
+
+on_both_kinds! {
+    fn a_window_is_matched_whatever_the_case_of_its_app_id(kind: Kind) {
+        // What an X window of mate-terminal has as its `WM_CLASS` class.
+        let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+        let (output, _) = desk_with(&mut f, kind, "Mate-terminal");
+        assert_eq!(esmerils(&mut f, &output).len(), 1);
+    }
+}
+
+on_both_kinds! {
+    fn a_change_of_the_list_applies_to_windows_already_open(kind: Kind) {
+        let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+        let (output, _) = desk_with(&mut f, kind, "pluma");
+        assert!(esmerils(&mut f, &output).is_empty());
+        let listed = |list: &[&str]| Value::StrList(list.iter().map(|s| (*s).into()).collect());
+        f.set_setting(CAMINITO, "esmeril-applications", listed(&["pluma"]));
+        f.dispatch_until(|f| !f.state.caminito.settings.esmeril_applications.is_empty()
+            && f.state.caminito.settings.esmeril_applications[0] == "pluma");
+        assert_eq!(esmerils(&mut f, &output).len(), 1);
+        f.set_setting(CAMINITO, "esmeril-applications", listed(&[]));
+        f.dispatch_until(|f| f.state.caminito.settings.esmeril_applications.is_empty());
+        assert!(esmerils(&mut f, &output).is_empty());
+    }
+}
+
+on_both_kinds! {
+    fn esmeril_off_removes_it_from_a_listed_window(kind: Kind) {
+        let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+        let (output, _) = desk_with(&mut f, kind, "mate-terminal");
+        f.set_setting(CAMINITO, "esmeril", Value::Bool(false));
+        f.dispatch_until(|f| f.state.caminito.settings.esmeril.is_none());
+        assert!(esmerils(&mut f, &output).is_empty());
+    }
+}
+
+#[test]
+fn a_listed_window_s_subsurface_gets_it_and_its_popup_doesnt() {
+    let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    let window = f.map(
+        id,
+        WindowSpec {
+            size: (200, 100),
+            app_id: Some("mate-terminal"),
+            ..WindowSpec::default()
+        },
+    );
+    let corner = f.geometry(window).loc;
+    f.client(id)
+        .add_subsurface(window.xdg(), (10, 20), (50, 40), OTHER);
+    let popup = f.client(id).create_popup(
+        window.xdg(),
+        Positioner {
+            size: (60, 60),
+            anchor_rect: (0, 0, 10, 10),
+            anchor: Anchor::BottomRight,
+            gravity: Gravity::BottomRight,
+            constraint_adjustment: ConstraintAdjustment::None,
+        },
+    );
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, OTHER);
+    f.client(id).commit(window.xdg());
+    f.roundtrip(id);
+    f.draw(&output);
+
+    let mut strips: Vec<_> = esmerils(&mut f, &output)
+        .iter()
+        .map(Esmeril::strip)
+        .collect();
+    strips.sort_by_key(|strip| strip.size.w);
+    let at = |x, y, w, h| Rectangle::new((corner.x + x, corner.y + y).into(), (w, h).into());
+    assert_eq!(strips, vec![at(10, 20, 50, 40), at(0, 0, 200, 100)]);
+}
+
+#[test]
+fn a_listed_window_s_esmeril_is_under_its_surface() {
+    let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+    let (output, _) = desk_with(&mut f, Kind::Xdg, "mate-terminal");
+    let Drawing::Pixman(renderer, _) = f.state.backend.headless_mut().drawing() else {
+        panic!("it draws with pixman");
+    };
+    let elements = scene::output_elements(renderer, &f.state.caminito, &output);
+    let at = |wanted: fn(&SceneElement<_>) -> bool| elements.iter().position(wanted).unwrap();
+    let surface = at(|element| matches!(element, SceneElement::Window(_)));
+    let esmeril = at(|element| matches!(element, SceneElement::Esmeril(_)));
+    assert!(surface < esmeril, "front to back: {surface} and {esmeril}");
+}
+
+/// A listed window, whose client draws it `argb`, in the middle of an output covered in
+/// `BENEATH`, with the middle of its surface returned.
+fn glass_over_beneath(
+    f: &mut Fixture,
+    app_id: &'static str,
+    argb: u32,
+) -> (Output, Point<i32, Physical>) {
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map_layer(id, LayerSpec::covering(Layer::Background, "test"), BENEATH);
+    let id = f.connect(Kind::Xdg);
+    let window = f.map(
+        id,
+        WindowSpec {
+            size: (200, 100),
+            app_id: Some(app_id),
+            ..WindowSpec::default()
+        },
+    );
+    f.client(id)
+        .ack_and_commit_buffer(window.xdg(), (200, 100), argb);
+    f.roundtrip(id);
+    f.draw(&output);
+    let geometry = f.geometry(window);
+    let middle = Point::from((
+        geometry.loc.x + geometry.size.w / 2,
+        geometry.loc.y + geometry.size.h / 2,
+    ));
+    (output, middle)
+}
+
+#[test]
+fn a_see_through_surface_of_a_listed_window_shows_what_is_beneath_saturated_and_contrasted() {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSolid", 1)) else {
+        return;
+    };
+    // Half black, premultiplied, as a translucent terminal's background.
+    let (output, middle) = glass_over_beneath(&mut f, "mate-terminal", 0x80_00_00_00);
+    f.draw(&output);
+    let got = channels(pixel(&mut f, &output, middle));
+    let want = saturated_and_contrasted(BENEATH).map(|c| c * (1.0 - 128.0 / 255.0));
+    for (got, want) in got.into_iter().zip(want) {
+        assert!(
+            (f64::from(got) - want).abs() <= 3.0,
+            "{got:?} and not {want:?}"
+        );
+    }
+}
+
+#[test]
+fn an_unlisted_see_through_surface_shows_what_is_beneath_as_it_is() {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSolid", 1)) else {
+        return;
+    };
+    let (output, middle) = glass_over_beneath(&mut f, "pluma", 0x80_00_00_00);
+    f.draw(&output);
+    let got = channels(pixel(&mut f, &output, middle));
+    let want = channels(BENEATH).map(|c| f64::from(c) * (1.0 - 128.0 / 255.0));
+    for (got, want) in got.into_iter().zip(want) {
+        assert!(
+            (f64::from(got) - want).abs() <= 3.0,
+            "{got:?} and not {want:?}"
+        );
+    }
+}
+
+#[test]
+fn a_wholly_clear_or_opaque_surface_of_a_listed_window_looks_as_an_unlisted_one_does() {
+    for argb in [0x00_00_00_00, 0xff_20_40_60] {
+        let Some(mut listed) = Fixture::on_gles_with(settings("EsmerilSolid", 1)) else {
+            return;
+        };
+        let Some(mut unlisted) = Fixture::on_gles_with(settings("EsmerilSolid", 1)) else {
+            return;
+        };
+        let (output, middle) = glass_over_beneath(&mut listed, "mate-terminal", argb);
+        listed.draw(&output);
+        let a = pixel(&mut listed, &output, middle);
+        let (output, middle) = glass_over_beneath(&mut unlisted, "pluma", argb);
+        unlisted.draw(&output);
+        let b = pixel(&mut unlisted, &output, middle);
+        assert_eq!(a, b, "{argb:#x}");
+    }
+}
+
+#[test]
+fn a_commit_that_changes_a_listed_surface_s_alpha_shows_at_once() {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSolid", 1)) else {
+        return;
+    };
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map_layer(id, LayerSpec::covering(Layer::Background, "test"), BENEATH);
+    let id = f.connect(Kind::Xdg);
+    let window = f.map(
+        id,
+        WindowSpec {
+            size: (200, 100),
+            app_id: Some("mate-terminal"),
+            ..WindowSpec::default()
+        },
+    );
+    f.draw(&output);
+    let geometry = f.geometry(window);
+    let middle = Point::from((geometry.loc.x + 100, geometry.loc.y + 50));
+    let opaque = pixel(&mut f, &output, middle);
+
+    f.client(id)
+        .ack_and_commit_buffer(window.xdg(), (200, 100), 0x00_00_00_00);
+    f.roundtrip(id);
+    f.draw(&output);
+    let clear = channels(pixel(&mut f, &output, middle));
+    assert_ne!(channels(opaque), clear);
+    assert_eq!(clear, channels(BENEATH), "a clear pixel gets none");
+
+    f.client(id)
+        .ack_and_commit_buffer(window.xdg(), (200, 100), 0x80_00_00_00);
+    f.roundtrip(id);
+    f.draw(&output);
+    let got = channels(pixel(&mut f, &output, middle));
+    let want = saturated_and_contrasted(BENEATH).map(|c| c * (1.0 - 128.0 / 255.0));
+    for (got, want) in got.into_iter().zip(want) {
+        assert!(
+            (f64::from(got) - want).abs() <= 3.0,
+            "{got:?} and not {want:?}"
+        );
+    }
+}
+
 /// A see-through colour of a surface: half black, premultiplied.
 const TINT: u32 = 0x80_00_00_00;
 
@@ -433,25 +690,19 @@ fn esmeril_off_removes_a_layer_surfaces_too() {
 }
 
 #[test]
-fn a_commit_of_the_surface_keeps_its_element_damages_it_and_can_end_it() {
+fn a_commit_of_the_surface_keeps_its_element_and_can_end_it() {
     let mut f = Fixture::with_settings(vec![]);
     let output = f.add_output(OUTPUT, 1.0);
     let id = f.connect(Kind::Xdg);
     let panel = f.map_layer(id, LayerSpec::top_bar(28), TINT);
     f.draw(&output);
     let before = esmerils(&mut f, &output).remove(0);
-    assert_eq!(
-        esmerils(&mut f, &output).remove(0).current_commit(),
-        before.current_commit(),
-        "nothing was committed"
-    );
 
     f.client(id).redraw_layer_surface(panel, 0x40_00_00_00);
     f.roundtrip(id);
     f.draw(&output);
     let after = esmerils(&mut f, &output).remove(0);
     assert_eq!(before.id(), after.id());
-    assert_ne!(before.current_commit(), after.current_commit());
 
     f.client(id).redraw_layer_surface(panel, 0xff_20_40_60);
     f.roundtrip(id);

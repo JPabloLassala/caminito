@@ -106,14 +106,19 @@
     </key>
     <key name="esmeril" type="b">
       <default>true</default>
-      <summary>Draw Esmeril behind see-through frames</summary>
-      <description>When true, what's beneath the see-through parts of a window's frame shows through blurred, with raised saturation and contrast. It isn't drawn while reduced-resources is on in org.mate.Marco.general; enable-animations doesn't touch it.</description>
+      <summary>Draw Esmeril behind see-through frames and listed windows</summary>
+      <description>When true, what's beneath the see-through parts of a window's frame, and of the windows of esmeril-applications, shows through blurred, with raised saturation and contrast. It isn't drawn while reduced-resources is on in org.mate.Marco.general; enable-animations doesn't touch it.</description>
     </key>
     <key name="esmeril-strength" type="u">
       <range min="1" max="15"/>
       <default>15</default>
       <summary>How strong Esmeril's blur is</summary>
       <description>From 1, the least blur, to 15, the most, as the steps of Plasma's Blur effect.</description>
+    </key>
+    <key name="esmeril-applications" type="as">
+      <default>['mate-terminal']</default>
+      <summary>The applications whose windows get Esmeril behind them</summary>
+      <description>The app ids whose windows show what's beneath their see-through pixels blurred, as esmeril has it, behind their own surfaces and not their popups. For a window of Xwayland the app id is its WM_CLASS class, and the case doesn't matter. Listing an opaque application costs GPU time and changes nothing on screen.</description>
     </key>
     <!--
       The Overview's shortcut (241). It's here since Marco has no such action, in the

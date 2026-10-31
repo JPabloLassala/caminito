@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use caminito_policy::{Layer as StackLayer, SwitchEntry, WindowId};
+use caminito_policy::{Layer as StackLayer, PolicyWindow, SwitchEntry, WindowId};
 use caminito_theme::{GtkState, Variant};
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::{
@@ -43,7 +43,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
-use crate::esmeril::{DrawsEsmeril, Esmeril, Mask};
+use crate::esmeril::{self, DrawsEsmeril, Esmeril};
 use crate::open_close_animation::{Closing, Picture};
 use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
@@ -123,7 +123,8 @@ render_elements! {
     /// The Window menu or its submenu as it slides out of its edge or back into it (ADR
     /// 0037).
     MenuSlide = MenuSlidePart<R>,
-    /// Esmeril behind a strip of a frame, or a layer surface or its popup (ADR 0048).
+    /// Esmeril behind a strip of a frame, or a surface of a listed window, a layer surface
+    /// or its popup (ADR 0048).
     Esmeril = Esmeril,
 }
 
@@ -1490,29 +1491,43 @@ pub(crate) fn window_is_in(caminito: &Caminito, id: WindowId, layer: SceneLayer)
     fullscreen == (layer == SceneLayer::FullscreenWindows)
 }
 
-/// Esmeril behind a surface of a layer surface's, with its origin at `origin` from the corner
-/// of `output`, if it has see-through pixels and is on the output. While it slides as `slid`
-/// has it, Esmeril goes with it and is cut off at its place, as it is.
-fn layer_surface_esmeril(
+/// Esmeril behind each surface with see-through pixels of the tree of a layer surface's
+/// `surface`, at `strength` and `alpha`, with its origin at `location` on an output of the size
+/// `output`. While it slides as `slid` has it, Esmeril goes with it and is cut off at its place,
+/// as it is.
+fn layer_surface_esmeril<R>(
     surface: &WlSurface,
-    origin: Point<i32, Logical>,
+    location: Point<f64, Physical>,
     output: Size<i32, Logical>,
     scale: f64,
     (strength, alpha): (u32, f32),
     slid: Option<Slid>,
-) -> Option<Esmeril> {
-    let (mask, mut place) = Mask::of_surface(surface)?;
-    place.loc += origin;
-    let Some(slid) = slid else {
-        return place
-            .overlaps(Rectangle::from_size(output))
-            .then(|| Esmeril::new(&mask, place, output, scale, strength, alpha))
-            .flatten();
-    };
-    let cut = place.to_f64().to_physical_precise_round(scale);
-    let mut moved = place;
-    moved.loc += slid.offset;
-    Esmeril::new(&mask, moved, output, scale, strength, alpha * slid.alpha)?.cut_to(cut)
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let cut = slid.map(|_| {
+        let place = bbox_from_surface_tree(surface, (0, 0))
+            .to_f64()
+            .to_physical(scale);
+        Rectangle::new(location + place.loc, place.size).to_i32_round()
+    });
+    let (moved, alpha) = slid.map_or((location, alpha), |slid| {
+        let offset = slid.offset.to_f64().to_physical(scale);
+        (location + offset, alpha * slid.alpha)
+    });
+    for_each_surface_in_tree(surface, moved, scale, |surface, states, at| {
+        if !esmeril::has_see_through_pixels(states) {
+            return;
+        }
+        let esmeril = Esmeril::behind_surface(surface, states, at, output, scale, strength, alpha);
+        let esmeril = match cut {
+            Some(cut) => esmeril.and_then(|esmeril| esmeril.cut_to(cut)),
+            None => esmeril,
+        };
+        elements.extend(esmeril.map(SceneElement::Esmeril));
+    });
 }
 
 /// `output`'s layer surfaces in one of the scene's layers that hold them, each under its
@@ -1556,15 +1571,10 @@ fn layer_shell_elements<R>(
                 renderer, &popup, location, scale, alpha, slides,
             ));
             let slid = caminito.popup_slides.slid(&Popup::Xdg(popup.clone()), now);
-            elements.extend(
-                esmeril
-                    .and_then(|esmeril| {
-                        let origin = origin + offset;
-                        let size = output_geometry.size;
-                        layer_surface_esmeril(&popup, origin, size, scale, esmeril, slid)
-                    })
-                    .map(SceneElement::Esmeril),
-            );
+            if let Some(esmeril) = esmeril {
+                let size = output_geometry.size;
+                layer_surface_esmeril(&popup, location, size, scale, esmeril, slid, elements);
+            }
         }
         if part.contains(WindowSurfaceType::TOPLEVEL) {
             let location = origin.to_f64().to_physical(scale);
@@ -1573,14 +1583,10 @@ fn layer_shell_elements<R>(
                     .into_iter()
                     .map(SceneElement::Window),
             );
-            elements.extend(
-                esmeril
-                    .and_then(|esmeril| {
-                        let size = output_geometry.size;
-                        layer_surface_esmeril(wl_surface, origin, size, scale, esmeril, None)
-                    })
-                    .map(SceneElement::Esmeril),
-            );
+            if let Some(esmeril) = esmeril {
+                let size = output_geometry.size;
+                layer_surface_esmeril(wl_surface, location, size, scale, esmeril, None, elements);
+            }
         }
     }
 }
@@ -1865,12 +1871,21 @@ fn window_elements<R>(
                     elements.extend(
                         rect.overlaps(shown)
                             .then(|| {
-                                Esmeril::new(mask, rect, output_geometry.size, scale, strength, 1.0)
+                                Esmeril::new(mask, rect, output_geometry.size, scale, strength)
                             })
                             .flatten()
                             .map(SceneElement::Esmeril),
                     );
                 }
+                surface_esmeril_elements(
+                    caminito,
+                    mapped,
+                    origin,
+                    output_geometry.size,
+                    scale,
+                    strength,
+                    elements,
+                );
             }
             // The shadow is the output's alone: a capture of the window and its thumbnail
             // are the window with its frame (103, 171).
@@ -1886,6 +1901,38 @@ fn window_elements<R>(
     for closing in closing {
         closing_elements(caminito, closing, output, now, elements);
     }
+}
+
+/// Esmeril behind each of `mapped`'s own surfaces if its app id is listed, front to back, with
+/// the window geometry's origin at `origin` (ADR 0048): the toplevel and its subsurfaces, under
+/// all of them, and not its popups, which aren't in its surface tree.
+fn surface_esmeril_elements<R>(
+    caminito: &Caminito,
+    mapped: &Mapped,
+    origin: Point<i32, Logical>,
+    output: Size<i32, Logical>,
+    scale: f64,
+    strength: u32,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let applications = &caminito.settings.esmeril_applications;
+    if mapped.is_shaded() || !esmeril::lists(applications, mapped.app_id().as_deref()) {
+        return;
+    }
+    let window = mapped.window();
+    let Some(root) = window.wl_surface() else {
+        return;
+    };
+    let location = (origin - window.geometry().loc).to_f64().to_physical(scale);
+    for_each_surface_in_tree(&root, location, scale, |surface, states, location| {
+        elements.extend(
+            Esmeril::behind_surface(surface, states, location, output, scale, strength, 1.0)
+                .map(SceneElement::Esmeril),
+        );
+    });
 }
 
 /// A closed popup's picture as it slides back into its edge (ADR 0037), drawn as `slid`
@@ -2286,31 +2333,43 @@ where
     R: Renderer + ImportAll,
     R::TextureId: Clone + 'static,
 {
+    let mut elements = Vec::new();
+    for_each_surface_in_tree(surface, location, scale, |surface, states, location| {
+        let element = WaylandSurfaceRenderElement::from_surface(
+            renderer,
+            surface,
+            states,
+            location,
+            alpha,
+            Kind::Unspecified,
+        );
+        match element {
+            Ok(Some(element)) => elements.push(element),
+            Ok(None) => {}
+            Err(err) => tracing::warn!("can't import a surface: {err:?}"),
+        }
+    });
+    elements
+}
+
+/// Calls `each` for every surface of the tree of `surface` that has a view, front to back, with
+/// where it's drawn, when `surface`'s origin is at `location`.
+fn for_each_surface_in_tree(
+    surface: &WlSurface,
+    location: Point<f64, Physical>,
+    scale: f64,
+    mut each: impl FnMut(&WlSurface, &SurfaceData, Point<f64, Physical>),
+) {
     let offset = |states: &SurfaceData| {
         let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
         let offset = data.lock().unwrap().view()?.offset;
         Some(offset.to_f64().to_physical(scale))
     };
-    let mut elements = Vec::new();
-    let mut element =
-        |surface: &WlSurface, states: &SurfaceData, location: Point<f64, Physical>| {
-            let Some(offset) = offset(states) else {
-                return;
-            };
-            let element = WaylandSurfaceRenderElement::from_surface(
-                renderer,
-                surface,
-                states,
-                location + offset,
-                alpha,
-                Kind::Unspecified,
-            );
-            match element {
-                Ok(Some(element)) => elements.push(element),
-                Ok(None) => {}
-                Err(err) => tracing::warn!("can't import a surface: {err:?}"),
-            }
-        };
+    let mut visit = |surface: &WlSurface, states: &SurfaceData, location: Point<f64, Physical>| {
+        if let Some(offset) = offset(states) {
+            each(surface, states, location + offset);
+        }
+    };
     let mut visited = false;
     with_surface_tree_downward(
         surface,
@@ -2321,14 +2380,13 @@ where
         },
         |surface, states, location| {
             visited = true;
-            element(surface, states, *location);
+            visit(surface, states, *location);
         },
         |_, _, _| true,
     );
     if !visited {
-        with_states(surface, |states| element(surface, states, location));
+        with_states(surface, |states| visit(surface, states, location));
     }
-    elements
 }
 
 /// The elements of the `buffers` of a frame, its strips or its shadow's bands, that are in

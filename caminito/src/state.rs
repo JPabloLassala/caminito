@@ -1181,7 +1181,9 @@ impl Caminito {
         self.input_devices.settings_changed(settings.devices);
         self.keyboard_settings_changed(&settings.keyboard);
         self.night_light_settings_changed(settings.night_light);
-        if settings.esmeril != self.settings.esmeril {
+        if settings.esmeril != self.settings.esmeril
+            || settings.esmeril_applications != self.settings.esmeril_applications
+        {
             self.queue_redraw_all();
         }
         let factor = settings.interface.window_scaling_factor;

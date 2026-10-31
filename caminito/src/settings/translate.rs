@@ -444,6 +444,9 @@ pub struct Settings {
     /// The strength of Esmeril (ADR 0048), while it's drawn: `org.mate.Caminito`'s `esmeril`
     /// on and `reduced-resources` off. `enable-animations` doesn't touch it.
     pub esmeril: Option<u32>,
+    /// The app ids whose windows get Esmeril behind their own surfaces (ADR 0048):
+    /// `org.mate.Caminito`'s `esmeril-applications`.
+    pub esmeril_applications: Vec<String>,
     pub interface: Interface,
     pub font_rendering: FontRendering,
     pub mouse: Mouse,
@@ -1270,6 +1273,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     let esmeril = (r.bool(CAMINITO, "esmeril", true)
         && !r.bool(MARCO_GENERAL, "reduced-resources", false))
     .then_some(esmeril_strength);
+    let esmeril_applications = r.strings_or(CAMINITO, "esmeril-applications", &["mate-terminal"]);
 
     let font_name = r.non_empty(INTERFACE, "font-name", "Sans 10");
     let titlebar_font = r.non_empty(MARCO_GENERAL, "titlebar-font", "Sans Bold 10");
@@ -1372,6 +1376,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         maximize_animation,
         popup_slide,
         esmeril,
+        esmeril_applications,
         interface: Interface {
             gtk_theme: r.non_empty(INTERFACE, "gtk-theme", "Menta"),
             font_name,

@@ -4005,3 +4005,21 @@ They are the developer's to run.
   1 blurs it far less, at once. `esmeril` off and `reduced-resources` on each leave a sharp
   picture beneath, at once. Rounded corners stay clear. Moving a window drops no frames. On
   the turned output the blur still lines up with what's beneath.
+
+### Esmeril shows blurred behind a translucent mate-terminal
+
+- **Milestone:** esmeril
+- **Steps:**
+  1. Start a Nested run with `tools/dev-nested`. Run
+     `gsettings get org.mate.Caminito esmeril-applications`, which prints `['mate-terminal']`.
+  2. Open mate-terminal, and in Profile Preferences → Background choose Transparent background
+     at about half. Put another window partly behind it, and open its context menu.
+  3. Move the window beneath. Type in the terminal.
+  4. Run `gsettings set org.mate.Caminito esmeril-applications "[]"`, then set it back to
+     `"['mate-terminal']"`.
+  5. Run mate-terminal under Xwayland with `GDK_BACKEND=x11 mate-terminal`, and do steps 2 and 3
+     with it.
+- **Expected:** What's beneath the terminal's text area shows blurred, more saturated and more
+  contrasted, follows the window beneath as it moves, and the text stays sharp. The context menu
+  has none behind it. In step 4 the blur goes and comes back at once, with the terminal still
+  open. In step 5 it looks the same.

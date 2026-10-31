@@ -1,5 +1,6 @@
 //! Esmeril (ADR 0048): a blur of what's beneath, with raised saturation and contrast, drawn
-//! behind the see-through parts of a frame. It's Plasma's Blur effect and its Background
+//! behind the see-through parts of a frame and of the windows of the listed applications. It's
+//! Plasma's Blur effect and its Background
 //! contrast effect, whose behaviour and numbers are taken and whose code isn't: the passes
 //! and offsets of each strength step from KWin's `src/plugins/blur/blur.cpp`, and the colour
 //! transform from `src/plugins/backgroundcontrast/contrast.cpp`, with libplasma's default
@@ -12,24 +13,26 @@
 //! it changes, and captures it again. What's captured is blurred once, into textures the
 //! tracker keeps for the element, and only the strip's own rectangle is drawn.
 //!
-//! The strip's alpha says where it's drawn: wherever the strip has any alpha at all. The
-//! strip is drawn over it, so an opaque pixel hides it and a part-clear one shows it as much
-//! as it's see-through, and a wholly clear pixel shows what's beneath with no Esmeril.
+//! The alpha of a strip, or of a listed window's surface, says where it's drawn: wherever that
+//! has any alpha at all. The strip or the surface is drawn over it, so an opaque pixel hides it
+//! and a part-clear one shows it as much as it's see-through, and a wholly clear pixel shows
+//! what's beneath with no Esmeril. A surface's alpha is read from its texture as it's drawn, so
+//! it follows the client's commits, whose damage redraws the element where they changed it.
 //!
-//! A layer surface or its popup (CMN-232) is a strip whose alpha is its client's: its mask is
-//! the surface's own texture at the frame it's drawn, whichever kind of buffer that came from.
+//! A layer surface and its popups (CMN-232) get it by the same road, once their buffer is known
+//! to have see-through pixels, and fade and slide as they do.
 //!
 //! Pixman draws nothing for it (ADR 0048), though its damage is the same.
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use caminito_theme::cairo::ImageSurface;
 use smithay::backend::allocator::{Buffer as _, Fourcc, format::has_alpha};
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
 use smithay::backend::renderer::gles::{
-    GlesError, GlesFrame, GlesPixelProgram, GlesRenderer, GlesTexture, Uniform, UniformName,
-    UniformType, UniformValue, ffi, link_program,
+    GlesError, GlesFrame, GlesPixelProgram, GlesRenderer, GlesTexProgram, GlesTexture, Uniform,
+    UniformName, UniformType, UniformValue, ffi, link_program,
 };
 #[cfg(test)]
 use smithay::backend::renderer::pixman::PixmanRenderer;
@@ -41,8 +44,8 @@ use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format as ShmFormat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::user_data::UserDataMap;
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
-use smithay::wayland::compositor::with_states;
+use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size};
+use smithay::wayland::compositor::SurfaceData;
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::with_buffer_contents;
 
@@ -103,35 +106,15 @@ fn step(strength: u32) -> Step {
     unreachable!("the steps of the iterations add up to the strongest strength")
 }
 
-/// A strip's or a surface's alpha, which says where Esmeril goes on it, for one that has
-/// see-through pixels. One strip's mask keeps its [`Id`], and so its blur, for as long as the strip is
-/// the same, and a surface's for as long as the surface lives.
-#[derive(Debug, Clone)]
-pub(crate) struct Mask {
-    id: Id,
-    source: Source,
-}
-
-/// Where a mask's alpha is.
-#[derive(Debug, Clone)]
-enum Source {
-    /// A frame's strip.
-    Pixels {
-        /// ARGB8888, top row first, with no gaps between the rows.
-        pixels: Arc<Vec<u8>>,
-        size: Size<i32, Buffer>,
-    },
-    /// A client's surface, and how many of its commits have been seen.
-    Surface { surface: WlSurface, commits: usize },
-}
-
-/// What a surface's mask keeps between frames, so that its buffer is read once for each commit.
-#[derive(Debug)]
-struct SurfaceMask {
-    id: Id,
-    commit: CommitCounter,
-    commits: usize,
-    see_through: bool,
+/// Whether a window with `app_id`, a native window's app id or an Xwayland window's `WM_CLASS`
+/// class, is one of `esmeril-applications`, without regard to ASCII case: mate-terminal's class
+/// is `Mate-terminal`.
+pub(crate) fn lists(applications: &[String], app_id: Option<&str>) -> bool {
+    app_id.is_some_and(|app_id| {
+        applications
+            .iter()
+            .any(|listed| listed.eq_ignore_ascii_case(app_id))
+    })
 }
 
 /// Whether a pixel whose alpha is its last byte is neither opaque nor wholly clear.
@@ -141,7 +124,7 @@ fn is_part_clear(pixel: &[u8; 4]) -> bool {
 
 /// Whether a surface's `buffer` can have see-through pixels: every pixel of an shm one is read,
 /// and a dmabuf's aren't reachable, so its format says.
-fn is_see_through(buffer: &WlBuffer) -> bool {
+fn buffer_is_see_through(buffer: &WlBuffer) -> bool {
     if let Ok(dmabuf) = get_dmabuf(buffer) {
         return has_alpha(dmabuf.format().code);
     }
@@ -168,6 +151,45 @@ fn is_see_through(buffer: &WlBuffer) -> bool {
     .unwrap_or(true)
 }
 
+/// Whether a surface's last commit has see-through pixels, its buffer being read once for each
+/// commit: a layer surface that hasn't any gets no Esmeril (CMN-232).
+pub(crate) fn has_see_through_pixels(states: &SurfaceData) -> bool {
+    let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() else {
+        return false;
+    };
+    let state = data.lock().unwrap();
+    let Some(buffer) = state.buffer() else {
+        return false;
+    };
+    let commit = state.current_commit();
+    states
+        .data_map
+        .insert_if_missing_threadsafe(|| Mutex::new(None::<(CommitCounter, bool)>));
+    let kept = states
+        .data_map
+        .get::<Mutex<Option<(CommitCounter, bool)>>>();
+    let mut kept = kept.expect("it was just inserted").lock().unwrap();
+    match *kept {
+        Some((seen, see_through)) if seen == commit => see_through,
+        _ => {
+            let see_through = buffer_is_see_through(buffer);
+            *kept = Some((commit, see_through));
+            see_through
+        }
+    }
+}
+
+/// A strip's alpha, which says where Esmeril goes on it, for a strip that has see-through
+/// pixels. One strip's mask keeps its [`Id`], and so its blur, for as long as the strip is
+/// the same.
+#[derive(Debug, Clone)]
+pub(crate) struct Mask {
+    id: Id,
+    /// ARGB8888, top row first, with no gaps between the rows.
+    pixels: Arc<Vec<u8>>,
+    size: Size<i32, Buffer>,
+}
+
 impl Mask {
     /// The mask of a strip drawn on `surface`, or `None` if it has no see-through pixels:
     /// every pixel is opaque or wholly clear (ADR 0048).
@@ -185,79 +207,36 @@ impl Mask {
         let see_through = pixels.as_chunks::<4>().0.iter().any(is_part_clear);
         see_through.then(|| Self {
             id: Id::new(),
-            source: Source::Pixels {
-                pixels: Arc::new(pixels),
-                size: (width, height).into(),
-            },
+            pixels: Arc::new(pixels),
+            size: (width, height).into(),
         })
-    }
-
-    /// The mask of `surface` as last committed, with its rectangle from the surface's origin,
-    /// or `None` if it has no see-through pixels, or it turns or crops its buffer, as the mask
-    /// is all of the texture the right way round, and no client that gets Esmeril does either.
-    pub(crate) fn of_surface(surface: &WlSurface) -> Option<(Self, Rectangle<i32, Logical>)> {
-        with_states(surface, |states| {
-            let state = states.data_map.get::<RendererSurfaceStateUserData>()?;
-            let state = state.lock().unwrap();
-            let view = state.view()?;
-            let buffer = state.buffer()?;
-            let whole = Rectangle::from_size(state.buffer_size()?.to_f64());
-            if state.buffer_transform() != Transform::Normal || view.src != whole {
-                return None;
-            }
-            let commit = state.current_commit();
-            states
-                .data_map
-                .insert_if_missing(|| RefCell::new(None::<SurfaceMask>));
-            let kept = states.data_map.get::<RefCell<Option<SurfaceMask>>>()?;
-            let mut kept = kept.borrow_mut();
-            let kept = match kept.as_mut() {
-                Some(kept) if kept.commit == commit => kept,
-                Some(kept) => {
-                    kept.commit = commit;
-                    kept.commits += 1;
-                    kept.see_through = is_see_through(buffer);
-                    kept
-                }
-                None => kept.insert(SurfaceMask {
-                    id: Id::new(),
-                    commit,
-                    commits: 0,
-                    see_through: is_see_through(buffer),
-                }),
-            };
-            kept.see_through.then(|| {
-                let mask = Self {
-                    id: kept.id.clone(),
-                    source: Source::Surface {
-                        surface: surface.clone(),
-                        commits: kept.commits,
-                    },
-                };
-                (mask, Rectangle::new(view.offset, view.dst))
-            })
-        })
-    }
-
-    /// How many commits of its surface it has seen, which a frame's strip has none of.
-    fn commits(&self) -> usize {
-        match self.source {
-            Source::Pixels { .. } => 0,
-            Source::Surface { commits, .. } => commits,
-        }
     }
 }
 
-/// Esmeril behind one strip of a frame, or one surface, for one frame of an output.
+/// What says where an [`Esmeril`] goes.
+#[derive(Debug, Clone)]
+enum Behind {
+    Strip(Mask),
+    /// A surface of a listed window, by whose texture's alpha it goes.
+    Surface(WlSurface),
+}
+
+/// The id of the Esmeril behind one surface, which keeps its blur for as long as the surface
+/// lives. The surface's own element has the id of its resource.
+struct SurfaceId(Id);
+
+/// Esmeril behind one strip of a frame or one surface, of a listed window or a layer surface,
+/// for one frame of an output.
 #[derive(Debug, Clone)]
 pub struct Esmeril {
-    mask: Mask,
+    id: Id,
+    behind: Behind,
     strength: u32,
     /// How much of it shows, as what's in front of it fades.
     alpha: f32,
-    /// The strip's rectangle.
+    /// The rectangle of the strip or the surface.
     strip: Rectangle<i32, Physical>,
-    /// The part of the strip it's drawn on.
+    /// The part of that it's drawn on.
     shown: Rectangle<i32, Physical>,
     /// The rectangle the blur reads: the strip's, widened by its reach, on the output.
     read: Rectangle<i32, Physical>,
@@ -267,16 +246,57 @@ pub struct Esmeril {
 
 impl Esmeril {
     /// Esmeril behind a strip at `strip` on an output of the logical size `output`, at `scale`,
-    /// and `alpha`, or `None` if it's off the output.
+    /// or `None` if it's off the output.
     pub(crate) fn new(
         mask: &Mask,
         strip: Rectangle<i32, Logical>,
         output: Size<i32, Logical>,
         scale: f64,
         strength: u32,
-        alpha: f32,
     ) -> Option<Self> {
         let strip = strip.to_f64().to_physical_precise_round(scale);
+        let behind = Behind::Strip(mask.clone());
+        Self::at(mask.id.clone(), behind, strip, output, scale, strength, 1.0)
+    }
+
+    /// Esmeril behind `surface`, with its origin at `location` on an output of the logical size
+    /// `output`, at `scale` and `alpha`, or `None` if it has no view yet or is off the output.
+    pub(crate) fn behind_surface(
+        surface: &WlSurface,
+        states: &SurfaceData,
+        location: Point<f64, Physical>,
+        output: Size<i32, Logical>,
+        scale: f64,
+        strength: u32,
+        alpha: f32,
+    ) -> Option<Self> {
+        let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
+        let view = data.lock().unwrap().view()?;
+        // As its surface's element rounds it, so that the two line up.
+        let corner = location.to_i32_round();
+        let far = (view.dst.to_f64().to_physical(scale).to_point() + location).to_i32_round();
+        let strip = Rectangle::new(corner, (far - corner).to_size());
+        let on_output: Size<i32, Physical> = output.to_f64().to_physical_precise_round(scale);
+        if !strip.overlaps(Rectangle::from_size(on_output)) {
+            return None;
+        }
+        states
+            .data_map
+            .insert_if_missing_threadsafe(|| SurfaceId(Id::new()));
+        let id = states.data_map.get::<SurfaceId>()?.0.clone();
+        let behind = Behind::Surface(surface.clone());
+        Self::at(id, behind, strip, output, scale, strength, alpha)
+    }
+
+    fn at(
+        id: Id,
+        behind: Behind,
+        strip: Rectangle<i32, Physical>,
+        output: Size<i32, Logical>,
+        scale: f64,
+        strength: u32,
+        alpha: f32,
+    ) -> Option<Self> {
         let output: Size<i32, Physical> = output.to_f64().to_physical_precise_round(scale);
         let reach = step(strength).reach;
         let mut read = strip;
@@ -284,7 +304,8 @@ impl Esmeril {
         read.size += (2 * reach, 2 * reach).into();
         let read = read.intersection(Rectangle::from_size(output))?;
         Some(Self {
-            mask: mask.clone(),
+            id,
+            behind,
             strength,
             alpha,
             strip,
@@ -300,7 +321,7 @@ impl Esmeril {
         Some(self)
     }
 
-    /// The strip's rectangle, on the output.
+    /// The rectangle of the strip or the surface, on the output.
     #[cfg(test)]
     pub(crate) fn strip(&self) -> Rectangle<i32, Physical> {
         self.strip
@@ -309,14 +330,12 @@ impl Esmeril {
 
 impl Element for Esmeril {
     fn id(&self) -> &Id {
-        &self.mask.id
+        &self.id
     }
 
-    /// Changes with the strength and with a commit of its surface, which then damage all of
-    /// it, and it's blurred again.
+    /// Changes with the strength, which then damages all of it, and it's blurred again.
     fn current_commit(&self) -> CommitCounter {
-        let steps = MAX_STRENGTH as usize + 1;
-        CommitCounter::from(self.mask.commits() * steps + self.strength as usize)
+        CommitCounter::from(self.strength as usize)
     }
 
     fn alpha(&self) -> f32 {
@@ -444,14 +463,11 @@ void main() {
 }
 ";
 
-/// The last pass, drawn on the frame: `blurred` by where the fragment is on the framebuffer,
-/// so whatever the output's transform, and `mask` by where it is on the strip.
-fn composite_shader() -> String {
+/// The last pass's `main`, which draws on the frame `blurred` by where the fragment is on the
+/// framebuffer, so whatever the output's transform, weighted by `mask_alpha`.
+fn composite_main(mask_alpha: &str) -> String {
     format!(
-        "precision highp float;
-uniform sampler2D blurred;
-uniform sampler2D mask;
-uniform float mask_flipped;
+        "uniform sampler2D blurred;
 uniform vec4 region;
 uniform float alpha;
 varying vec2 v_coords;
@@ -460,11 +476,46 @@ void main() {{
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     color = mix(vec3(luma), color, {SATURATION});
     color = clamp(color * {CONTRAST} + (1.0 - {CONTRAST}) / 2.0, 0.0, 1.0);
-    vec2 on_mask = vec2(v_coords.x, mix(v_coords.y, 1.0 - v_coords.y, mask_flipped));
-    float weight = smoothstep(0.0, {WHOLE_FROM_ALPHA}, texture2D(mask, on_mask).a) * alpha;
+    float weight = smoothstep(0.0, {WHOLE_FROM_ALPHA}, {mask_alpha}) * alpha;
     gl_FragColor = vec4(color * weight, weight);
 }}
 "
+    )
+}
+
+/// The last pass behind a strip, with `mask` by where the fragment is on the strip.
+fn composite_shader() -> String {
+    format!(
+        "precision highp float;
+uniform sampler2D mask;
+{}",
+        composite_main("texture2D(mask, v_coords).a")
+    )
+}
+
+/// The last pass behind a surface: a texture shader of Smithay's, drawn as the surface's element
+/// draws its texture, so that the kind of its buffer, its transform and its viewport are
+/// Smithay's to take care of, and `tex` is the surface's own.
+fn surface_composite_shader() -> String {
+    format!(
+        "#version 100
+//_DEFINES_
+#if defined(EXTERNAL)
+#extension GL_OES_EGL_image_external : require
+#endif
+precision highp float;
+#if defined(EXTERNAL)
+uniform samplerExternalOES tex;
+#else
+uniform sampler2D tex;
+#endif
+#if defined(NO_ALPHA)
+#define MASK_ALPHA 1.0
+#else
+#define MASK_ALPHA texture2D(tex, v_coords).a
+#endif
+{}",
+        composite_main("MASK_ALPHA")
     )
 }
 
@@ -501,6 +552,7 @@ struct Programs {
     down: Pass,
     up: Pass,
     composite: GlesPixelProgram,
+    surface_composite: GlesTexProgram,
     framebuffer: ffi::types::GLuint,
 }
 
@@ -534,7 +586,13 @@ fn compile(frame: &mut GlesFrame<'_, '_>) -> Result<Programs, GlesError> {
         &[
             UniformName::new("blurred", UniformType::_1i),
             UniformName::new("mask", UniformType::_1i),
-            UniformName::new("mask_flipped", UniformType::_1f),
+            UniformName::new("region", UniformType::_4f),
+        ],
+    )?;
+    let surface_composite = renderer.as_mut().compile_custom_texture_shader(
+        surface_composite_shader(),
+        &[
+            UniformName::new("blurred", UniformType::_1i),
             UniformName::new("region", UniformType::_4f),
         ],
     )?;
@@ -542,6 +600,7 @@ fn compile(frame: &mut GlesFrame<'_, '_>) -> Result<Programs, GlesError> {
         down,
         up,
         composite,
+        surface_composite,
         framebuffer,
     })
 }
@@ -555,7 +614,7 @@ struct Blur {
     levels: Vec<GlesTexture>,
     /// Where it read from, on the framebuffer.
     region: Rectangle<i32, Physical>,
-    /// The mask of a frame's strip, once it's first drawn.
+    /// A strip's mask, once it's first drawn.
     mask: Option<GlesTexture>,
 }
 
@@ -663,21 +722,6 @@ unsafe fn bind_texture(gl: &ffi::Gles2, unit: u32, texture: &GlesTexture) {
     }
 }
 
-/// The texture a surface was last drawn from, unless it's one a `sampler2D` can't read: a
-/// dmabuf of a format the renderer can only import as an external texture.
-fn surface_texture(frame: &GlesFrame<'_, '_>, surface: &WlSurface) -> Option<GlesTexture> {
-    let context = frame.context_id();
-    let formats = frame.egl_context().dmabuf_render_formats();
-    with_renderer_surface_state(surface, |state| {
-        let dmabuf = state.buffer().and_then(|buffer| get_dmabuf(buffer).ok());
-        if dmabuf.is_some_and(|dmabuf| !formats.contains(&dmabuf.format())) {
-            return None;
-        }
-        state.texture::<GlesTexture>(context).cloned()
-    })
-    .flatten()
-}
-
 impl DrawsEsmeril for GlesRenderer {
     fn capture(
         frame: &mut GlesFrame<'_, '_>,
@@ -774,24 +818,36 @@ impl DrawsEsmeril for GlesRenderer {
         let Some(blur) = blur.as_mut() else {
             return Ok(());
         };
-        let mask = match &esmeril.mask.source {
-            Source::Pixels { pixels, size } => {
+        // A strip's mask, imported once, or a surface's texture, as it is now: a surface with
+        // none, as one of a single-pixel buffer, gets nothing.
+        let mask = match &esmeril.behind {
+            Behind::Strip(mask) => {
                 if blur.mask.is_none() {
                     let mut renderer = frame.renderer();
                     blur.mask = Some(renderer.as_mut().import_memory(
-                        pixels,
+                        &mask.pixels,
                         Fourcc::Argb8888,
-                        *size,
+                        mask.size,
                         false,
                     )?);
                 }
-                blur.mask.clone().expect("it was just imported")
+                None
             }
-            Source::Surface { surface, .. } => {
-                let Some(texture) = surface_texture(frame, surface) else {
+            Behind::Surface(surface) => {
+                let context = frame.context_id();
+                let drawn = with_renderer_surface_state(surface, |state| {
+                    let texture = state.texture::<GlesTexture>(context)?.clone();
+                    let src = state.view()?.src.to_buffer(
+                        f64::from(state.buffer_scale()),
+                        state.buffer_transform(),
+                        &state.buffer_size()?.to_f64(),
+                    );
+                    Some((texture, src, state.buffer_transform()))
+                });
+                let Some(drawn) = drawn.flatten() else {
                     return Ok(());
                 };
-                texture
+                Some(drawn)
             }
         };
 
@@ -813,14 +869,39 @@ impl DrawsEsmeril for GlesRenderer {
 
         let blurred = &blur.levels[0];
         let region = blur.region;
+        let region = Uniform::new(
+            "region",
+            UniformValue::_4f(
+                region.loc.x as f32,
+                region.loc.y as f32,
+                region.size.w as f32,
+                region.size.h as f32,
+            ),
+        );
+        let strip_mask = blur.mask.as_ref();
         frame.with_context(|gl| {
             // Safety: the renderer's context is current in `with_context`.
             unsafe {
                 bind_texture(gl, 1, blurred);
-                bind_texture(gl, 2, &mask);
+                if let Some(mask) = strip_mask {
+                    bind_texture(gl, 2, mask);
+                }
                 gl.ActiveTexture(ffi::TEXTURE0);
             }
         })?;
+        if let Some((texture, src, transform)) = mask {
+            return frame.render_texture_from_to(
+                &texture,
+                src,
+                strip,
+                &damage,
+                &[],
+                transform,
+                esmeril.alpha,
+                Some(&programs.surface_composite),
+                &[Uniform::new("blurred", UniformValue::_1i(1)), region],
+            );
+        }
         frame.render_pixel_shader_to(
             &programs.composite,
             Rectangle::from_size((f64::from(strip.size.w), f64::from(strip.size.h)).into()),
@@ -831,19 +912,7 @@ impl DrawsEsmeril for GlesRenderer {
             &[
                 Uniform::new("blurred", UniformValue::_1i(1)),
                 Uniform::new("mask", UniformValue::_1i(2)),
-                Uniform::new(
-                    "mask_flipped",
-                    UniformValue::_1f(if mask.is_y_inverted() { 1.0 } else { 0.0 }),
-                ),
-                Uniform::new(
-                    "region",
-                    UniformValue::_4f(
-                        region.loc.x as f32,
-                        region.loc.y as f32,
-                        region.size.w as f32,
-                        region.size.h as f32,
-                    ),
-                ),
+                region,
             ],
         )
     }
