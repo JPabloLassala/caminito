@@ -1185,7 +1185,7 @@ where
 {
     let (offset, alpha) = slid.map_or((Point::default(), 1.0), |slid| (slid.offset, slid.alpha));
     let esmeril = Esmeril::sliding(
-        drawing.esmeril.as_ref()?,
+        drawing.mask.as_ref()?,
         Rectangle::new(rect.loc + offset, rect.size),
         rect,
         alpha,

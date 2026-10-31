@@ -38,6 +38,9 @@ const OUTPUT: (i32, i32) = (400, 300);
 const BENEATH: u32 = 0xff_80_60_40;
 const OTHER: u32 = 0xff_10_20_c0;
 
+/// How far beyond its own rectangle Esmeril reads at strength 15: KWin's `expandSize`.
+const REACH: i32 = 150;
+
 /// Scale 1 throughout, so that physical pixels are the logical ones.
 const SCALE: Scale<f64> = Scale { x: 1.0, y: 1.0 };
 
@@ -137,8 +140,8 @@ fn a_see_through_strip_gets_esmeril_behind_it_where_the_blur_reads() {
     };
     let strip = esmeril.strip();
     let read = Rectangle::new(
-        strip.loc - Point::from((150, 150)),
-        (strip.size.w + 300, strip.size.h + 300).into(),
+        strip.loc - Point::from((REACH, REACH)),
+        (strip.size.w + 2 * REACH, strip.size.h + 2 * REACH).into(),
     );
     let on_output = Rectangle::from_size(OUTPUT.into());
     assert_eq!(
@@ -657,6 +660,11 @@ fn what_is_beneath_a_listed_surface_shows_blurred_and_follows() {
     );
 }
 
+/// The debug dump.
+fn dump(f: &Fixture) -> serde_json::Value {
+    serde_json::from_str(&f.state.caminito.state_dump()).unwrap()
+}
+
 /// `colors` with a background of `alpha` in every state.
 fn with_background_alpha(colors: &PaletteColors, alpha: f64) -> PaletteColors {
     let states = GtkState::ALL.map(|state| StateColors {
@@ -700,14 +708,7 @@ fn workspace_popup(palette: impl FnOnce(&mut Fixture)) -> (Fixture, Output) {
 #[test]
 fn a_see_through_workspace_popup_gets_esmeril_behind_all_of_it() {
     let (mut f, output) = workspace_popup(translucent_palette);
-    let whole = f
-        .state
-        .caminito
-        .workspace_popup
-        .as_ref()
-        .unwrap()
-        .layout
-        .popup;
+    let whole = rect(&dump(&f)["workspace_popup"]["popup"]);
     let elements = esmerils(&mut f, &output);
     let [esmeril] = elements.as_slice() else {
         panic!("the popup is see-through: {elements:?}");
@@ -740,7 +741,7 @@ fn switcher_over_see_through_frames(
     f.key(KEY_LEFTALT, true);
     tap(&mut f, KEY_TAB);
     f.advance_clock(POPUP_DELAY);
-    assert!(f.state.caminito.visible_switcher().is_some());
+    assert_eq!(dump(&f)["switcher"]["visible"], true);
     f.draw(&output);
     (f, output, frames)
 }
@@ -748,7 +749,7 @@ fn switcher_over_see_through_frames(
 #[test]
 fn a_see_through_switcher_gets_esmeril_right_behind_its_background() {
     let (mut f, output, frames) = switcher_over_see_through_frames(translucent_palette);
-    let whole = f.state.caminito.visible_switcher().unwrap().grid.popup;
+    let whole = rect(&dump(&f)["switcher"]["popup"]);
     let elements = esmerils(&mut f, &output);
     assert_eq!(elements.len(), frames + 1);
     // The popup is over the windows, so its Esmeril is the first.
@@ -827,8 +828,8 @@ fn slides_with(esmeril: &Esmeril, slide: &super::popup_slide::Sliding) {
     assert_eq!(esmeril.shown(), shown);
     assert!((f64::from(esmeril.alpha()) - slide.alpha).abs() < 1e-6);
     let mut read = shown;
-    read.loc -= Point::from((150, 150));
-    read.size += (300, 300).into();
+    read.loc -= Point::from((REACH, REACH));
+    read.size += (2 * REACH, 2 * REACH).into();
     let on_output = Rectangle::from_size((1280, 800).into());
     assert_eq!(
         esmeril.geometry(SCALE),

@@ -1,6 +1,7 @@
 //! The Window switcher's chrome (108): everything of the popup but the thumbnails, drawn
 //! with cairo in the GTK theme's colours and font (ADR 0003), as two buffers the scene puts
-//! behind and in front of the thumbnails.
+//! behind and in front of the thumbnails. The Window menu and the Workspace popup are drawn
+//! with its helpers, and each drawing is a [`PopupDrawing`].
 
 use caminito_theme::cairo::{self, Context, Format, ImageSurface};
 use caminito_theme::{GtkState, PaletteColors, Rgba, Title, pango, pangocairo};
@@ -146,16 +147,16 @@ pub(crate) fn draw(
 #[derive(Debug)]
 pub(crate) struct PopupDrawing {
     pub(crate) buffer: MemoryRenderBuffer,
-    pub(crate) esmeril: Option<Mask>,
+    pub(crate) mask: Option<Mask>,
 }
 
 impl PopupDrawing {
     /// What was drawn on `surface`, at `scale`.
     pub(crate) fn of(mut surface: ImageSurface, scale: i32) -> Result<Self, cairo::Error> {
-        let esmeril = Mask::of(&mut surface);
+        let mask = Mask::of(&mut surface);
         Ok(Self {
             buffer: memory_buffer(surface, scale).ok_or(cairo::Error::NoMemory)?,
-            esmeril,
+            mask,
         })
     }
 }
