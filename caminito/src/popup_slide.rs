@@ -33,6 +33,10 @@
 //! is global, on no window, and one mapped again while its picture slides back turns round.
 //!
 //! The Window menu and its submenu slide too, on the same motion (`window_menu::slide`).
+//!
+//! The Popup fade (ADR 0055) is the other Popup animation, and everything above holds for it
+//! but the drawing: the same popups have a `Motion` that doesn't move them, on a line over
+//! 150 ms. Being at its place, it's never cut off.
 
 use std::cell::Cell;
 use std::time::Duration;
@@ -54,12 +58,17 @@ use caminito_theme::{Title, pango};
 use crate::open_close_animation::Picture;
 use crate::output::{output_geometry, output_id};
 use crate::scene::override_redirect_bbox;
+use crate::settings::translate::PopupAnimation;
 use crate::state::{Caminito, State};
 use crate::window_menu::slide::MenuSlides;
 use crate::workspace_slide::eased_way_left;
 
 /// How long the slide lasts: the Sliding popups effect's.
 pub(crate) const LENGTH: Duration = Duration::from_millis(200);
+
+/// How long the Popup fade lasts each way: the opening of the Fading popups effect's, which
+/// takes 600 ms to close (ADR 0055).
+pub(crate) const FADE_LENGTH: Duration = Duration::from_millis(150);
 
 /// How many lines of the interface font a popup slides at most: the Sliding popups effect's.
 const LINES: i32 = 8;
@@ -190,9 +199,36 @@ pub(crate) enum Root {
     Global(X11Window),
 }
 
-/// How a popup slides out of its edge, or back into it.
+/// How a Motion runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Curve {
+    /// The Popup slide's: `LENGTH` on a cubic ease-out.
+    Slide,
+    /// The Popup fade's: `FADE_LENGTH`, on a line.
+    Fade,
+}
+
+impl Curve {
+    fn length(self) -> Duration {
+        match self {
+            Curve::Slide => LENGTH,
+            Curve::Fade => FADE_LENGTH,
+        }
+    }
+
+    /// How far along it is `along` into its length, from 0 to 1.
+    fn at(self, along: Duration) -> f64 {
+        match self {
+            Curve::Slide => 1.0 - eased_way_left(along, LENGTH),
+            Curve::Fade => along.as_secs_f64() / FADE_LENGTH.as_secs_f64(),
+        }
+    }
+}
+
+/// How a popup slides out of its edge or back into it, or fades in or out at its place.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Motion {
+    curve: Curve,
     edge: Edge,
     /// How far it slides, from its place.
     distance: i32,
@@ -212,6 +248,7 @@ impl Motion {
     /// `edge` when `closing`, and comes back out of it otherwise. It doesn't fade.
     pub(crate) fn across(edge: Edge, distance: i32, closing: bool, start: Duration) -> Motion {
         Motion {
+            curve: Curve::Slide,
             edge,
             distance,
             fades: false,
@@ -226,29 +263,30 @@ impl Motion {
     }
 
     pub(crate) fn is_over(&self, now: Duration) -> bool {
-        self.elapsed(now) >= LENGTH
+        self.elapsed(now) >= self.curve.length()
     }
 
     /// When it's over, on Caminito's clock.
     pub(crate) fn end(&self) -> Duration {
-        self.start + LENGTH.saturating_sub(self.skipped)
+        self.start + self.curve.length().saturating_sub(self.skipped)
     }
 
     pub(crate) fn edge(&self) -> Edge {
         self.edge
     }
 
-    /// How far it is from its edge at `now`, from 0 to 1, where 1 is its place: the cubic
-    /// ease-out on its way out, so it moves fastest at first and settles into its place,
-    /// and the same curve played backwards on its way back.
+    /// How far it is from its edge at `now`, from 0 to 1, where 1 is its place: its curve on
+    /// its way out, so a slide moves fastest at first and settles into its place, and the
+    /// same curve played backwards on its way back.
     fn done(&self, now: Duration) -> f64 {
-        let elapsed = self.elapsed(now).min(LENGTH);
+        let length = self.curve.length();
+        let elapsed = self.elapsed(now).min(length);
         let along = if self.closing {
-            LENGTH - elapsed
+            length - elapsed
         } else {
             elapsed
         };
-        1.0 - eased_way_left(along, LENGTH)
+        self.curve.at(along)
     }
 
     /// The motion that turns this one round at `now`, from where it is and at the same
@@ -258,7 +296,7 @@ impl Motion {
         Motion {
             closing: !self.closing,
             start: now,
-            skipped: LENGTH.saturating_sub(self.elapsed(now)),
+            skipped: self.curve.length().saturating_sub(self.elapsed(now)),
             ..*self
         }
     }
@@ -520,12 +558,18 @@ impl Caminito {
         self.queue_redraw_all();
     }
 
-    /// A popup's motion from now with its edge and its `size`, out of its edge or, when
-    /// `closing`, back into it.
+    /// A popup's motion from now with its edge and its `size`, in or, when `closing`, out, as
+    /// the Popup animation has it. A fade keeps the edge for the debug dump alone.
     pub(crate) fn motion(&self, edge: Edge, size: Size<i32, Logical>, closing: bool) -> Motion {
-        let size = if edge.is_vertical() { size.h } else { size.w };
-        let (distance, fades) = distance(size, self.interface_line_height());
+        let (curve, distance, fades) = if self.settings.popup_animation == PopupAnimation::Fade {
+            (Curve::Fade, 0, true)
+        } else {
+            let size = if edge.is_vertical() { size.h } else { size.w };
+            let (distance, fades) = distance(size, self.interface_line_height());
+            (Curve::Slide, distance, fades)
+        };
         Motion {
+            curve,
             edge,
             distance,
             fades,
@@ -547,10 +591,11 @@ impl Caminito {
         self.popup_slides_run() && shows
     }
 
-    /// Whether popups slide now: the slide is on and no slide stops. That's all an
-    /// override-redirect window needs to be seen to open or close, as it's on no workspace.
+    /// Whether popups animate now: the Popup animation isn't None and no slide stops. That's
+    /// all an override-redirect window needs to be seen to open or close, as it's on no
+    /// workspace. An Intellihide panel slides on this too, under the fade as well (ADR 0055).
     pub(crate) fn popup_slides_run(&self) -> bool {
-        self.settings.popup_slide && !self.popup_slides_stop()
+        self.settings.popup_animation != PopupAnimation::None && !self.popup_slides_stop()
     }
 
     /// Notes override-redirect `window`, which X has just mapped, with the edge away from
@@ -1021,6 +1066,7 @@ mod tests {
     fn a_slide_turned_round_goes_back_from_where_it_is_at_the_same_speed() {
         let start = Duration::from_secs(10);
         let out = Motion {
+            curve: Curve::Slide,
             edge: Edge::Top,
             distance: 80,
             fades: true,
@@ -1052,6 +1098,7 @@ mod tests {
     fn a_slide_back_is_the_slide_out_played_backwards() {
         let start = Duration::from_secs(10);
         let motion = |closing| Motion {
+            curve: Curve::Slide,
             edge: Edge::Left,
             distance: 80,
             fades: false,
@@ -1077,6 +1124,7 @@ mod tests {
     fn a_slide_eases_out_of_its_edge_into_its_place() {
         let start = Duration::from_secs(10);
         let slide = |edge, fades| Motion {
+            curve: Curve::Slide,
             edge,
             distance: 80,
             fades,
@@ -1101,5 +1149,50 @@ mod tests {
         assert_eq!(fading.alpha(start), 0.0);
         assert_eq!(fading.alpha(start + LENGTH / 2), 0.875);
         assert_eq!(fading.alpha(start + LENGTH), 1.0);
+    }
+
+    fn fade(closing: bool, start: Duration) -> Motion {
+        Motion {
+            curve: Curve::Fade,
+            edge: Edge::Top,
+            distance: 0,
+            fades: true,
+            closing,
+            start,
+            skipped: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn a_fade_stays_at_its_place_and_runs_on_a_line_both_ways() {
+        let start = Duration::from_secs(10);
+        let half = FADE_LENGTH / 2;
+        let (fade_in, fade_out) = (fade(false, start), fade(true, start));
+
+        assert_eq!(fade_in.alpha(start), 0.0);
+        assert_eq!(fade_in.alpha(start + half), 0.5);
+        assert_eq!(fade_in.alpha(start + FADE_LENGTH), 1.0);
+        assert_eq!(fade_in.offset(start + half), (0, 0).into());
+        assert_eq!(fade_out.alpha(start), 1.0);
+        assert_eq!(fade_out.alpha(start + half), 0.5);
+        assert_eq!(fade_out.alpha(start + FADE_LENGTH), 0.0);
+        assert_eq!(fade_out.offset(start + half), (0, 0).into());
+        assert_eq!(fade_out.end(), start + FADE_LENGTH);
+        assert!(!fade_out.is_over(start + FADE_LENGTH - Duration::from_millis(1)));
+        assert!(fade_out.is_over(start + FADE_LENGTH));
+    }
+
+    #[test]
+    fn a_fade_turned_round_goes_back_from_where_it_is_at_the_same_speed() {
+        let start = Duration::from_secs(10);
+        let part_way = start + Duration::from_millis(30);
+        let fade_in = fade(false, start);
+
+        let back = fade_in.turned(part_way);
+
+        assert_eq!(back.alpha(part_way), fade_in.alpha(part_way), "no jump");
+        assert!(!back.is_over(part_way + Duration::from_millis(29)));
+        assert!(back.is_over(part_way + Duration::from_millis(30)));
+        assert_eq!(back.alpha(part_way + Duration::from_millis(30)), 0.0);
     }
 }

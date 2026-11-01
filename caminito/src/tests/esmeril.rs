@@ -794,7 +794,11 @@ fn window_menu(mut f: Fixture, palette: impl FnOnce(&mut Fixture)) -> (Fixture, 
 }
 
 fn popup_slide_on() -> Vec<(&'static str, String, Value)> {
-    vec![(CAMINITO, "popup-slide".into(), Value::Bool(true))]
+    vec![(
+        CAMINITO,
+        "popup-animation".into(),
+        Value::Str("slide".into()),
+    )]
 }
 
 #[test]
@@ -1047,7 +1051,11 @@ fn an_opaque_popup_and_the_desktops_get_none() {
 
 #[test]
 fn an_intellihide_panels_esmeril_slides_with_it_and_goes_when_it_has() {
-    let mut f = Fixture::with_settings(vec![(CAMINITO, "popup-slide".into(), Value::Bool(true))]);
+    let mut f = Fixture::with_settings(vec![(
+        CAMINITO,
+        "popup-animation".into(),
+        Value::Str("slide".into()),
+    )]);
     let output = f.add_output(OUTPUT, 1.0);
     let id = f.connect(Kind::Xdg);
     f.stop_clock();
@@ -1132,7 +1140,11 @@ fn a_see_through_panel_shows_what_is_beneath_saturated_and_contrasted() {
 
 #[test]
 fn a_popups_esmeril_slides_with_it_and_rests_at_its_place() {
-    let mut f = Fixture::with_settings(vec![(CAMINITO, "popup-slide".into(), Value::Bool(true))]);
+    let mut f = Fixture::with_settings(vec![(
+        CAMINITO,
+        "popup-animation".into(),
+        Value::Str("slide".into()),
+    )]);
     let output = f.add_output(OUTPUT, 1.0);
     let id = f.connect(Kind::Xdg);
     f.stop_clock();

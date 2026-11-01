@@ -51,6 +51,12 @@
     <value nick="application-overview" value="4"/>
   </enum>
 
+  <enum id="org.mate.Caminito.PopupAnimation">
+    <value nick="slide" value="0"/>
+    <value nick="fade" value="1"/>
+    <value nick="none" value="2"/>
+  </enum>
+
   <enum id="org.mate.Caminito.NotificationDelivery">
     <value nick="bubble" value="0"/>
     <value nick="history" value="1"/>
@@ -99,10 +105,10 @@
       <summary>Animate windows as they are maximised</summary>
       <description>When true, a window that is maximised or unmaximised moves and grows into its new place while a picture of it as it was fades out. When false, it is there at once, as in Marco. The animation also needs compositing-manager on and reduced-resources off in org.mate.Marco.general, and enable-animations on in org.mate.interface.</description>
     </key>
-    <key name="popup-slide" type="b">
-      <default>true</default>
-      <summary>Slide menus and other popups as they open</summary>
-      <description>When true, a menu, a tooltip or another popup that opens slides out of what it is attached to. When false, it is there at once, as in Marco. The slide also needs compositing-manager on and reduced-resources off in org.mate.Marco.general, and enable-animations on in org.mate.interface.</description>
+    <key name="popup-animation" enum="org.mate.Caminito.PopupAnimation">
+      <default>'slide'</default>
+      <summary>How menus and other popups come on screen and leave it</summary>
+      <description>With "slide", a menu, a tooltip or another popup slides out of what it is attached to as it opens, and back into it as it closes. With "fade", it fades in and out at its own place. With "none", it is there and gone at once, as in Marco. Either animation also needs compositing-manager on and reduced-resources off in org.mate.Marco.general, and enable-animations on in org.mate.interface. An intellihide panel slides unless this is "none".</description>
     </key>
     <key name="esmeril" type="b">
       <default>true</default>

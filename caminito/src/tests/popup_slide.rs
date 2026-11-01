@@ -14,7 +14,7 @@ use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{BTN_LEFT, ClientId, ClientWindow, Fixture, Kind, WINDOW_COLOR, WindowSpec};
 use super::overview;
-use crate::popup_slide::LENGTH;
+use crate::popup_slide::{FADE_LENGTH, LENGTH};
 use crate::settings::Value as Setting;
 use crate::settings::translate::{CAMINITO, INTERFACE, MARCO_GENERAL};
 
@@ -32,12 +32,16 @@ const ANCHOR: (i32, i32, i32, i32) = (150, 100, 100, 20);
 
 pub(super) type Settings = Vec<(&'static str, String, Setting)>;
 
-/// One output with `popup-slide` on, unless `settings` has it, and a Wayland client. The
+/// One output with the Popup slide on, unless `settings` has it, and a Wayland client. The
 /// fixture has the key off, for the tests written when a popup was there at once. The clock
 /// is stopped, so the slide is read where `advance_clock` has it.
 pub(super) fn desk(mut settings: Settings) -> (Fixture, ClientId) {
-    if !settings.iter().any(|(_, key, _)| key == "popup-slide") {
-        settings.push((CAMINITO, "popup-slide".into(), Setting::Bool(true)));
+    if !settings.iter().any(|(_, key, _)| key == "popup-animation") {
+        settings.push((
+            CAMINITO,
+            "popup-animation".into(),
+            Setting::Str("slide".into()),
+        ));
     }
     let mut f = Fixture::with_settings(settings);
     f.add_output((1280, 800), 1.0);
@@ -394,12 +398,12 @@ fn a_click_part_way_on_a_row_at_its_real_place_reaches_it() {
 #[test]
 fn with_its_key_or_one_of_the_minimise_animations_three_against_it_a_popup_is_there_at_once() {
     for (schema, key, value) in [
-        (CAMINITO, "popup-slide", false),
-        (MARCO_GENERAL, "compositing-manager", false),
-        (MARCO_GENERAL, "reduced-resources", true),
-        (INTERFACE, "enable-animations", false),
+        (CAMINITO, "popup-animation", Setting::Str("none".into())),
+        (MARCO_GENERAL, "compositing-manager", Setting::Bool(false)),
+        (MARCO_GENERAL, "reduced-resources", Setting::Bool(true)),
+        (INTERFACE, "enable-animations", Setting::Bool(false)),
     ] {
-        let (mut f, id) = desk(vec![(schema, key.into(), Setting::Bool(value))]);
+        let (mut f, id) = desk(vec![(schema, key.into(), value)]);
         let (_, corner) =
             window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
 
@@ -734,7 +738,11 @@ fn an_output_that_goes_drops_the_closing_pictures_on_it() {
 
 #[test]
 fn with_the_slide_off_a_popup_that_closes_is_gone_in_one_frame() {
-    let off = (CAMINITO, "popup-slide".into(), Setting::Bool(false));
+    let off = (
+        CAMINITO,
+        "popup-animation".into(),
+        Setting::Str("none".into()),
+    );
     let (mut f, id) = desk(vec![off]);
     let (popup, _) =
         window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
@@ -752,7 +760,11 @@ fn with_the_slide_off_a_popup_that_closes_is_gone_in_one_frame() {
 // and not a corner of it blown up: its subsurface in its far corner stays there.
 #[test]
 fn at_an_output_scale_of_2_a_closing_popups_picture_is_the_whole_popup() {
-    let settings = vec![(CAMINITO, "popup-slide".into(), Setting::Bool(true))];
+    let settings = vec![(
+        CAMINITO,
+        "popup-animation".into(),
+        Setting::Str("slide".into()),
+    )];
     let mut f = Fixture::with_settings(settings);
     let output = f.add_output((1280, 800), 2.0);
     let id = f.connect(Kind::Xdg);
@@ -783,4 +795,64 @@ fn at_an_output_scale_of_2_a_closing_popups_picture_is_the_whole_popup() {
 
     assert_eq!(the_closing(&f).offset, (0, 0).into());
     assert_eq!(green(&mut f), 0x00_ff00, "its subsurface in its picture");
+}
+
+// The Popup fade (ADR 0055).
+
+fn fade() -> Settings {
+    vec![(
+        CAMINITO,
+        "popup-animation".into(),
+        Setting::Str("fade".into()),
+    )]
+}
+
+#[test]
+fn under_the_fade_a_popup_fades_in_at_its_place() {
+    let (mut f, id) = desk(fade());
+    window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+
+    let start = the_slide(&f);
+    assert_eq!(start.offset, (0, 0).into());
+    assert_eq!(start.alpha, 0.0);
+
+    f.advance_clock(FADE_LENGTH / 2);
+    let halfway = the_slide(&f);
+    assert_eq!(halfway.offset, (0, 0).into());
+    assert!((halfway.alpha - 0.5).abs() < 0.01, "{halfway:?}");
+
+    f.advance_clock(FADE_LENGTH / 2);
+    assert!(sliding(&f).is_empty(), "{:?}", sliding(&f));
+}
+
+#[test]
+fn under_the_fade_a_closing_popups_picture_fades_out_at_its_place() {
+    let (mut f, id) = desk(fade());
+    let (popup, _) =
+        window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+    f.advance_clock(FADE_LENGTH);
+
+    f.client(id).destroy_popup(popup);
+    f.roundtrip(id);
+    f.advance_clock(FADE_LENGTH / 2);
+
+    let halfway = the_closing(&f);
+    assert_eq!(halfway.offset, (0, 0).into());
+    assert!((halfway.alpha - 0.5).abs() < 0.01, "{halfway:?}");
+
+    f.advance_clock(FADE_LENGTH / 2);
+    assert!(closing(&f).is_empty(), "{:?}", closing(&f));
+}
+
+#[test]
+fn no_popup_fades_under_the_lock() {
+    let (mut f, id) = desk(fade());
+    let locker = f.connect(Kind::Xdg);
+    f.client(locker).lock_session();
+    f.roundtrip(locker);
+    assert!(f.state.caminito.lock.is_locked());
+
+    window_with_popup(&mut f, id, place((80, 60), Anchor::Bottom, Gravity::Bottom));
+
+    assert!(sliding(&f).is_empty(), "{:?}", sliding(&f));
 }

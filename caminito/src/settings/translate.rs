@@ -437,10 +437,10 @@ pub struct Settings {
     /// of it fading out (CMN-174): `org.mate.Caminito`'s `maximize-animation` on, and the
     /// minimise animation's three keys as it needs them (ADR 0036).
     pub maximize_animation: bool,
-    /// Whether a popup slides out of what it's attached to as it opens (ADR 0037):
-    /// `org.mate.Caminito`'s `popup-slide` on, and the minimise animation's three keys as it
-    /// needs them.
-    pub popup_slide: bool,
+    /// How a popup comes on screen and leaves it (ADR 0055): `org.mate.Caminito`'s
+    /// `popup-animation`, and none without the minimise animation's three keys as it needs
+    /// them (ADR 0037).
+    pub popup_animation: PopupAnimation,
     /// The strength of Esmeril (ADR 0048), while it's drawn: `org.mate.Caminito`'s `esmeril`
     /// on and `reduced-resources` off. `enable-animations` doesn't touch it.
     pub esmeril: Option<u32>,
@@ -517,6 +517,18 @@ pub enum HotCornerAction {
     ShowDesktop,
     /// Locks the session.
     Lock,
+}
+
+/// How a popup comes on screen and leaves it (`org.mate.Caminito.PopupAnimation`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PopupAnimation {
+    /// The Popup slide (ADR 0037).
+    #[default]
+    Slide,
+    /// The Popup fade (ADR 0055).
+    Fade,
+    /// There and gone at once, as in Marco.
+    None,
 }
 
 /// Night Light (ADR 0023), from `org.mate.Caminito`'s `night-light-*` keys.
@@ -717,6 +729,15 @@ impl Nick for HotCornerAction {
         ("show-desktop", Self::ShowDesktop),
         ("lock", Self::Lock),
         ("application-overview", Self::ApplicationOverview),
+    ];
+}
+
+/// `org.mate.Caminito.PopupAnimation`.
+impl Nick for PopupAnimation {
+    const NICKS: &'static [(&'static str, Self)] = &[
+        ("slide", Self::Slide),
+        ("fade", Self::Fade),
+        ("none", Self::None),
     ];
 }
 
@@ -1262,7 +1283,11 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     let overview_animation = minimize_animation && r.bool(CAMINITO, "overview-animation", true);
     let open_close_animation = minimize_animation && r.bool(CAMINITO, "open-close-animation", true);
     let maximize_animation = minimize_animation && r.bool(CAMINITO, "maximize-animation", true);
-    let popup_slide = minimize_animation && r.bool(CAMINITO, "popup-slide", true);
+    let popup_animation = if minimize_animation {
+        r.nick(CAMINITO, "popup-animation", PopupAnimation::Slide)
+    } else {
+        PopupAnimation::None
+    };
     let esmeril_strength = r.uint_clamped(
         CAMINITO,
         "esmeril-strength",
@@ -1374,7 +1399,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         overview_animation,
         open_close_animation,
         maximize_animation,
-        popup_slide,
+        popup_animation,
         esmeril,
         esmeril_applications,
         interface: Interface {

@@ -1,13 +1,15 @@
 //! `caminito-behaviour` (CMN-184): Workspace Behaviour, the settings of how Caminito itself
 //! behaves beyond what MATE's capplets set. One window of pages, in GTK4 without libadwaita,
-//! as caminito-displays is (ADR 0014). Hot corners and Key remaps (CMN-189) are its pages
-//! for now; the animations and Per-output workspaces join them later, each a tab of its own.
+//! as caminito-displays is (ADR 0014). Hot corners, Key remaps (CMN-189) and Animations
+//! (ADR 0055) are its pages for now; Per-output workspaces join them later, a tab of its own.
 
 #![forbid(unsafe_code)]
 
+mod animations_page;
 mod hot_corners_page;
 mod key_remaps_page;
 
+use caminito_behaviour::animations::Animations;
 use caminito_behaviour::hot_corners::HotCorners;
 use caminito_behaviour::key_remaps::KeyRemapKeys;
 use gtk::prelude::*;
@@ -55,6 +57,14 @@ fn open(application: &gtk::Application) {
                 }
             };
             pages.append_page(&remaps, Some(&gtk::Label::new(Some("Key remaps"))));
+            let animations = match Animations::open() {
+                Ok(animations) => animations_page::build(animations),
+                Err(err) => {
+                    glib::g_critical!(DOMAIN, "can't open the animations: {err}");
+                    unavailable(&format!("The animations can't be opened: {err}."))
+                }
+            };
+            pages.append_page(&animations, Some(&gtk::Label::new(Some("Animations"))));
             pages.upcast::<gtk::Widget>()
         }
         Err(err) => {

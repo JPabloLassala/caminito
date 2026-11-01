@@ -968,14 +968,14 @@ session_env() {
 - **Milestone:** M9
 - **Steps:**
   1. Log into *MATE on Caminito* on the tty backend, with the panel at the top. Run
-     `gsettings get org.mate.Caminito popup-slide`, which prints `true`.
+     `gsettings get org.mate.Caminito popup-animation`, which prints `'slide'`.
   2. Open the panel's main menu, then a submenu of it. Open pluma's *File* menu from its
      menubar, a submenu of its *View* menu, and a combo box's list in its *Preferences*.
   3. Move the panel to the bottom of the screen and open its main menu again. Move it back.
   4. Open pluma's *File* menu and click *New* at once, before the menu has finished sliding.
   5. Hold the pointer over a toolbar button of pluma until its tooltip shows.
-  6. `gsettings set org.mate.Caminito popup-slide false`, and open the menus of step 2 again.
-     Set it back to `true`. Turn each of these against the slide in turn, open a menu, and set
+  6. `gsettings set org.mate.Caminito popup-animation none`, and open the menus of step 2 again.
+     Set it back to `slide`. Turn each of these against the slide in turn, open a menu, and set
      it back: `org.mate.Marco.general compositing-manager false`, `org.mate.Marco.general
      reduced-resources true` and `org.mate.interface enable-animations false`.
   7. Open the Overview with Super+W, right-click caja's desktop through it if it shows, and
@@ -1012,12 +1012,46 @@ session_env() {
   its place, its `edge`, and the `offset` and `alpha` it's drawn at. The Window menu's and its
   submenu's come after the other popups'.
 
+### A menu fades in and out under the Popup fade
+
+- **Milestone:** none (ADR 0055)
+- **Steps:**
+  1. Log into *MATE on Caminito* on the tty backend. Open *Workspace Behaviour*, its
+     *Animations* tab, and set *Menus and popups* to *Fade*.
+  2. Open and close the panel's main menu, pluma's *File* menu, a tooltip, the Window menu with
+     Alt+Space, and pluma on Xwayland's *File* menu. Open pluma's *File* menu and press Escape
+     at once.
+  3. Give a panel intellihide and maximise a window over it.
+  4. Set *Menus and popups* to *None* and do steps 2 and 3 again. Set it back to *Slide*.
+- **Expected:** in step 2 each popup fades in and out at its own place, without moving, over
+  about a seventh of a second, and the one closed part-way fades back from where it is, with no
+  jump. In step 3 the panel slides away. In step 4 every popup is there and gone at once and the
+  panel goes at once.
+- **Debug tool:** `DumpState`'s `popup_slides` and `closing_popups`, whose `offset` stays 0.
+
+### Workspace Behaviour's Animations tab follows and sets the keys
+
+- **Milestone:** none (ADR 0055)
+- **Steps:**
+  1. Open *Workspace Behaviour* and its *Animations* tab. Run `gsettings monitor
+     org.mate.Caminito` in a terminal.
+  2. Turn each switch off and on, and choose each of *Menus and popups*' values.
+  3. Run `gsettings set org.mate.Caminito workspace-slide false`, then set it back to `true`.
+  4. Run `gsettings set org.mate.interface enable-animations false`, then set it back to `true`.
+     Do the same with `org.mate.Marco.general reduced-resources true` and `org.mate.Marco.general
+     compositing-manager false`.
+- **Expected:** in step 2 each change shows on `gsettings monitor` with no Apply, and the
+  animation changes with no restart. In step 3 the switch follows the key. In step 4 the controls
+  grey out at once, keep their values and a line above them says why, and all of it goes when the
+  key is set back.
+- **Debug tool:** `gsettings monitor org.mate.Caminito`.
+
 ### An X11 app's menu slides away from the pointer
 
 - **Milestone:** M9
 - **Steps:**
   1. Log into *MATE on Caminito* on the tty backend, with the panel at the top. Run
-     `gsettings get org.mate.Caminito popup-slide`, which prints `true`. Start pluma on
+     `gsettings get org.mate.Caminito popup-animation`, which prints `'slide'`. Start pluma on
      Xwayland with `GDK_BACKEND=x11 pluma`.
   2. Open its *File* menu from its menubar, then a submenu of its *View* menu. Right-click
      its text for its context menu.
@@ -1029,8 +1063,8 @@ session_env() {
   6. Open the *File* menu and close it with Escape. Open it again and press Escape at once,
      before it has finished sliding out.
   7. Drag a file from caja onto pluma's text, if caja runs on Xwayland too.
-  8. `gsettings set org.mate.Caminito popup-slide false`, and open and close the menus of step
-     2 again. Set it back to `true`.
+  8. `gsettings set org.mate.Caminito popup-animation none`, and open and close the menus of step
+     2 again. Set it back to `slide`.
 - **Expected:** in step 2 the *File* menu comes down out of the menubar, the submenu out of
   its menu's side, away from where the pointer is, and the context menu comes down from the
   pointer. Nothing of a menu is drawn outside its own place while it slides. In step 3 the

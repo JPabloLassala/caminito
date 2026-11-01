@@ -217,7 +217,7 @@ How long the pointer rests in a Hot corner before the corner fires, the same for
 _Avoid_: threshold (it could be a distance or a pressure), rest (that's what the pointer does, not how long), reactivation delay (that's the fixed time before a corner fires again)
 
 **caminito-behaviour**:
-Caminito's settings program for how Caminito itself behaves, beyond what MATE's capplets set: the Hot corners now, and later the animations and Per-output workspaces. The user reads it as Workspace Behaviour, Plasma's name for the section that holds these.
+Caminito's settings program for how Caminito itself behaves, beyond what MATE's capplets set: the Hot corners and the animations now, and later Per-output workspaces. The user reads it as Workspace Behaviour, Plasma's name for the section that holds these.
 _Avoid_: Caminito settings, desktop effects (hot corners aren't an effect), the Windows dialog (that's MATE's, for Marco's keys)
 
 **Workspace slide**:
@@ -230,7 +230,15 @@ _Avoid_: window animation (the minimise animation is one too), map or unmap anim
 
 **Popup slide**:
 The movement that shows a menu, a tooltip or another popup coming on screen or leaving it: it slides out of the edge it is attached to as it opens, and back into it as it closes. Popups are xdg_popups, override-redirect windows and the Window menu. It's Plasma's Sliding popups effect, with the edge chosen by Caminito (ADR 0037).
-_Avoid_: menu animation (tooltips and combo box lists slide too), fading popups (Plasma's other effect), sliding popups (KWin's name)
+_Avoid_: menu animation (tooltips and combo box lists slide too), sliding popups (KWin's name)
+
+**Popup fade**:
+The fade that shows a menu, a tooltip or another popup coming on screen or leaving it: it fades in and out at its own place and size, without moving. It covers the same popups as the Popup slide. It's Plasma's Fading popups effect, with its closing as short as its opening (ADR 0055).
+_Avoid_: pop-in (nothing grows or pops), menu fade (tooltips and combo box lists fade too), fading popups (KWin's name)
+
+**Popup animation**:
+What the user chooses for how popups come on screen and leave it: the Popup slide, the Popup fade or none. It's one choice, so a popup never does both. The Popup slide is the default.
+_Avoid_: menu animation, menu effect (tooltips and combo box lists have it too)
 
 **Maximise animation**:
 The movement that shows a window being maximised, unmaximised, tiled, untiled or given another tile: its frame goes from its old place to its new one while a picture of it as it was fades out. Maximising one way, fullscreen and a drag that pulls a window off its maximised or tiled place aren't animated. It's Plasma's Maximize effect, with tiles too.

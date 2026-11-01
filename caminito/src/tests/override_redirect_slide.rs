@@ -35,10 +35,15 @@ fn top_right() -> Point<i32, Logical> {
     place.loc + Point::from((place.size.w - 1, 0))
 }
 
-/// One output with `popup-slide` as `on` says, and an X client. The clock is stopped, so
+/// One output with the Popup slide on or off as `on` says, and an X client. The clock is stopped, so
 /// the slide is read where `advance_clock` has it.
 fn desk(on: bool) -> (Fixture, ClientId) {
-    let key = (CAMINITO, "popup-slide".into(), Setting::Bool(on));
+    let animation = if on { "slide" } else { "none" };
+    let key = (
+        CAMINITO,
+        "popup-animation".into(),
+        Setting::Str(animation.into()),
+    );
     let mut f = Fixture::with_settings(vec![key]);
     f.add_output((1280, 800), 1.0);
     let x = f.connect(Kind::X11);
