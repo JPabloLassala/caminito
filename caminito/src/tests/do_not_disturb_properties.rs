@@ -28,6 +28,7 @@ fn fullscreen(f: &mut Fixture, bus: &str) -> bool {
     })
 }
 
+/// `PointerOutputFullscreenWindow` at `bus`.
 fn fullscreen_window(f: &mut Fixture, bus: &str) -> String {
     let bus = bus.to_owned();
     f.dbus_call(move || {
@@ -38,6 +39,7 @@ fn fullscreen_window(f: &mut Fixture, bus: &str) -> String {
     })
 }
 
+/// `FullscreenWindows` at `bus`.
 fn fullscreen_windows(f: &mut Fixture, bus: &str) -> Vec<String> {
     let bus = bus.to_owned();
     f.dbus_call(move || caminito_proxy(&bus).unwrap().fullscreen_windows().unwrap())
@@ -204,4 +206,24 @@ fn the_fullscreen_window_is_named_by_its_identifier_wherever_the_pointer_is() {
         heard(&mut f, on_any_output),
         [vec![identifier], Vec::<String>::new()]
     );
+}
+
+#[test]
+fn a_fullscreen_window_is_listed_while_it_is_minimised() {
+    let (mut f, client, _left, _right) = two_outputs_with(Kind::Xdg, true, vec![]);
+    let window = f.map(client, WindowSpec::plain((400, 300)));
+    let id = f.pid(window);
+    let identifier = f.state.caminito.toplevel_identifier(id).unwrap();
+    f.pointer_move(100., 100.);
+    let bus = f.start_dbus();
+    f.client(client).set_fullscreen(window.xdg(), None);
+    f.dispatch_until(|f| f.state.caminito.policy.is_fullscreen(id));
+    assert_eq!(fullscreen_windows(&mut f, &bus), [identifier.clone()]);
+
+    f.client(client).set_minimized(window.xdg());
+    f.dispatch_until(|f| f.state.caminito.policy.is_minimized(id));
+
+    // It isn't on the pointer's output any more, but it is fullscreen still.
+    assert_eq!(fullscreen_window(&mut f, &bus), "");
+    assert_eq!(fullscreen_windows(&mut f, &bus), [identifier]);
 }

@@ -1,11 +1,10 @@
 //! Do Not Disturb in the server (CMN-263, CMN-264): the user's, kept in its file, with the
 //! schedule and the triggers of [`crate::do_not_disturb`]. The settings are followed as they
 //! change, and so are Caminito's `PointerOutputFullscreenWindow`, `FullscreenWindows` and
-//! `Screencasting` on `org.mate.Caminito` (ADR 0051), which are false
-//! or empty while Caminito isn't on the bus. A timer
-//! wakes the server at the next time the clock alone changes it, or a minute from now if
-//! that's sooner, so that a suspend or a clock that jumped is caught up with. Whatever changes
-//! it, the clients hear `DoNotDisturbChanged` once it's another.
+//! `Screencasting` on `org.mate.Caminito` (ADR 0051), which are false or empty while Caminito
+//! isn't on the bus. A timer wakes the server at the next time the clock alone changes it, or
+//! a minute from now if that's sooner, so that a suspend or a clock that jumped is caught up
+//! with. Whatever changes it, the clients hear `DoNotDisturbChanged` once it's another.
 
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
@@ -23,11 +22,12 @@ use crate::settings::{
     DO_NOT_DISTURB_WHILE_FULLSCREEN, DO_NOT_DISTURB_WHILE_SCREENCASTING,
 };
 
-/// Caminito's properties the triggers follow.
+// Caminito's properties the triggers follow.
 /// The identifier of the fullscreen window on the pointer's output, empty for none.
 const FULLSCREEN_WINDOW: &str = "PointerOutputFullscreenWindow";
 /// The identifiers of the fullscreen windows on every output.
 const FULLSCREEN_WINDOWS: &str = "FullscreenWindows";
+/// Whether a screencast is running.
 const SCREENCASTING: &str = "Screencasting";
 
 /// The settings Do Not Disturb follows, besides the apps' and the critical ones'.

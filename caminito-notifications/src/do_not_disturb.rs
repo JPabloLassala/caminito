@@ -8,7 +8,7 @@
 //! setting, the [`Triggers`]. [`Sources`] holds them all, and says whether it's on and the
 //! first [`Reason`] it's on for. Turning it off by hand holds each automatic reason that's on
 //! off: the schedule until its next start, a trigger until Caminito says it ended, and the
-//! fullscreen one until its window is no longer fullscreen on any output (CMN-290). The
+//! fullscreen one until its window is no longer fullscreen (CMN-290). The
 //! schedule's hold is kept in a file beside the user's (CMN-288); a trigger's needn't be, since
 //! a restart reads Caminito's properties again.
 
@@ -275,38 +275,35 @@ impl Trigger {
 }
 
 /// The fullscreen trigger: the fullscreen window the output under the pointer has, if any,
-/// which is on when there is one. The user's turning Do Not Disturb off holds it off for that window, which lasts
-/// while the window stays fullscreen, wherever the pointer goes in between (CMN-290).
+/// which is on when there is one. The user's turning Do Not Disturb off holds it off for that
+/// window, which lasts while the window stays fullscreen, wherever the pointer goes in between
+/// (CMN-290).
 #[derive(Debug, Default)]
 struct FullscreenTrigger {
     /// The window under the pointer, as Caminito names it, empty for none.
     window: String,
-    /// The window the user turned Do Not Disturb off for.
-    held: Option<String>,
+    /// The windows the user turned Do Not Disturb off for.
+    held: Vec<String>,
 }
 
 impl FullscreenTrigger {
     /// Caminito says which fullscreen `window` the pointer's output has, and which windows
-    /// are fullscreen on any output. A hold ends with its window's fullscreen.
+    /// are fullscreen anywhere. A hold ends with its window's fullscreen.
     fn set(&mut self, window: &str, windows: &[&str]) {
         window.clone_into(&mut self.window);
-        if let Some(held) = &self.held
-            && !windows.contains(&held.as_str())
-        {
-            self.held = None;
-        }
+        self.held.retain(|held| windows.contains(&held.as_str()));
     }
 
     /// Whether it has Do Not Disturb on, with its setting `allowed`.
     fn has_it_on(&self, allowed: bool) -> bool {
-        !self.window.is_empty() && allowed && self.held.as_deref() != Some(self.window.as_str())
+        !self.window.is_empty() && allowed && !self.held.contains(&self.window)
     }
 
     /// The user turns Do Not Disturb off: the window under the pointer is held if it had it
     /// on.
     fn hold(&mut self, allowed: bool) {
         if self.has_it_on(allowed) {
-            self.held = Some(self.window.clone());
+            self.held.push(self.window.clone());
         }
     }
 }
@@ -336,7 +333,7 @@ impl Sources {
     }
 
     /// Caminito says which fullscreen window the output under the pointer has (empty for
-    /// none), and which windows are fullscreen on any output. A hold ends once its window
+    /// none), and which windows are fullscreen anywhere. A hold ends once its window
     /// isn't one of them.
     pub(crate) fn set_fullscreen(&mut self, window: &str, windows: &[&str]) {
         self.fullscreen.set(window, windows);
@@ -385,7 +382,7 @@ impl Sources {
 
     /// The user turns it off at `now`: their own is, and each automatic reason that's on is
     /// held off, the schedule until its next start and a trigger until it ends (the
-    /// fullscreen one, until its window does).
+    /// fullscreen one, until its window leaves fullscreen).
     pub(crate) fn turn_off(&mut self, triggers: &Triggers, now: u64, zone: &glib::TimeZone) {
         self.manual = DoNotDisturb::Off;
         if let Some(schedule) = self.schedule_on(triggers, now, zone) {
@@ -886,6 +883,34 @@ mod tests {
         );
         sources.set_fullscreen("a", &["a", "b"]);
         assert_eq!(sources.effective(&nightly(), noon, &utc), Effective::Off);
+    }
+
+    #[test]
+    fn turning_it_off_over_another_window_keeps_the_hold_of_the_first() {
+        let utc = glib::TimeZone::utc();
+        let noon = utc_time(12, 12, 0);
+        let mut sources = Sources::default();
+        sources.set_fullscreen("a", &["a", "b"]);
+        sources.turn_off(&nightly(), noon, &utc);
+        sources.set_fullscreen("b", &["a", "b"]);
+        sources.turn_off(&nightly(), noon, &utc);
+
+        for window in ["a", "b", "a"] {
+            sources.set_fullscreen(window, &["a", "b"]);
+            assert_eq!(
+                sources.effective(&nightly(), noon, &utc),
+                Effective::Off,
+                "over {window}"
+            );
+        }
+        // One window leaves fullscreen, and only its hold ends.
+        sources.set_fullscreen("a", &["a"]);
+        assert_eq!(sources.effective(&nightly(), noon, &utc), Effective::Off);
+        sources.set_fullscreen("b", &["a"]);
+        assert_eq!(
+            sources.effective(&nightly(), noon, &utc),
+            on(Reason::Fullscreen, None)
+        );
     }
 
     #[test]

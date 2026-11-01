@@ -1337,7 +1337,8 @@ impl Caminito {
         self.refresh_layers();
         self.refresh_output_management();
         self.refresh_global_menu();
-        // Before the properties, which name the fullscreen windows by their identifiers.
+        // Before the properties, which name the fullscreen windows by their identifiers. The
+        // list depends on none of the views below.
         self.refresh_foreign_toplevel_list();
         // After the global menu's refresh, so that a caller that hears the menu offered
         // finds the appmenu global and the registrar's name asked for.

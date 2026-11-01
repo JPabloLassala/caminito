@@ -112,7 +112,7 @@ enum Property {
     /// `FullscreenWindows`, so that a caller never hears a window that left fullscreen
     /// still named as the pointer's.
     PointerOutputFullscreenWindow,
-    /// A window became or left fullscreen, showed or hid, on any output (CMN-290).
+    /// A window became or left fullscreen, or was closed (CMN-290).
     FullscreenWindows,
     /// A capture session opened, or the last one closed (CMN-264).
     Screencasting,
@@ -469,9 +469,9 @@ impl CaminitoInterface {
         super::ask(&self.requests, Request::PointerOutputFullscreenWindow).await
     }
 
-    /// The identifiers of the fullscreen windows that show on any output, sorted (CMN-290).
-    /// The window a hold is of is fullscreen still while it is in this list, wherever the
-    /// pointer is.
+    /// The identifiers of the fullscreen windows, sorted (CMN-290): the ones on any output
+    /// and workspace, minimised or not. The window a hold is of is fullscreen still while it
+    /// is in this list, wherever the pointer is and whether it shows.
     #[zbus(property)]
     async fn fullscreen_windows(&self) -> zbus::fdo::Result<Vec<String>> {
         super::ask(&self.requests, Request::FullscreenWindows).await
@@ -718,14 +718,15 @@ impl Caminito {
             .unwrap_or_default()
     }
 
-    /// The identifiers of the fullscreen windows that show on any output, sorted.
+    /// The identifiers of the windows that are fullscreen, wherever they are: on any
+    /// workspace, minimised or not. Sorted.
     fn fullscreen_windows(&self) -> Vec<String> {
         let policy = &self.policy;
         let mut windows: Vec<String> = policy
-            .active_stacking()
-            .into_iter()
-            .filter(|&id| policy.is_showing(id) && policy.is_fullscreen(id))
-            .filter_map(|id| self.toplevel_identifier(id))
+            .stacking_all()
+            .iter()
+            .filter(|&&id| policy.is_fullscreen(id))
+            .filter_map(|&id| self.toplevel_identifier(id))
             .collect();
         windows.sort();
         windows

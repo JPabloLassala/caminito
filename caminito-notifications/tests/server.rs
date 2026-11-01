@@ -242,6 +242,7 @@ impl FakeCaminito {
         self.set_variant("FullscreenWindows", windows.to_variant());
     }
 
+    /// Sets the property `name` to the variant `value`, and signals it.
     fn set_variant(&self, name: &str, value: Variant) {
         self.properties
             .borrow_mut()
