@@ -105,7 +105,7 @@ struct GSLockPlugPrivate
 	gboolean     caps_lock_on;
 	gboolean     switch_enabled;
 	/* The read of the seat's CanSwitch under way, and the bus it was last read on. */
-	GCancellable *seat_read;
+	GCancellable *seat_read_cancellable;
 	GDBusConnection *system_bus;
 	gboolean     logout_enabled;
 	char        *logout_command;
@@ -234,7 +234,7 @@ system_bus_cb (GObject      *source G_GNUC_UNUSED,
 	                        G_VARIANT_TYPE ("(v)"),
 	                        G_DBUS_CALL_FLAGS_NO_AUTO_START,
 	                        SEAT_READ_TIMEOUT_MSEC,
-	                        plug->priv->seat_read,
+	                        plug->priv->seat_read_cancellable,
 	                        seat_can_switch_cb,
 	                        plug);
 	g_object_unref (bus);
@@ -243,10 +243,10 @@ system_bus_cb (GObject      *source G_GNUC_UNUSED,
 static void
 cancel_seat_read (GSLockPlug *plug)
 {
-	if (plug->priv->seat_read != NULL)
+	if (plug->priv->seat_read_cancellable != NULL)
 	{
-		g_cancellable_cancel (plug->priv->seat_read);
-		g_clear_object (&plug->priv->seat_read);
+		g_cancellable_cancel (plug->priv->seat_read_cancellable);
+		g_clear_object (&plug->priv->seat_read_cancellable);
 	}
 }
 
@@ -261,6 +261,9 @@ update_switch_button (GSLockPlug *plug)
 	}
 
 	cancel_seat_read (plug);
+	/* Holding the last connection would have g_bus_get return it, even closed by a bus that
+	 * has restarted since. */
+	g_clear_object (&plug->priv->system_bus);
 
 	if (!plug->priv->switch_enabled || g_getenv ("XDG_SEAT_PATH") == NULL)
 	{
@@ -268,9 +271,10 @@ update_switch_button (GSLockPlug *plug)
 		return;
 	}
 
+	/* Not yet the answer, so no debug line. */
 	gtk_widget_hide (plug->priv->auth_switch_button);
-	plug->priv->seat_read = g_cancellable_new ();
-	g_bus_get (G_BUS_TYPE_SYSTEM, plug->priv->seat_read, system_bus_cb, plug);
+	plug->priv->seat_read_cancellable = g_cancellable_new ();
+	g_bus_get (G_BUS_TYPE_SYSTEM, plug->priv->seat_read_cancellable, system_bus_cb, plug);
 }
 
 static void
@@ -372,6 +376,7 @@ hide_dialog (GSLockPlug *plug)
 	}
 
 	gs_debug ("The Unlock dialog hides");
+	cancel_seat_read (plug);
 	gtk_entry_set_text (GTK_ENTRY (plug->priv->auth_prompt_entry), "");
 	gtk_entry_set_visibility (GTK_ENTRY (plug->priv->auth_prompt_entry), plug->priv->prompt_visible);
 	set_status_text (plug, "");
@@ -1950,14 +1955,7 @@ gs_lock_plug_init (GSLockPlug *plug)
 
 	if (plug->priv->auth_switch_button != NULL)
 	{
-		if (plug->priv->switch_enabled)
-		{
-			gtk_widget_show_all (plug->priv->auth_switch_button);
-		}
-		else
-		{
-			gtk_widget_hide (plug->priv->auth_switch_button);
-		}
+		gtk_widget_hide (plug->priv->auth_switch_button);
 	}
 
 	set_default_button (plug, plug->priv->auth_unlock_button);

@@ -441,7 +441,7 @@ impl FakeSeat {
 struct SeatBus {
     _dir: tempfile::TempDir,
     bus: Bus,
-    _seat: Option<zbus::blocking::Connection>,
+    _owner: Option<zbus::blocking::Connection>,
     can_switch: Arc<AtomicBool>,
     requests: Arc<AtomicUsize>,
 }
@@ -454,22 +454,34 @@ impl SeatBus {
         SeatBus {
             _dir: dir,
             bus,
-            _seat: None,
+            _owner: None,
             can_switch: Arc::new(AtomicBool::new(false)),
             requests: Arc::new(AtomicUsize::new(0)),
         }
     }
 
-    fn with_seat(can_switch: bool, refuses: bool) -> Self {
+    fn with_seat(can_switch: bool) -> Self {
         let mut seat_bus = Self::without_an_owner();
         seat_bus.can_switch.store(can_switch, Ordering::SeqCst);
+        seat_bus.serve_seat(false);
+        seat_bus
+    }
+
+    fn with_a_seat_that_refuses() -> Self {
+        let mut seat_bus = Self::without_an_owner();
+        seat_bus.can_switch.store(true, Ordering::SeqCst);
+        seat_bus.serve_seat(true);
+        seat_bus
+    }
+
+    fn serve_seat(&mut self, refuses: bool) {
         let seat = FakeSeat {
-            can_switch: seat_bus.can_switch.clone(),
-            requests: seat_bus.requests.clone(),
+            can_switch: self.can_switch.clone(),
+            requests: self.requests.clone(),
             refuses,
         };
-        seat_bus._seat = Some(
-            zbus::blocking::connection::Builder::address(seat_bus.bus.address.as_str())
+        self._owner = Some(
+            zbus::blocking::connection::Builder::address(self.bus.address.as_str())
                 .unwrap()
                 .name(SEAT_NAME)
                 .unwrap()
@@ -478,7 +490,14 @@ impl SeatBus {
                 .build()
                 .unwrap(),
         );
-        seat_bus
+    }
+
+    /// Stops the bus and starts it again at the same address, with the Seat back on it.
+    fn restart(&mut self) {
+        self._owner = None;
+        let socket = self._dir.path().join("bus");
+        self.bus = Bus::start(&socket);
+        self.serve_seat(false);
     }
 
     /// A bus where the name's owner takes messages and never answers them.
@@ -489,7 +508,7 @@ impl SeatBus {
             .build()
             .unwrap();
         owner.request_name(SEAT_NAME).unwrap();
-        seat_bus._seat = Some(owner);
+        seat_bus._owner = Some(owner);
         seat_bus
     }
 
@@ -547,7 +566,7 @@ fn assert_switch_user_hides(keyfile: &str, env: Vec<(&'static str, String)>) {
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn switch_user_shows_when_the_seat_can_switch_and_asks_it_for_the_greeter() {
-    let seat = SeatBus::with_seat(true, false);
+    let seat = SeatBus::with_seat(true);
     let (mut f, locker) = locked_for_switch_user(SWITCH_ENABLED, seat.env());
     assert_eq!(locker.count(SWITCH_BUTTON_SHOWN), 0, "{}", locker.seen());
 
@@ -569,7 +588,7 @@ fn switch_user_shows_when_the_seat_can_switch_and_asks_it_for_the_greeter() {
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn switch_user_logs_a_request_the_seat_refuses_and_stays_locked() {
-    let seat = SeatBus::with_seat(true, true);
+    let seat = SeatBus::with_a_seat_that_refuses();
     let (mut f, locker) = locked_for_switch_user(SWITCH_ENABLED, seat.env());
     open_dialog(&mut f, &locker);
     f.dispatch_until_explained(|_| locker.count(SWITCH_BUTTON_SHOWN) == 1, || locker.seen());
@@ -584,7 +603,7 @@ fn switch_user_logs_a_request_the_seat_refuses_and_stays_locked() {
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn switch_user_reads_the_seat_each_time_the_dialog_opens() {
-    let seat = SeatBus::with_seat(true, false);
+    let seat = SeatBus::with_seat(true);
     let (mut f, locker) = locked_for_switch_user(SWITCH_ENABLED, seat.env());
     open_dialog(&mut f, &locker);
     f.dispatch_until_explained(|_| locker.count(SWITCH_BUTTON_SHOWN) == 1, || locker.seen());
@@ -602,15 +621,31 @@ fn switch_user_reads_the_seat_each_time_the_dialog_opens() {
 
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_shows_again_after_the_system_bus_restarts() {
+    let mut seat = SeatBus::with_seat(true);
+    let (mut f, locker) = locked_for_switch_user(SWITCH_ENABLED, seat.env());
+    open_dialog(&mut f, &locker);
+    f.dispatch_until_explained(|_| locker.count(SWITCH_BUTTON_SHOWN) == 1, || locker.seen());
+    tap(&mut f, KEY_ESC);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_HIDES) == 1, || locker.seen());
+
+    seat.restart();
+    f.dispatch_for(std::time::Duration::from_millis(200));
+    open_dialog(&mut f, &locker);
+    f.dispatch_until_explained(|_| locker.count(SWITCH_BUTTON_SHOWN) == 2, || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn switch_user_hides_when_the_seat_cannot_switch() {
-    let seat = SeatBus::with_seat(false, false);
+    let seat = SeatBus::with_seat(false);
     assert_switch_user_hides(SWITCH_ENABLED, seat.env());
 }
 
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn switch_user_hides_without_a_seat_path() {
-    let seat = SeatBus::with_seat(true, false);
+    let seat = SeatBus::with_seat(true);
     let env = vec![("DBUS_SYSTEM_BUS_ADDRESS", seat.bus.address.clone())];
     assert_switch_user_hides(SWITCH_ENABLED, env);
 }
@@ -646,7 +681,7 @@ fn switch_user_hides_when_the_seat_never_answers_and_the_dialog_does_not_wait() 
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn the_two_keys_hide_switch_user_when_the_seat_can_switch() {
-    let seat = SeatBus::with_seat(true, false);
+    let seat = SeatBus::with_seat(true);
     assert_switch_user_hides(
         "[org/mate/screensaver]\nuser-switch-enabled=false\n",
         seat.env(),

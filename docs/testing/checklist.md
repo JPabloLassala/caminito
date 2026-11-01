@@ -1669,7 +1669,8 @@ session_env() {
   from (218, below), then `Creating background w:… h:…` for it, `Status message: …`, `Switch
   User: enabled` or `disabled`, `Switch User button: shown` or `hidden`, and `Log Out: after its delay` then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
   "$XDG_SEAT_PATH" org.freedesktop.DisplayManager.Seat CanSwitch` says whether the button
-  shows, read each time the dialog opens; `Unable to start the greeter: …` is a request that failed.
+  shows, read each time the dialog opens; `Unable to read the seat's CanSwitch: …` or `Unable to reach the system bus: …` is why
+  it's hidden, and `Unable to start the greeter: …` is a request that failed.
 
 ### How the give-up state looks
 
