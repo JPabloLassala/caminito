@@ -1608,7 +1608,8 @@ session_env() {
      `tools/debian-build` and `tools/bootstrap-fedora`. Remove the `mate-screensaver` package if
      nothing else needs it, and check it's gone.
   2. Check `/etc/pam.d/caminito-locker` is there, and that `command -v
-     mate-screensaver-command` in a Session's terminal says `/usr/lib/caminito/bin/`.
+     mate-screensaver-command` in a Session's terminal says `/usr/lib/caminito/bin/`, and that
+     the panel's *System* menu has *Lock Screen*.
   3. Log into *MATE on Caminito*, lock with *System* ▸ *Lock Screen*, type a wrong password,
      then the right one. Lock again with the lock key, and with
      `mate-screensaver-command --lock`, and unlock.

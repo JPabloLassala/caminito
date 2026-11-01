@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Juan Pablo Lassala
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# mate-panel offers Lock Screen only if this program and mate-screensaver-command are both on
+# PATH (panel-util.c's panel_lock_screen_action_get_command). Caminito has no such window, as
+# a screensaver has no themes here, so this only says so (CMN-297).
+echo "mate-screensaver-preferences: Caminito has no screensaver preferences window" >&2
+exit 1

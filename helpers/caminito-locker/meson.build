@@ -68,6 +68,13 @@ screensaver_command = executable(
   install_dir: get_option('prefix') / 'lib' / 'caminito' / 'bin',
 )
 
+# mate-panel offers Lock Screen only with this on PATH too. It has nothing to open.
+install_data(
+  'mate-screensaver-preferences',
+  install_dir: get_option('prefix') / 'lib' / 'caminito' / 'bin',
+  install_mode: 'rwxr-xr-x',
+)
+
 test(
   'screensaver-command',
   executable('test-screensaver-command', 'test-screensaver-command.c', dependencies: gio),

@@ -76,6 +76,13 @@ CAMINITO_GTK_PALETTE=$PWD/target/meson/helpers/caminito-gtk-palette/caminito-gtk
 step "the System Shortcuts entry's place"
 rm -rf target/meson-destdir
 meson install -C target/meson --no-rebuild --quiet --destdir "$PWD/target/meson-destdir"
+# mate-panel offers Lock Screen only with both of these on PATH (CMN-297).
+for program in mate-screensaver-command mate-screensaver-preferences; do
+  test -x "target/meson-destdir/usr/local/lib/caminito/bin/$program" || {
+    echo "$program isn't installed, and the panel's Lock Screen would go" >&2
+    exit 1
+  }
+done
 installed=$(find target/meson-destdir -name mate-keybinding.desktop)
 case $installed in
   */share/caminito/xdg/applications/mate-keybinding.desktop) ;;
