@@ -15,6 +15,7 @@ const VERSION: u32 = 1;
 
 /// What the compositor does for the global.
 pub trait BackgroundEffectHandler: ExtBackgroundEffectHandler {
+    /// The managers this global has bound.
     fn background_effect_state(&mut self) -> &mut BackgroundEffectState;
 }
 
@@ -28,6 +29,7 @@ pub struct BackgroundEffectState {
 pub struct BackgroundEffectGlobal;
 
 impl BackgroundEffectState {
+    /// Offers the global.
     pub fn new<D>(dh: &DisplayHandle) -> Self
     where
         D: GlobalDispatch<ExtBackgroundEffectManagerV1, BackgroundEffectGlobal> + 'static,

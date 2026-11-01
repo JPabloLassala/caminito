@@ -1,4 +1,4 @@
-//! ext-background-effect-v1 (CMN-238): a client that asks for a blur behind its surface.
+//! ext-background-effect-v1 (CMN-238): a client that asks for Esmeril behind its surface.
 
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_region::{self, WlRegion};

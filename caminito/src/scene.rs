@@ -1545,10 +1545,10 @@ fn surface_tree_esmeril<R>(
 {
     let scale = place.scale;
     place.cut = slid.map(|_| {
-        let place = bbox_from_surface_tree(surface, (0, 0))
+        let bbox = bbox_from_surface_tree(surface, (0, 0))
             .to_f64()
             .to_physical(scale);
-        Rectangle::new(location + place.loc, place.size).to_i32_round()
+        Rectangle::new(location + bbox.loc, bbox.size).to_i32_round()
     });
     let mut moved = location;
     if let Some(slid) = slid {
