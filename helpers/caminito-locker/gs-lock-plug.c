@@ -358,17 +358,31 @@ gs_lock_plug_open (GSLockPlug *plug)
 	}
 }
 
+/* A dead key or Compose starts a character, and is typed like one. */
+static gboolean
+key_types (const GdkEventKey *event)
+{
+	const GdkModifierType shortcut = GDK_CONTROL_MASK | GDK_MOD1_MASK | GDK_MOD4_MASK
+	                                 | GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_META_MASK;
+
+	if ((event->state & shortcut) != 0)
+	{
+		return FALSE;
+	}
+
+	return g_unichar_isprint (gdk_keyval_to_unicode (event->keyval))
+	       || event->keyval == GDK_KEY_Multi_key
+	       || (event->keyval >= GDK_KEY_dead_grave && event->keyval <= GDK_KEY_dead_greek);
+}
+
 /* A character is typed in the entry. A modifier, Esc, Enter or a shortcut only opens it. */
 void
 gs_lock_plug_open_at_key (GSLockPlug  *plug,
                           GdkEventKey *event)
 {
-	const GdkModifierType shortcut = GDK_CONTROL_MASK | GDK_MOD1_MASK | GDK_MOD4_MASK
-	                                 | GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_META_MASK;
-
 	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
 
-	if (g_unichar_isprint (gdk_keyval_to_unicode (event->keyval)) && (event->state & shortcut) == 0)
+	if (key_types (event))
 	{
 		queue_key_event (plug, event);
 	}
@@ -894,21 +908,20 @@ queue_key_event (GSLockPlug  *plug,
 static void
 forward_key_events (GSLockPlug *plug)
 {
-	plug->priv->key_events = g_list_reverse (plug->priv->key_events);
-	while (plug->priv->key_events != NULL)
+	/* A key can hide the dialog, which clears the queue, so the walk is over a list of its own. */
+	GList *events = g_list_reverse (plug->priv->key_events);
+
+	plug->priv->key_events = NULL;
+
+	for (GList *each = events; each != NULL; each = each->next)
 	{
-		GdkEventKey *event = plug->priv->key_events->data;
-
-		if (plug->priv->toplevel != NULL)
+		if (plug->priv->toplevel != NULL && gs_lock_plug_is_open (plug))
 		{
-			gtk_window_propagate_key_event (GTK_WINDOW (plug->priv->toplevel), event);
+			gtk_window_propagate_key_event (GTK_WINDOW (plug->priv->toplevel), each->data);
 		}
-
-		gdk_event_free ((GdkEvent *)event);
-
-		plug->priv->key_events = g_list_delete_link (plug->priv->key_events,
-		                         plug->priv->key_events);
 	}
+
+	g_list_free_full (events, (GDestroyNotify) gdk_event_free);
 }
 
 static void
@@ -1413,8 +1426,9 @@ gs_lock_plug_disable_prompt (GSLockPlug *plug)
 
 	set_default_button (plug, plug->priv->auth_cancel_button);
 
-	/* With no prompt to type at, the dialog still hides after its time. */
-	if (gs_lock_plug_is_open (plug))
+	/* With no prompt to type at, the dialog still hides after its time, which conversations
+	   that keep ending don't put off. */
+	if (gs_lock_plug_is_open (plug) && plug->priv->cancel_timeout_id == 0)
 	{
 		restart_cancel_timeout (plug);
 	}
@@ -1456,6 +1470,14 @@ toplevel_key_press (GtkWidget   *toplevel G_GNUC_UNUSED,
 	        gtk_widget_is_sensitive (plug->priv->auth_prompt_entry))
 	{
 		return FALSE;
+	}
+
+	/* The entry that would pass Esc to the binding can't take it now, and replayed at the next
+	   prompt it would hide the dialog then. */
+	if (event->keyval == GDK_KEY_Escape)
+	{
+		gs_lock_plug_response (plug, GS_LOCK_PLUG_RESPONSE_CANCEL);
+		return TRUE;
 	}
 
 	if (strcmp (event->string, "") == 0)

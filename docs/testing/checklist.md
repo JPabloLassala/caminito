@@ -1583,7 +1583,8 @@ session_env() {
      in logical pixels, and press a key.
   5. Give your account no real name (`sudo chfn -f '' $USER`, and put it back after), lock and
      press a key.
-  6. Lock, let the screens blank (wait for the idle timers), and switch off or
+  6. On a layout with dead keys, lock and press a dead key and then a letter from the Idle view.
+  7. Lock, let the screens blank (wait for the idle timers), and switch off or
      unplug the monitor the pointer is on while it's in standby. Bring the other back with a
      key and unlock. Do it again with the dialog showing before the screens blank.
 - **Expected:** in step 1 each monitor has its wallpaper and, at the top in the middle, the
@@ -1593,7 +1594,8 @@ session_env() {
   with nothing in the entry, and Cancel and the second Esc hide it; the first character of the
   password is in the entry, and the password unlocks. In step 4 the clock is smaller while the
   dialog shows, on that monitor only, clear of the dialog, and it's back at its size when the
-  dialog hides. In step 5 the dialog shows the user name, not *Unknown*. In step 6 the Locker
+  dialog hides. In step 5 the dialog shows the user name, not *Unknown*. In step 6 the entry
+  holds the accented letter. In step 7 the Locker
   doesn't crash: the session stays locked, the dialog shows on the monitor that's left, and the
   password unlocks.
 - **Debug tool:** `caminito-locker --verbose`: `The Unlock dialog shows`, `The Unlock dialog

@@ -56,6 +56,7 @@
 
 #include "config.h"
 
+#include <langinfo.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -716,8 +717,19 @@ static void set_clock_markup(GtkWidget* window)
 	g_free(markup);
 }
 
+/* Whether the locale writes the time on a 12-hour clock: glibc gives AM and PM to 24-hour
+ * locales too, so only its time format can say. */
+static gboolean locale_has_12_hour_time(void)
+{
+	const char* format = nl_langinfo(T_FMT);
+
+	return strstr(format, "%r") != NULL || strstr(format, "%p") != NULL
+		|| strstr(format, "%P") != NULL || strstr(format, "%I") != NULL
+		|| strstr(format, "%l") != NULL;
+}
+
 /* lock-dialog-time-format's text for now. "locale" is the locale's time without its seconds,
- * which strftime has no conversion for: a locale's AM and PM say whether it's a 12-hour one. */
+ * which strftime has no conversion for. */
 static char* format_time(GDateTime* now, GSettings* settings)
 {
 	char* format = g_settings_get_string(settings, "lock-dialog-time-format");
@@ -725,10 +737,7 @@ static char* format_time(GDateTime* now, GSettings* settings)
 
 	if (g_strcmp0(format, "locale") == 0)
 	{
-		char* am_pm = g_date_time_format(now, "%p");
-
-		text = g_date_time_format(now, am_pm != NULL && am_pm[0] != '\0' ? "%l:%M %p" : "%H:%M");
-		g_free(am_pm);
+		text = g_date_time_format(now, locale_has_12_hour_time() ? "%l:%M %p" : "%H:%M");
 	}
 	else
 	{

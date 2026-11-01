@@ -262,15 +262,19 @@ fn lock_surfaces(f: &Fixture) -> Vec<bool> {
     outputs.iter().map(surface).collect()
 }
 
+/// Presses and lets go of `key`.
+fn tap(f: &mut Fixture, key: u32) {
+    f.key(key, true);
+    f.key(key, false);
+}
+
 /// Types `text`, of `a`s alone, and Enter.
 fn type_and_enter(f: &mut Fixture, text: &str) {
     assert!(text.chars().all(|c| c == 'a'), "only KEY_A is typed");
     for _ in text.chars() {
-        f.key(KEY_A, true);
-        f.key(KEY_A, false);
+        tap(f, KEY_A);
     }
-    f.key(KEY_ENTER, true);
-    f.key(KEY_ENTER, false);
+    tap(f, KEY_ENTER);
 }
 
 #[test]
@@ -328,15 +332,14 @@ fn a_dialog_that_times_out_leaves_the_conversation_open_and_counts_no_failure() 
 
     // Typed and left: the timeout hides the dialog with its entry cleared. The conversation
     // is the same one, still waiting: PAM has no result, so pam_faillock has no record.
-    f.key(KEY_A, true);
-    f.key(KEY_A, false);
-    f.dispatch_until_explained(|_| locker.count(SHOWS) == 1, seen);
-    f.dispatch_until_explained(|_| locker.count(HIDES) == 1, seen);
+    tap(&mut f, KEY_A);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == 1, seen);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_HIDES) == 1, seen);
     // Three of the timeouts: a cancel that answered PAM would restart the conversation at
     // once, and its failure would be recorded well before this ends.
     f.dispatch_for(std::time::Duration::from_millis(1500));
     assert_eq!(
-        locker.count(HIDES),
+        locker.count(DIALOG_HIDES),
         1,
         "the hidden dialog has no timeout: {}",
         seen()
@@ -364,8 +367,9 @@ fn a_click_shows_the_dialog_and_motion_does_not() {
 
     f.pointer_move(100.0, 100.0);
     f.pointer_move(300.0, 200.0);
+    // Nothing should happen: a key's dialog shows within a few frames, far sooner than this.
     f.dispatch_for(std::time::Duration::from_millis(300));
-    assert_eq!(locker.count(SHOWS), 0, "{}", locker.seen());
+    assert_eq!(locker.count(DIALOG_SHOWS), 0, "{}", locker.seen());
     wait_for_no_dialog_on(&mut f, &output);
 
     f.pointer_button(BTN_LEFT, true);
@@ -390,8 +394,7 @@ fn a_modifier_or_esc_shows_the_dialog_with_nothing_typed() {
     for key in [KEY_LEFTSHIFT, KEY_ESC] {
         let (mut f, locker, output) = idle_with_prompt(None);
 
-        f.key(key, true);
-        f.key(key, false);
+        tap(&mut f, key);
         wait_for_dialog_on(&mut f, &locker, &output);
 
         // A character typed by the key would make this password wrong.
@@ -406,12 +409,10 @@ fn hiding_and_showing_the_dialog_many_times_counts_no_failure() {
     let (mut f, locker, _output) = idle_with_prompt(None);
 
     for times in 1..=25 {
-        f.key(KEY_A, true);
-        f.key(KEY_A, false);
-        f.dispatch_until_explained(|_| locker.count(SHOWS) == times, || locker.seen());
-        f.key(KEY_ESC, true);
-        f.key(KEY_ESC, false);
-        f.dispatch_until_explained(|_| locker.count(HIDES) == times, || locker.seen());
+        tap(&mut f, KEY_A);
+        f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == times, || locker.seen());
+        tap(&mut f, KEY_ESC);
+        f.dispatch_until_explained(|_| locker.count(DIALOG_HIDES) == times, || locker.seen());
     }
 
     assert_eq!(
@@ -438,10 +439,10 @@ fn the_dialog_follows_the_pointer_and_survives_its_outputs_removal() {
 
     // Hidden, it follows too, and shows on the output the pointer chose.
     f.pointer_move(2020.0, 100.0);
+    // Nothing should show: a key's dialog shows within a few frames, far sooner than this.
     f.dispatch_for(std::time::Duration::from_millis(200));
-    assert_eq!(locker.count(SHOWS), 0, "{}", locker.seen());
-    f.key(KEY_LEFTSHIFT, true);
-    f.key(KEY_LEFTSHIFT, false);
+    assert_eq!(locker.count(DIALOG_SHOWS), 0, "{}", locker.seen());
+    tap(&mut f, KEY_LEFTSHIFT);
     wait_for_dialog_on(&mut f, &locker, &outputs[1]);
     wait_for_no_dialog_on(&mut f, &outputs[0]);
 
@@ -461,14 +462,11 @@ fn the_dialog_follows_the_pointer_and_survives_its_outputs_removal() {
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn a_module_that_gives_up_starts_the_next_conversation_quietly() {
-    let locker = Locker::new();
-    locker.set_settings(SOLID_BACKGROUND);
-    std::fs::write(
-        locker.path("pam.d").join("mate-screensaver"),
-        "auth required pam_deny.so\naccount required pam_deny.so\n",
-    )
-    .unwrap();
-    let (mut f, locker) = lock_with(locker, &[(1920, 1080)], |_| None);
+    let (mut f, locker) = lock_with(
+        locker_with_a_service_that_gives_up(),
+        &[(1920, 1080)],
+        |_| None,
+    );
     f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
     let output = f.state.caminito.outputs[0].clone();
 
@@ -483,14 +481,82 @@ fn a_module_that_gives_up_starts_the_next_conversation_quietly() {
         "{}",
         locker.seen()
     );
-    assert_eq!(locker.count(SHOWS), 0, "{}", locker.seen());
+    assert_eq!(locker.count(DIALOG_SHOWS), 0, "{}", locker.seen());
     wait_for_no_dialog_on(&mut f, &output);
 
-    // A key still shows the dialog, and the lock holds.
-    f.key(KEY_LEFTSHIFT, true);
-    f.key(KEY_LEFTSHIFT, false);
+    // A key still shows the dialog, and the lock holds. Open, the next give-ups aren't quiet:
+    // each leaves its message on show for its 3 s. One may be on its way as the key lands.
+    let quiet = locker.count(QUIET);
+    tap(&mut f, KEY_LEFTSHIFT);
     wait_for_dialog_on(&mut f, &locker, &output);
     assert_eq!(f.lock_state(), "locked");
+    let starts = locker.count("Starting conversation");
+    f.dispatch_until_explained(
+        |_| locker.count("Starting conversation") == starts + 2,
+        || locker.seen(),
+    );
+    assert!(locker.count(QUIET) <= quiet + 1, "{}", locker.seen());
+}
+
+/// As `Locker::new`, with a service that ends every conversation by itself, with no prompt.
+fn locker_with_a_service_that_gives_up() -> Locker {
+    let locker = Locker::new();
+    locker.set_settings(SOLID_BACKGROUND);
+    std::fs::write(
+        locker.path("pam.d").join("mate-screensaver"),
+        "auth required pam_deny.so\naccount required pam_deny.so\n",
+    )
+    .unwrap();
+    locker
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn esc_hides_the_dialog_with_no_prompt_up() {
+    let (mut f, locker) = lock_with(
+        locker_with_a_service_that_gives_up(),
+        &[(1920, 1080)],
+        |_| None,
+    );
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    tap(&mut f, KEY_LEFTSHIFT);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == 1, || locker.seen());
+    tap(&mut f, KEY_ESC);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_HIDES) == 1, || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn conversations_that_keep_ending_do_not_put_off_the_dialogs_timeout() {
+    // Longer than the 3 s between the conversations, each of which would start it again.
+    let mut locker = locker_with_a_service_that_gives_up();
+    locker.dialog_timeout_msec = Some(3500);
+    let (mut f, locker) = lock_with(locker, &[(1920, 1080)], |_| None);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    tap(&mut f, KEY_LEFTSHIFT);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == 1, || locker.seen());
+    f.dispatch_until_explained(|_| locker.count(DIALOG_HIDES) == 1, || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn esc_after_a_wrong_password_hides_the_dialog_and_the_next_prompt_stays_hidden() {
+    let (mut f, locker, output) = idle_with_prompt(None);
+
+    type_and_enter(&mut f, "a");
+    f.dispatch_until_explained(
+        |_| locker.seen().contains("Verify user returned error"),
+        || locker.seen(),
+    );
+    tap(&mut f, KEY_ESC);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_HIDES) == 1, || locker.seen());
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 2, || locker.seen());
+    wait_for_no_dialog_on(&mut f, &output);
+
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
 }
 
 #[test]
@@ -517,16 +583,16 @@ fn the_clock_is_smaller_only_on_an_output_too_short_for_it_and_the_dialog() {
         locked_by_caminito_locker_with(&[(1920, 1080), (1024, 400)], SOLID_BACKGROUND);
     f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
 
-    f.key(KEY_LEFTSHIFT, true);
-    f.key(KEY_LEFTSHIFT, false);
-    f.dispatch_until_explained(|_| locker.count(SHOWS) == 1, || locker.seen());
+    tap(&mut f, KEY_LEFTSHIFT);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == 1, || locker.seen());
+    // Nothing should change: the clock fits at the idle after the dialog's allocation, within
+    // a few frames, far sooner than this.
     f.dispatch_for(std::time::Duration::from_millis(300));
     assert_eq!(locker.count(SMALLER), 0, "{}", locker.seen());
 
     f.pointer_move(2000.0, 100.0);
     f.dispatch_until_explained(|_| locker.count(SMALLER) == 1, || locker.seen());
-    f.key(KEY_ESC, true);
-    f.key(KEY_ESC, false);
+    tap(&mut f, KEY_ESC);
     f.dispatch_until_explained(|_| locker.count(BACK) == 1, || locker.seen());
 }
 
@@ -540,8 +606,7 @@ fn an_empty_answer_is_not_sent_to_pam() {
 
     // The first Enter shows the dialog, and the second answers it.
     for _ in 0..2 {
-        f.key(KEY_ENTER, true);
-        f.key(KEY_ENTER, false);
+        tap(&mut f, KEY_ENTER);
     }
     f.dispatch_until_explained(
         |_| locker.count("An empty answer is not sent to PAM") == 1,
@@ -590,8 +655,11 @@ fn caminito_lockers_windows_show_the_desktop_background_on_every_output() {
 const WALLPAPER: u32 = 0x608040;
 
 /// The debug lines of the Unlock dialog showing and hiding.
-const SHOWS: &str = "The Unlock dialog shows";
-const HIDES: &str = "The Unlock dialog hides";
+const DIALOG_SHOWS: &str = "The Unlock dialog shows";
+const DIALOG_HIDES: &str = "The Unlock dialog hides";
+
+/// The debug line of a conversation that ended by itself with the dialog hidden.
+const QUIET: &str = "The conversation ended with the dialog hidden";
 
 /// Waits until `(x, y)` on `output` isn't the wallpaper, and fails rather than hangs.
 #[track_caller]
@@ -643,12 +711,11 @@ fn idle_with_prompt(dialog_timeout_msec: Option<u32>) -> (Fixture, Locker, Outpu
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn a_lock_shows_no_dialog_and_a_key_shows_it_and_is_typed() {
     let (mut f, locker, output) = idle_with_prompt(None);
-    assert_eq!(locker.count(SHOWS), 0, "{}", locker.seen());
+    assert_eq!(locker.count(DIALOG_SHOWS), 0, "{}", locker.seen());
 
     // The first key opens the dialog and goes in the entry: the rest of the password and
     // Enter unlock.
-    f.key(KEY_A, true);
-    f.key(KEY_A, false);
+    tap(&mut f, KEY_A);
     wait_for_dialog_on(&mut f, &locker, &output);
     type_and_enter(&mut f, &PASSWORD[1..]);
     f.dispatch_until_explained(
