@@ -18,7 +18,7 @@ use crate::settings::translate::{KEYBOARD, KEYBOARD_XKB};
 /// NumLock's bit in the locked modifiers: Mod2, in the default keymap.
 const NUM_LOCK: u32 = 1 << 4;
 
-fn strings(values: &[&str]) -> Value {
+pub(super) fn strings(values: &[&str]) -> Value {
     Value::StrList(values.iter().map(|&v| v.into()).collect())
 }
 
@@ -46,21 +46,23 @@ fn groups(f: &Fixture, id: ClientId) -> Vec<String> {
 }
 
 /// What `KeyboardLayout` said: the short name, and whether there are several layouts.
-fn read_layout(value: HashMap<String, OwnedValue>) -> (String, bool) {
+fn read_keyboard_layout(value: HashMap<String, OwnedValue>) -> (String, bool) {
     let name = String::try_from(value["name"].try_clone().unwrap()).unwrap();
     let multiple = bool::try_from(&value["multiple"]).unwrap();
     (name, multiple)
 }
 
 /// `KeyboardLayout` at `bus`.
-pub(super) fn published_layout(f: &mut Fixture, bus: &str) -> (String, bool) {
+pub(super) fn published_keyboard_layout(f: &mut Fixture, bus: &str) -> (String, bool) {
     let bus = bus.to_owned();
-    read_layout(f.dbus_call(move || caminito_proxy(&bus).unwrap().keyboard_layout().unwrap()))
+    read_keyboard_layout(
+        f.dbus_call(move || caminito_proxy(&bus).unwrap().keyboard_layout().unwrap()),
+    )
 }
 
 /// Waits on another thread for `org.mate.Caminito` at `bus` to signal `KeyboardLayout` once,
 /// and returns a handle to what it said. It returns once the thread listens.
-pub(super) fn next_layout_signalled(
+pub(super) fn next_keyboard_layout_signalled(
     f: &mut Fixture,
     bus: &str,
 ) -> thread::JoinHandle<(String, bool)> {
@@ -74,14 +76,14 @@ pub(super) fn next_layout_signalled(
         let mut changes = proxy.receive_keyboard_layout_changed();
         changes.next().unwrap();
         listening.send(()).unwrap();
-        read_layout(changes.next().unwrap().get().unwrap())
+        read_keyboard_layout(changes.next().unwrap().get().unwrap())
     });
     f.dispatch_until(|_| is_listening.try_recv().is_ok());
     listener
 }
 
 /// Two layouts and the key that switches them, on one output.
-pub(super) fn two_layouts() -> Fixture {
+pub(super) fn two_keyboard_layouts() -> Fixture {
     let mut f = Fixture::with_settings(vec![
         (KEYBOARD_XKB, "layouts".into(), strings(&["us", "es"])),
         (
@@ -96,16 +98,16 @@ pub(super) fn two_layouts() -> Fixture {
 
 #[test]
 fn the_published_layout_follows_a_switch_and_signals_it() {
-    let mut f = two_layouts();
+    let mut f = two_keyboard_layouts();
     let bus = f.start_dbus();
-    assert_eq!(published_layout(&mut f, &bus), ("us".into(), true));
+    assert_eq!(published_keyboard_layout(&mut f, &bus), ("us".into(), true));
 
-    let listener = next_layout_signalled(&mut f, &bus);
+    let listener = next_keyboard_layout_signalled(&mut f, &bus);
     f.chord(&[KEY_LEFTALT, KEY_LEFTSHIFT]);
     f.dispatch_until(|_| listener.is_finished());
 
     assert_eq!(listener.join().unwrap(), ("es".into(), true));
-    assert_eq!(published_layout(&mut f, &bus), ("es".into(), true));
+    assert_eq!(published_keyboard_layout(&mut f, &bus), ("es".into(), true));
 }
 
 #[test]
@@ -117,9 +119,12 @@ fn one_layout_is_published_as_one_and_a_second_one_set_live_is_signalled() {
     )]);
     f.add_output((1920, 1080), 1.0);
     let bus = f.start_dbus();
-    assert_eq!(published_layout(&mut f, &bus), ("de".into(), false));
+    assert_eq!(
+        published_keyboard_layout(&mut f, &bus),
+        ("de".into(), false)
+    );
 
-    let listener = next_layout_signalled(&mut f, &bus);
+    let listener = next_keyboard_layout_signalled(&mut f, &bus);
     f.set_setting(KEYBOARD_XKB, "layouts", strings(&["de", "fr"]));
     f.dispatch_until(|_| listener.is_finished());
 
@@ -129,15 +134,18 @@ fn one_layout_is_published_as_one_and_a_second_one_set_live_is_signalled() {
 #[test]
 fn a_layout_that_cant_compile_leaves_the_published_name_of_the_one_kept() {
     let mut f = Fixture::with_settings(vec![(KEYBOARD_XKB, "layouts".into(), strings(&["es"]))]);
-    f.add_output((1920, 1080), 1.0);
+    let id = focused_client(&mut f);
     let bus = f.start_dbus();
 
     f.set_setting(KEYBOARD_XKB, "layouts", strings(&["no-such-layout"]));
     // Settings arrive in order, so once the rate has, so has the layout.
     f.set_setting(KEYBOARD, "rate", Value::Int(50));
-    f.dispatch_until(|f| f.state.caminito.settings.keyboard.repeat_rate == 50);
+    f.dispatch_until(|f| f.client_state(id).repeat_info == Some((50, 500)));
 
-    assert_eq!(published_layout(&mut f, &bus), ("es".into(), false));
+    assert_eq!(
+        published_keyboard_layout(&mut f, &bus),
+        ("es".into(), false)
+    );
 }
 
 #[test]

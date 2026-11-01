@@ -428,7 +428,7 @@ static void on_watcher_status_message_changed(GSWatcher* changed_watcher G_GNUC_
  * no Caminito to ask, which `caminito` NULL is for a bus that can't be reached. */
 static void update_kbd_layout(GDBusProxy* caminito)
 {
-	static gboolean told = FALSE;
+	static gboolean told_dialog = FALSE;
 	static char* shown = NULL;
 	g_autoptr(GVariant) layout = NULL;
 	const char* name = NULL;
@@ -445,21 +445,16 @@ static void update_kbd_layout(GDBusProxy* caminito)
 	}
 
 	/* The other properties' changes come here too, the sun's each minute. */
-	if (told && g_strcmp0(shown, name) == 0)
+	if (told_dialog && g_strcmp0(shown, name) == 0)
 	{
 		return;
 	}
-	told = TRUE;
+	told_dialog = TRUE;
 	g_free(shown);
 	shown = g_strdup(name);
 
 	gs_lock_plug_set_kbd_layout(GS_LOCK_PLUG(plug), name);
 	gs_debug("Keyboard layout indicator: %s", name != NULL ? name : "(hidden)");
-}
-
-static void on_caminito_changed(GDBusProxy* caminito)
-{
-	update_kbd_layout(caminito);
 }
 
 static void got_caminito_proxy(GObject* source G_GNUC_UNUSED, GAsyncResult* result, gpointer data G_GNUC_UNUSED)
@@ -476,8 +471,8 @@ static void got_caminito_proxy(GObject* source G_GNUC_UNUSED, GAsyncResult* resu
 
 	/* It lasts as long as the locker. The cached properties go with Caminito's name, and come
 	 * back with a new owner's before g-name-owner is notified. */
-	g_signal_connect(caminito, "g-properties-changed", G_CALLBACK(on_caminito_changed), NULL);
-	g_signal_connect(caminito, "notify::g-name-owner", G_CALLBACK(on_caminito_changed), NULL);
+	g_signal_connect(caminito, "g-properties-changed", G_CALLBACK(update_kbd_layout), NULL);
+	g_signal_connect(caminito, "notify::g-name-owner", G_CALLBACK(update_kbd_layout), NULL);
 	update_kbd_layout(caminito);
 }
 

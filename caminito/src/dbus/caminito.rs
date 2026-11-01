@@ -498,7 +498,8 @@ impl CaminitoInterface {
     /// to date while the session is locked too:
     ///
     /// - `name` (`s`): its short name, as `org.mate.peripherals-keyboard-xkb.kbd`'s `layouts`
-    ///   has it without the variant, such as `es`. A keymap with no layouts named has
+    ///   has it without the variant, such as `es`, so two variants of a layout have the same
+    ///   name and a switch between them isn't signalled. A keymap with no layouts named has
     ///   xkbcommon's long name instead.
     /// - `multiple` (`b`): whether the keymap has more than one layout.
     #[zbus(property)]

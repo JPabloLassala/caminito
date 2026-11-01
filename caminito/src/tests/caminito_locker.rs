@@ -27,6 +27,7 @@ use smithay::output::Output;
 use super::fixture::{
     BTN_LEFT, Fixture, KEY_A, KEY_ENTER, KEY_ESC, KEY_LEFTALT, KEY_LEFTSHIFT, test_schemas,
 };
+use super::keymap::strings;
 use super::locker::fixture_with;
 use crate::output::output_geometry;
 use crate::settings::Value;
@@ -1069,24 +1070,20 @@ fn indicator(name: &str) -> String {
 /// The debug line of a hidden keyboard layout indicator.
 const INDICATOR_HIDDEN: &str = "Keyboard layout indicator: (hidden)";
 
-fn layouts(names: &[&str]) -> Value {
-    Value::StrList(names.iter().map(|&name| name.into()).collect())
-}
-
 /// Caminito with `names` as its layouts, switched by Alt+Shift, and caminito-locker as its
 /// `locker-command`, asked to lock. `start_dbus` has Caminito answer on the bus or not, as
 /// it needs the name that the Locker looks for.
 fn locked_with_layouts(names: &[&str], start_dbus: fn(&mut Fixture)) -> (Fixture, Locker) {
     let locker = Locker::new();
     locker.set_settings("");
-    let options = Value::StrList(vec!["grp\tgrp:alt_shift_toggle".into()]);
+    let options = strings(&["grp\tgrp:alt_shift_toggle"]);
     let mut f = Fixture::with_settings(vec![
         (
             CAMINITO,
             "locker-command".into(),
             Value::StrList(locker.command()),
         ),
-        (KEYBOARD_XKB, "layouts".into(), layouts(names)),
+        (KEYBOARD_XKB, "layouts".into(), strings(names)),
         (KEYBOARD_XKB, "options".into(), options),
     ]);
     f.add_output((1920, 1080), 1.0);
@@ -1125,7 +1122,7 @@ fn the_layout_indicator_hides_with_one_layout_until_a_second_is_set() {
     assert_eq!(locker.count(&indicator("de")), 0, "{}", locker.seen());
 
     // Showing it now says that the hidden one was Caminito's answer, not its absence.
-    f.set_setting(KEYBOARD_XKB, "layouts", layouts(&["de", "fr"]));
+    f.set_setting(KEYBOARD_XKB, "layouts", strings(&["de", "fr"]));
     f.dispatch_until_explained(|_| locker.count(&indicator("de")) == 1, seen);
 }
 
