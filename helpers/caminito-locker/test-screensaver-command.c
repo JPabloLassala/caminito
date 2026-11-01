@@ -254,6 +254,8 @@ test_inhibit_blocks_while_it_holds (void)
   for (int i = 0; i < 500 && !called (&saver, "Inhibit ('pluma', 'a reason')"); i++)
     g_usleep (10000);
   g_assert_true (called (&saver, "Inhibit ('pluma', 'a reason')"));
+  /* It answers Inhibit before it would exit, on a local socket: 100 ms is ample for an exit
+     to have shown, and if it's ever too short the test only passes when it shouldn't. */
   g_usleep (100000);
   g_assert_cmpint (waitpid (pid, &status, WNOHANG), ==, 0);
   kill (pid, SIGTERM);

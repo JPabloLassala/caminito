@@ -20,6 +20,7 @@ ADR 0007 ported mate-screensaver's unlock dialog and kept the package installed 
 - A user who customised the `mate-screensaver` PAM file, for fingerprint for example, has to redo it in the new file. The release notes say so.
 - Themes written for mate-screensaver have to be copied to Caminito's data directory.
 - The package also had the `org.mate.screensaver` schema and `mate-screensaver-command`, which the Locker, the panel, mate-session and the media keys need. Caminito ships a copy of the schema under its own filename, so that the two packages don't conflict: `glib-compile-schemas` ignores one with an error and exits 0, unless run with `--strict`. It ships the command in `/usr/lib/caminito/bin`, first in the session command's `PATH`, and the command only calls `org.mate.ScreenSaver`.
+- Switch User uses only a display manager's D-Bus request, on `XDG_SEAT_PATH`'s seat, and hides when that seat doesn't answer that it can switch. `mdmflexiserver`, `gdmflexiserver` and looking for their processes went with the package's X11 past.
 - `mate-screensaver.desktop` stays in mate-session's skipped list (ADR 0014), as the package can still be installed for an X11 session.
 - Pointer motion doesn't wake the dialog, unlike mate-screensaver. `docs/parity.md` records this.
 - Rejected:

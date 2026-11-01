@@ -103,12 +103,14 @@ Comment: mate-screensaver 60b2db3's data/lock-dialog-default.ui.
 Files: helpers/caminito-locker/po/*
 Copyright: The translators each file names
            2012-2021 MATE Developers
-License: GPL-2+
+           2026 Juan Pablo Lassala
+License: GPL-3+ and GPL-2+
 Comment: Copied from mate-screensaver 60b2db3's po/, cut to the strings caminito-locker uses.
 
 Files: data/org.mate.screensaver.gschema.xml
 Copyright: MATE Developers
-License: GPL-2+
+           2026 Juan Pablo Lassala
+License: GPL-3+ and GPL-2+
 Comment: mate-screensaver 60b2db3's data/org.mate.screensaver.gschema.xml.in.
 
 Files: data/remap-templates/macos-pc.remaps

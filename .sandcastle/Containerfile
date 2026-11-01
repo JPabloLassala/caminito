@@ -11,7 +11,7 @@ RUN sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
 RUN pacman -Syu --noconfirm --needed git curl jq \
     gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
-    systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
+    systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper gettext \
     nodejs npm desktop-file-utils python-dbusmock libnm mate-panel libxfce4windowing gtk-layer-shell gvfs \
   && pacman -Scc --noconfirm
 

@@ -156,6 +156,46 @@ static guint lock_plug_signals [LAST_SIGNAL] = { 0 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (GSLockPlug, gs_lock_plug, GTK_TYPE_BIN)
 
+/* Whether a display manager answers for the session's seat, and says it can switch: without
+ * one, the proxy has no properties. */
+static gboolean
+seat_can_switch (void)
+{
+	const char *seat = g_getenv ("XDG_SEAT_PATH");
+	GDBusProxy *proxy;
+	GVariant   *can_switch;
+	gboolean    res = FALSE;
+
+	if (seat == NULL)
+	{
+		return FALSE;
+	}
+
+	proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+	                                       G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
+	                                       NULL,
+	                                       "org.freedesktop.DisplayManager",
+	                                       seat,
+	                                       "org.freedesktop.DisplayManager.Seat",
+	                                       NULL,
+	                                       NULL);
+	if (proxy == NULL)
+	{
+		return FALSE;
+	}
+
+	can_switch = g_dbus_proxy_get_cached_property (proxy, "CanSwitch");
+	if (can_switch != NULL)
+	{
+		res = g_variant_is_of_type (can_switch, G_VARIANT_TYPE_BOOLEAN)
+		      && g_variant_get_boolean (can_switch);
+		g_variant_unref (can_switch);
+	}
+	g_object_unref (proxy);
+
+	return res;
+}
+
 /* LightDM's request, on the seat the display manager names. */
 static void
 do_user_switch (GSLockPlug *plug G_GNUC_UNUSED)
@@ -1005,7 +1045,7 @@ gs_lock_plug_set_switch_enabled (GSLockPlug *plug,
 		return;
 	}
 
-	if (switch_enabled && g_getenv ("XDG_SEAT_PATH") != NULL)
+	if (switch_enabled && seat_can_switch ())
 	{
 		gs_debug ("Switch User button: shown");
 		gtk_widget_show (plug->priv->auth_switch_button);

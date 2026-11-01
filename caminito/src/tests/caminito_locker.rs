@@ -235,6 +235,17 @@ fn locked_with(
 ) -> (Fixture, Locker) {
     let mut locker = Locker::new();
     locker.dialog_timeout_msec = dialog_timeout_msec;
+    lock_with(locker, outputs, keyfile, wallpapers)
+}
+
+/// Caminito with `outputs` and `locker` as its `locker-command`, asked to lock, with the
+/// locker connected.
+fn lock_with(
+    locker: Locker,
+    outputs: &[(i32, i32)],
+    keyfile: &str,
+    wallpapers: impl FnOnce(&[Output]) -> Option<String>,
+) -> (Fixture, Locker) {
     locker.set_settings(keyfile);
     let command = Value::StrList(locker.command());
     let mut f = Fixture::with_settings(vec![(CAMINITO, "locker-command".into(), command)]);
@@ -307,18 +318,11 @@ fn the_password_typed_at_caminito_lockers_dialog_unlocks_after_a_wrong_one() {
     );
 }
 
-/// `keyfile`'s locker, with `env`, asked to lock with the locker connected.
+/// `keyfile`'s locker on one output, with `env`, asked to lock with the locker connected.
 fn locked_with_env(keyfile: &str, env: Vec<(&'static str, String)>) -> (Fixture, Locker) {
     let mut locker = Locker::new();
     locker.env = env;
-    locker.set_settings(keyfile);
-    let command = Value::StrList(locker.command());
-    let mut f = Fixture::with_settings(vec![(CAMINITO, "locker-command".into(), command)]);
-    f.add_output((1920, 1080), 1.0);
-    f.dispatch();
-    assert!(f.state.request_lock());
-    locker.connect(&mut f);
-    (f, locker)
+    lock_with(locker, &[(1920, 1080)], keyfile, |_| None)
 }
 
 /// The Spanish catalogue of caminito-locker's domain, built from its `.po` file under `dir`,
@@ -413,17 +417,32 @@ fn switch_user_hides_without_a_display_managers_seat() {
     );
 }
 
+/// A seat path that no display manager answers for, as after a greeter's gone: the system bus
+/// here is one that can't be reached. That a seat which answers shows the button is the
+/// checklist's, with the real greeter.
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
-fn switch_user_shows_with_a_display_managers_seat() {
-    let seat = (
-        "XDG_SEAT_PATH",
-        "/org/freedesktop/DisplayManager/Seat0".to_owned(),
-    );
-    let (mut f, locker) = locked_with_env(SWITCH_ENABLED, vec![seat]);
+fn switch_user_hides_with_a_seat_that_no_display_manager_answers_for() {
+    let env = vec![
+        (
+            "XDG_SEAT_PATH",
+            "/org/freedesktop/DisplayManager/Seat0".to_owned(),
+        ),
+        (
+            "DBUS_SYSTEM_BUS_ADDRESS",
+            "unix:path=/nonexistent".to_owned(),
+        ),
+    ];
+    let (mut f, locker) = locked_with_env(SWITCH_ENABLED, env);
     let seen = || locker.seen();
     f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
-    f.dispatch_until_explained(|_| locker.count("Switch User button: shown") >= 1, seen);
+    f.dispatch_until_explained(|_| locker.count("Switch User: enabled") >= 1, seen);
+    assert_eq!(locker.count("Switch User button: shown"), 0, "{}", seen());
+    assert!(
+        locker.count("Switch User button: hidden") >= 1,
+        "{}",
+        seen()
+    );
 }
 
 /// ADR 0056: a missing service is a failed start, not a prompt that can't succeed. The locker

@@ -107,7 +107,7 @@ const DEFAULT_PATH: &str = "/usr/local/bin:/usr/bin";
 /// mate-session and mate-settings-daemon's media keys run `mate-screensaver-command` by name,
 /// and find Caminito's whether or not the mate-screensaver package is installed. As with
 /// `data_dirs`, the bus and systemd aren't given it.
-pub(crate) fn session_path(has: Option<&OsStr>) -> OsString {
+fn session_path(has: Option<&OsStr>) -> OsString {
     let has = has.filter(|path| !path.is_empty());
     let mut path = OsString::from(BIN_DIR);
     path.push(":");
