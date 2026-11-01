@@ -25,13 +25,15 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use smithay::output::Output;
+use smithay::utils::Rectangle;
 
+use super::esmeril::{assert_near, channels, esmerils, saturated_and_contrasted};
 use super::fixture::{
     BTN_LEFT, Bus, Fixture, KEY_A, KEY_ENTER, KEY_ESC, KEY_LEFTALT, KEY_LEFTSHIFT, KEY_S,
     test_schemas,
 };
 use super::keymap::strings;
-use super::locker::fixture_with;
+use super::locker::{fixture_with, kill, quick_restarts};
 use crate::output::output_geometry;
 use crate::settings::Value;
 use crate::settings::translate::{CAMINITO, KEYBOARD_XKB, POWER_MANAGER, SCREENSAVER, SESSION};
@@ -252,7 +254,17 @@ fn lock_with(
     wallpapers: impl FnOnce(&[Output]) -> Option<String>,
 ) -> (Fixture, Locker) {
     let command = Value::StrList(locker.command());
-    let mut f = Fixture::with_settings(vec![(CAMINITO, "locker-command".into(), command)]);
+    let f = Fixture::with_settings(vec![(CAMINITO, "locker-command".into(), command)]);
+    lock_on(f, locker, outputs, wallpapers)
+}
+
+/// As `lock_with`, on the Caminito `f`, whose `locker-command` is `locker`'s.
+fn lock_on(
+    mut f: Fixture,
+    locker: Locker,
+    outputs: &[(i32, i32)],
+    wallpapers: impl FnOnce(&[Output]) -> Option<String>,
+) -> (Fixture, Locker) {
     let added: Vec<Output> = outputs
         .iter()
         .map(|&size| f.add_output(size, 1.0))
@@ -901,10 +913,13 @@ fn a_module_that_gives_up_starts_the_next_conversation_quietly() {
     wait_for_dialog_on(&mut f, &locker, &output);
     assert_eq!(f.lock_state(), "locked");
     let starts = locker.count("Starting conversation");
-    f.dispatch_until_explained(
-        |_| locker.count("Starting conversation") == starts + 2,
-        || locker.seen(),
-    );
+    // Each in its own wait: the two can take 6 s, with their 3 s each.
+    for more in 1..=2 {
+        f.dispatch_until_explained(
+            |_| locker.count("Starting conversation") >= starts + more,
+            || locker.seen(),
+        );
+    }
     assert!(locker.count(QUIET) <= quiet + 1, "{}", locker.seen());
 }
 
@@ -1775,4 +1790,234 @@ fn a_notification_does_not_wake_a_blanked_output() {
     // The list is in the locker's window, which a blanked output doesn't show.
     assert!(blanked(&f), "{}", locker.seen());
     f.wait_for_pixel_on(&output, TOP_RIGHT_CARD.0, TOP_RIGHT_CARD.1, 0x000000);
+}
+
+/// How long a test's fade lasts, so that it's under way whenever the test looks.
+const LONG_FADE_MSEC: u32 = 600_000;
+
+/// The debug lines of Esmeril going on with a fade, and at once.
+const ESMERIL_FADES_IN: &str = "Esmeril goes on with a fade";
+const ESMERIL_SWITCHES_ON: &str = "Esmeril goes on at once";
+
+/// Whether each output in `outputs` has one Esmeril, over all of it, or if not `shown`, none.
+fn esmeril_on_each(f: &mut Fixture, outputs: &[Output], shown: bool) -> bool {
+    outputs.iter().all(|output| {
+        let scale = output.current_scale().fractional_scale();
+        let whole = Rectangle::from_size(output_geometry(output).size)
+            .to_physical_precise_round::<_, i32>(scale);
+        let esmerils = esmerils(f, output);
+        match shown {
+            true => esmerils.len() == 1 && esmerils[0].shown() == whole,
+            false => esmerils.is_empty(),
+        }
+    })
+}
+
+/// Waits until `esmeril_on_each` holds, and fails rather than hangs.
+#[track_caller]
+fn wait_for_esmeril(f: &mut Fixture, locker: &Locker, outputs: &[Output], shown: bool) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+    f.dispatch_until_mut(|f| {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Esmeril isn't as it should be after 4 s: {}",
+            locker.seen()
+        );
+        esmeril_on_each(f, outputs, shown)
+    });
+}
+
+/// Caminito on `outputs` with `more` settings and the locker with its prompt asked, in the Idle
+/// view, on the wallpaper of `SOLID_BACKGROUND` and with `extra` after it in its keyfile.
+fn idle_with(
+    outputs: &[(i32, i32)],
+    more: Vec<(&'static str, String, Value)>,
+    extra: &str,
+    env: Vec<(&'static str, String)>,
+) -> (Fixture, Locker) {
+    let mut locker = Locker::new();
+    locker.env = env;
+    locker.set_settings(&format!("{SOLID_BACKGROUND}{extra}"));
+    let command = Value::StrList(locker.command());
+    let mut settings = vec![(CAMINITO, "locker-command".into(), command)];
+    settings.extend(more);
+    let (mut f, locker) = lock_on(Fixture::with_settings(settings), locker, outputs, |_| None);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, || locker.seen());
+    (f, locker)
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_dialog_has_esmeril_on_every_outputs_lock_surface_and_the_idle_view_none() {
+    let (mut f, locker) = idle_with(&[(1920, 1080), (2560, 1440)], Vec::new(), "", Vec::new());
+    let outputs = f.state.caminito.outputs.clone();
+    for output in &outputs {
+        f.wait_for_pixel_on(output, 100, 100, WALLPAPER);
+    }
+    assert!(
+        esmeril_on_each(&mut f, &outputs, false),
+        "{}",
+        locker.seen()
+    );
+
+    tap(&mut f, KEY_ESC);
+    wait_for_esmeril(&mut f, &locker, &outputs, true);
+    assert_eq!(locker.count(ESMERIL_FADES_IN), 1, "{}", locker.seen());
+    // Pixman draws no Esmeril, so the wallpaper stays as it is under the see-through window.
+    for output in &outputs {
+        f.wait_for_pixel_on(output, 100, 100, WALLPAPER);
+    }
+
+    tap(&mut f, KEY_ESC);
+    wait_for_esmeril(&mut f, &locker, &outputs, false);
+    for output in &outputs {
+        f.wait_for_pixel_on(output, 100, 100, WALLPAPER);
+    }
+
+    tap(&mut f, KEY_ENTER);
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn with_esmeril_off_the_dialog_is_over_the_sharp_wallpaper_and_the_lock_is_correct() {
+    let off = vec![(CAMINITO, "esmeril".to_owned(), Value::Bool(false))];
+    let (mut f, locker) = idle_with(&[(1920, 1080)], off, "", Vec::new());
+    let output = f.state.caminito.outputs[0].clone();
+
+    tap(&mut f, KEY_ESC);
+    wait_for_dialog_on(&mut f, &locker, &output);
+    f.wait_for_pixel_on(&output, 100, 100, WALLPAPER);
+    assert!(esmerils(&mut f, &output).is_empty(), "{}", locker.seen());
+    assert_eq!(locker.count("Esmeril goes on"), 0, "{}", locker.seen());
+
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn esmeril_turned_off_with_the_dialog_open_leaves_it_over_the_sharp_wallpaper() {
+    let (mut f, locker) = idle_with(&[(1920, 1080)], Vec::new(), "", Vec::new());
+    let outputs = f.state.caminito.outputs.clone();
+    tap(&mut f, KEY_ESC);
+    wait_for_esmeril(&mut f, &locker, &outputs, true);
+
+    f.set_setting(CAMINITO, "esmeril", Value::Bool(false));
+    f.dispatch_until_explained(|_| locker.count("Esmeril goes off") == 1, || locker.seen());
+    assert!(
+        esmeril_on_each(&mut f, &outputs, false),
+        "{}",
+        locker.seen()
+    );
+    f.wait_for_pixel_on(&outputs[0], 100, 100, WALLPAPER);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn with_animations_off_esmeril_switches_at_once() {
+    let extra = "\n[org/mate/desktop/interface]\nenable-animations=false\n";
+    let (mut f, locker) = idle_with(&[(1920, 1080)], Vec::new(), extra, Vec::new());
+    let outputs = f.state.caminito.outputs.clone();
+
+    tap(&mut f, KEY_ESC);
+    wait_for_esmeril(&mut f, &locker, &outputs, true);
+    assert_eq!(locker.count(ESMERIL_SWITCHES_ON), 1, "{}", locker.seen());
+    assert_eq!(locker.count(ESMERIL_FADES_IN), 0, "{}", locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_new_output_and_a_new_scale_keep_esmeril_and_the_wallpaper_under_the_dialog() {
+    let (mut f, locker) = idle_with(&[(1920, 1080)], Vec::new(), "", Vec::new());
+    let first = f.state.caminito.outputs[0].clone();
+    tap(&mut f, KEY_ESC);
+    let outputs = [first.clone()];
+    wait_for_esmeril(&mut f, &locker, &outputs, true);
+
+    f.set_output_scale(&first, 2.0);
+    let outputs = [first.clone()];
+    wait_for_esmeril(&mut f, &locker, &outputs, true);
+    f.wait_for_pixel_on(&first, 100, 100, WALLPAPER);
+
+    let second = f.add_output((1280, 720), 1.0);
+    let outputs = [first.clone(), second.clone()];
+    wait_for_esmeril(&mut f, &locker, &outputs, true);
+    f.wait_for_pixel_on(&second, 100, 100, WALLPAPER);
+
+    f.unplug(&second);
+    let outputs = [first.clone()];
+    wait_for_esmeril(&mut f, &locker, &outputs, true);
+
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_locker_that_dies_mid_fade_leaves_the_session_locked_and_comes_back_to_the_idle_view() {
+    let fade = vec![("CAMINITO_LOCKER_BLUR_FADE_MSEC", LONG_FADE_MSEC.to_string())];
+    let (mut f, locker) = idle_with(&[(1920, 1080)], Vec::new(), "", fade);
+    f.state.caminito.locker.policy = quick_restarts();
+    let outputs = f.state.caminito.outputs.clone();
+    tap(&mut f, KEY_ESC);
+    wait_for_esmeril(&mut f, &locker, &outputs, true);
+
+    let dead = locker.process().unwrap();
+    std::fs::remove_file(locker.path("pid")).unwrap();
+    kill(dead);
+    f.dispatch_until_explained(|f| f.lock_state() == "locker-lost", || locker.seen());
+    assert!(
+        esmeril_on_each(&mut f, &outputs, false),
+        "{}",
+        locker.seen()
+    );
+
+    locker.connect(&mut f);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.dispatch_until_explained(|_| locker.count(PROMPT) >= 2, || locker.seen());
+    f.wait_for_pixel_on(&outputs[0], 100, 100, WALLPAPER);
+    assert!(
+        esmeril_on_each(&mut f, &outputs, false),
+        "{}",
+        locker.seen()
+    );
+    assert_eq!(locker.count(DIALOG_SHOWS), 1, "{}", locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_dialog_shows_the_wallpaper_through_esmeril_on_gles() {
+    let locker = Locker::new();
+    locker.set_settings(SOLID_BACKGROUND);
+    let command = Value::StrList(locker.command());
+    let settings = vec![(CAMINITO, "locker-command".to_owned(), command)];
+    let Some(f) = Fixture::on_gles_with(settings) else {
+        return;
+    };
+    let (mut f, locker) = lock_on(f, locker, &[(1920, 1080)], |_| None);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, || locker.seen());
+    let output = f.state.caminito.outputs[0].clone();
+    f.wait_for_pixel_on(&output, 100, 100, WALLPAPER);
+
+    let want = saturated_and_contrasted(0xff00_0000 | WALLPAPER);
+    let wanted = u32::from_be_bytes([0, want[0] as u8, want[1] as u8, want[2] as u8]);
+    tap(&mut f, KEY_ESC);
+    f.wait_for_pixel_near_on(&output, 100, 100, wanted, 3);
+    assert_near(
+        channels(
+            f.state
+                .backend
+                .headless_mut()
+                .pixel(&output, (100, 100).into())
+                .unwrap(),
+        ),
+        want,
+    );
+
+    tap(&mut f, KEY_ESC);
+    f.wait_for_pixel_on(&output, 100, 100, WALLPAPER);
 }

@@ -39,11 +39,30 @@ auth = static_library(
 # The session's status message, from mate-session's presence (132).
 watcher = static_library('gs-watcher', 'gs-watcher.c', dependencies: gio)
 
+# The protocol the Locker asks for Esmeril through (CMN-301). GTK 3 has no API for it.
+wayland_scanner = find_program('wayland-scanner')
+background_effect_xml = 'protocols/ext-background-effect-v1.xml'
+background_effect_header = custom_target(
+  'ext-background-effect-v1-client-protocol.h',
+  input: background_effect_xml,
+  output: 'ext-background-effect-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+background_effect_code = custom_target(
+  'ext-background-effect-v1-protocol.c',
+  input: background_effect_xml,
+  output: 'ext-background-effect-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
 # gtk-session-lock is barely maintained (ADR 0007); it builds at 16's baseline as it is, so
 # it isn't vendored. libmate-desktop has MateBG, for the background (132). There's no libmatekbd: the layout indicator reads org.mate.Caminito (CMN-299).
 executable(
   'caminito-locker',
   'caminito-locker.c',
+  'gs-backdrop.c',
+  background_effect_header,
+  background_effect_code,
   'gs-lock-plug.c',
   'gs-notifications.c',
   'gs-prefs.c',
@@ -52,7 +71,9 @@ executable(
   dependencies: [
     gio,
     dependency('gtk+-3.0'),
+    dependency('gtk+-wayland-3.0'),
     dependency('gtk-session-lock-0'),
+    dependency('wayland-client'),
     dependency('mate-desktop-2.0'),
   ],
   install: true,

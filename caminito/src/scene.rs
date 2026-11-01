@@ -567,18 +567,7 @@ fn lock_elements<R>(
     }
     let scale = output.current_scale().fractional_scale();
     if let Some(surface) = lock.surface_on(output) {
-        elements.extend(
-            render_elements_from_surface_tree(
-                renderer,
-                surface.wl_surface(),
-                Point::default(),
-                scale,
-                1.0,
-                Kind::Unspecified,
-            )
-            .into_iter()
-            .map(SceneElement::Window),
-        );
+        lock_surface_elements(renderer, caminito, output, surface.wl_surface(), elements);
     }
     // Once Caminito gave up on the locker (126), what to do about it.
     if let Some((buffer, size)) = caminito.locker.message_on(output) {
@@ -600,6 +589,52 @@ fn lock_elements<R>(
     }
     let covered = Rectangle::from_size(output_geometry(output).size).to_physical_precise_up(scale);
     elements.push(lock_background(caminito, covered));
+}
+
+/// A lock surface's tree, with the Esmeril a surface asks for right under that surface, and not
+/// under the whole tree as a window's is (ADR 0048): the Locker's window blurs its own subsurface,
+/// and what's beneath the tree is only the lock background (CMN-301).
+fn lock_surface_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    output: &Output,
+    surface: &WlSurface,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let scale = output.current_scale().fractional_scale();
+    let place = caminito.settings.esmeril.map(|strength| SurfacePlace {
+        output: output_geometry(output).size,
+        scale,
+        strength,
+        alpha: 1.0,
+        cut: None,
+    });
+    for_each_surface_in_tree(
+        surface,
+        Point::default(),
+        scale,
+        |surface, states, location| {
+            let element = WaylandSurfaceRenderElement::from_surface(
+                renderer,
+                surface,
+                states,
+                location,
+                1.0,
+                Kind::Unspecified,
+            );
+            match element {
+                Ok(element) => elements.extend(element.map(SceneElement::Window)),
+                Err(err) => tracing::warn!("can't import a surface: {err:?}"),
+            }
+            let esmeril = place.and_then(|place| {
+                Esmeril::in_region(&esmeril::asked_region(states)?, states, location, &place)
+            });
+            elements.extend(esmeril.map(SceneElement::Esmeril));
+        },
+    );
 }
 
 /// The lock background over `covered`.

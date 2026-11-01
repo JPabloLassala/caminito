@@ -1,6 +1,7 @@
 //! An `ext_session_lock_v1` client, as a locker is (12): it asks for the lock, puts a lock
 //! surface on each output, and unlocks.
 
+use wayland_client::protocol::wl_subsurface::WlSubsurface;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols::ext::session_lock::v1::client::ext_session_lock_manager_v1::{
@@ -42,6 +43,7 @@ pub struct LockSurface {
     /// The serial of the last configure, which mapping acks.
     last_serial: Option<u32>,
     buffers: Vec<Buffer>,
+    subsurfaces: Vec<(WlSurface, WlSubsurface)>,
 }
 
 impl Client {
@@ -78,6 +80,7 @@ impl Client {
             configures: Vec::new(),
             last_serial: None,
             buffers: Vec::new(),
+            subsurfaces: Vec::new(),
         });
         id
     }
@@ -101,6 +104,23 @@ impl Client {
         lock_surface.surface.damage_buffer(0, 0, size.0, size.1);
         lock_surface.surface.commit();
         lock_surface.buffers.push(Buffer { buffer, pool });
+    }
+
+    /// Gives the lock surface a subsurface below it, filling `size` with `argb`, as the Locker's
+    /// wallpaper is (CMN-301). The lock surface must commit for it to show.
+    pub fn add_lock_subsurface_below(&mut self, id: LockSurfaceId, size: (i32, i32), argb: u32) {
+        let subcompositor = self.global(|state| &mut state.subcompositor, 1);
+        let surface = self.compositor().create_surface(&self.qh, ());
+        let parent = &self.lock_surface(id).surface;
+        let subsurface = subcompositor.get_subsurface(&surface, parent, &self.qh, ());
+        subsurface.place_below(parent);
+        let (pool, buffer) = self.shm_buffer(size, argb);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, size.0, size.1);
+        surface.commit();
+        let lock_surface = &mut self.state.lock_surfaces[id.0];
+        lock_surface.buffers.push(Buffer { buffer, pool });
+        lock_surface.subsurfaces.push((surface, subsurface));
     }
 
     /// Unlocks the session, as a locker does once the password is right.

@@ -44,6 +44,17 @@ SPDX-FileCopyrightText = [
 ]
 SPDX-License-Identifier = "MIT"
 
+[[annotations]]
+path = "helpers/caminito-locker/protocols/ext-background-effect-v1.xml"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+  "2015 Martin Gräßlin",
+  "2015 Marco Martin",
+  "2020 Vlad Zahorodnii",
+  "2024 Xaver Hugl",
+]
+SPDX-License-Identifier = "MIT"
+
 # mate-screensaver's unlock dialog. Its C files carry their headers. Caminito's changes are
 # GPL-3.0-or-later, as in every file adapted from another project.
 [[annotations]]

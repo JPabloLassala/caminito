@@ -29,7 +29,8 @@
 //! A client that asks through `ext-background-effect-v1` (CMN-238) gets it in its region, under
 //! every pixel there, a wholly clear one too: the region alone says where, and the surface is
 //! drawn over it as usual. That region replaces a listed window's or a layer surface's whole-surface
-//! Esmeril, on that surface only.
+//! Esmeril, on that surface only. On a lock surface it goes right under the surface that asks, so
+//! the Locker's window blurs only its own subsurface (CMN-301).
 //!
 //! Pixman draws nothing for it (ADR 0048), though its damage is the same.
 

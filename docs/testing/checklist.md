@@ -1600,6 +1600,17 @@ session_env() {
 - **Debug tool:** `caminito-locker --verbose`: `The Unlock dialog shows`, `The Unlock dialog
   hides`, `Moving the dialog` and `The clock is smaller, to clear the dialog`.
 
+### Esmeril behind the Unlock dialog, and its fade
+
+- **Milestone:** lock-screen
+- **Ticket:** CMN-301
+- **Steps:**
+  1. With a detailed picture as the wallpaper, lock the screen and press a key. Press Esc. Do it a few times, on one output and on two.
+  2. Do it again on a 4K output, and on two if you have them.
+  3. Turn `esmeril` off, then `reduced-resources` on, then `enable-animations` off, and do it again for each.
+- **Expected:** In steps 1 and 2 the wallpaper blurs on every output as the dialog shows, and goes sharp as it hides, in about 200 ms. The clock, the notifications and the dialog stay sharp. Nothing of the windows under the lock shows. The picture doesn't jump in size or place at the start or the end of a fade. At 4K the fade has fewer frames (the repaint took 65 to 95 ms per frame on the spike's host), and a key pressed during it isn't lost. If it looks worse than a plain switch, say so on CMN-301: the switch is the ticket's fall-back. In step 3 the dialog shows over the sharp wallpaper with `esmeril` off and with `reduced-resources` on, and with `enable-animations` off the blur switches at once.
+- **Debug tool:** `caminito-locker --verbose`: `Esmeril goes on with a fade`, `Esmeril goes on at once` and `Caminito offers blur`.
+
 ### caminito-locker locks and unlocks without mate-screensaver on each distribution
 
 - **Milestone:** M7

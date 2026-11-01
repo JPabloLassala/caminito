@@ -26,7 +26,10 @@
  * over ext-session-lock through gtk-session-lock, and puts a lock window on every monitor,
  * with its wallpaper and a clock: the Idle view. A key or a click shows the Unlock dialog,
  * derived from MATE's, on the monitor under the pointer (CMN-298, ADR 0056). The right
- * password unlocks and the locker exits; nothing else ends the lock.
+ * password unlocks and the locker exits; nothing else ends the lock. While the dialog shows,
+ * Esmeril blurs the wallpaper on every monitor, and the locker never blurs anything itself: the
+ * sharp wallpaper is in a subsurface under each window (gs-backdrop.c), and the window fades its
+ * own copy of it out over Esmeril (CMN-301, ADR 0056).
  *
  * Ported from mate-screensaver 60b2db3's src/mate-screensaver-dialog.c, which mate-screensaver
  * runs as a GtkPlug in its own lock window and which tells the daemon how the conversation
@@ -75,6 +78,7 @@
 #define MATE_DESKTOP_USE_UNSTABLE_API
 #include <libmate-desktop/mate-bg.h>
 
+#include "gs-backdrop.h"
 #include "gs-lock-plug.h"
 #include "gs-notifications.h"
 #include "gs-prefs.h"
@@ -90,6 +94,10 @@
 
 /* How far the clock stays above the dialog, or it's made smaller. */
 #define CLOCK_GAP 8
+
+/* How long Esmeril takes to fade in and out behind the Unlock dialog. The amount follows the
+ * clock, so a slow repaint at 4K means fewer frames and not a longer fade (CMN-301). */
+#define BLUR_FADE_MSEC 200
 
 /* How far the notifications are from their corner, and the dialog's width until it has been
  * shown and measured. */
@@ -134,6 +142,14 @@ static GtkWidget *notifications = NULL;
 static GSettings *notification_settings = NULL;
 static guint place_notifications_id = 0;
 static int dialog_width = DIALOG_WIDTH_GUESS;
+
+/* Whether Esmeril is wanted behind the dialog, and how far a fade has come: how much of it showed
+ * when the fade started, at what time, and over how long. */
+static gboolean blur_wanted = FALSE;
+static double blur_from = 0.0;
+static gint64 blur_fade_start = 0;
+static gint64 blur_fade_usec = 0;
+static GSettings* interface_settings = NULL;
 
 static char* request_response(GSLockPlug* plug, const char* prompt, gboolean visible)
 {
@@ -499,6 +515,7 @@ typedef struct
 	cairo_surface_t *surface;
 	int              width;
 	int              height;
+	int              scale;
 } Background;
 
 static void background_free(Background* background)
@@ -656,9 +673,11 @@ out:
 
 /* gs-manager.c's apply_background_to_window, for a lock window at its size: MateBG's
  * background, read again for each, with picture-filename in its place when that file
- * exists. The desktop's is the window's monitor's in the wallpaper file, if it's there. */
-static Background* apply_background_to_window(GtkWidget* window, int width, int height)
+ * exists. The desktop's is the window's monitor's in the wallpaper file, if it's there. The
+ * picture is also under the window, in its backdrop (CMN-301), if it has one. */
+static Background* apply_background_to_window(GtkWidget* window, int width, int height, int scale)
 {
+	GSBackdrop      *backdrop = g_object_get_data(G_OBJECT(window), "backdrop");
 	GSettings       *settings;
 	char            *filename;
 	Background      *background;
@@ -690,40 +709,176 @@ static Background* apply_background_to_window(GtkWidget* window, int width, int 
 	                                              FALSE);
 	background->width = width;
 	background->height = height;
+	background->scale = scale;
+	if (backdrop != NULL)
+	{
+		cairo_surface_t *shown = gs_backdrop_set_picture(backdrop, background->surface, width, height, scale);
+
+		/* The backdrop's pixels last as long as this does, or until the next. */
+		if (shown != NULL)
+		{
+			cairo_surface_destroy(background->surface);
+			background->surface = cairo_surface_reference(shown);
+		}
+	}
 	g_object_set_data_full(G_OBJECT(window), "background", background, (GDestroyNotify) background_free);
 
 	return background;
 }
 
+/* How much of Esmeril shows now, from none to all of it. */
+static double blur_amount(void)
+{
+	double target = blur_wanted ? 1.0 : 0.0;
+	double done;
+
+	if (blur_fade_usec == 0)
+	{
+		return target;
+	}
+
+	done = (double) (g_get_monotonic_time() - blur_fade_start) / (double) blur_fade_usec;
+	return done >= 1.0 ? target : blur_from + (target - blur_from) * done;
+}
+
+/* Each frame of a fade, on each window. The draw after the last ends the window's asking. */
+static gboolean blur_fade_tick(GtkWidget* window, GdkFrameClock* clock G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+{
+	gboolean going = g_get_monotonic_time() - blur_fade_start < blur_fade_usec;
+
+	gtk_widget_queue_draw(window);
+	if (!going)
+	{
+		g_object_set_data(G_OBJECT(window), "blur-tick", NULL);
+	}
+
+	return going ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
+}
+
+static void fade_window(GtkWidget* window)
+{
+	gtk_widget_queue_draw(window);
+	if (blur_fade_usec != 0 && g_object_get_data(G_OBJECT(window), "blur-tick") == NULL)
+	{
+		g_object_set_data(G_OBJECT(window), "blur-tick", GINT_TO_POINTER(1));
+		gtk_widget_add_tick_callback(window, blur_fade_tick, NULL, NULL);
+	}
+}
+
+/* The dialog showed or hid, or Caminito's offer changed: Esmeril fades in or out on every lock
+ * window, or switches at once with enable-animations off. */
+static void update_blur(void)
+{
+	gboolean wanted = gs_backdrop_can_blur() && gs_lock_plug_is_open(GS_LOCK_PLUG(plug));
+	gboolean animate = interface_settings == NULL || g_settings_get_boolean(interface_settings, "enable-animations");
+	GHashTableIter iter;
+	gpointer window;
+	guint64 fade_msec;
+
+	if (wanted == blur_wanted)
+	{
+		return;
+	}
+
+	blur_from = blur_amount();
+	blur_wanted = wanted;
+	blur_fade_start = g_get_monotonic_time();
+	/* The environment's is for the tests, which catch a fade under way. */
+	fade_msec = g_ascii_strtoull(g_getenv("CAMINITO_LOCKER_BLUR_FADE_MSEC") ?: "", NULL, 10);
+	blur_fade_usec = animate ? (gint64) (fade_msec != 0 ? fade_msec : BLUR_FADE_MSEC) * 1000 : 0;
+	gs_debug("Esmeril goes %s %s", wanted ? "on" : "off", animate ? "with a fade" : "at once");
+
+	g_hash_table_iter_init(&iter, lock_windows);
+	while (g_hash_table_iter_next(&iter, NULL, &window))
+	{
+		fade_window(window);
+	}
+}
+
+/* Follows enable-animations, if this system has the key: it's MATE's, not Caminito's. */
+static void follow_animations(void)
+{
+	GSettingsSchemaSource* source = g_settings_schema_source_get_default();
+	GSettingsSchema* schema = source != NULL ? g_settings_schema_source_lookup(source, "org.mate.interface", TRUE) : NULL;
+
+	if (schema == NULL)
+	{
+		gs_debug("No schema for enable-animations");
+		return;
+	}
+
+	if (g_settings_schema_has_key(schema, "enable-animations"))
+	{
+		interface_settings = g_settings_new("org.mate.interface");
+	}
+	g_settings_schema_unref(schema);
+}
+
 /* gs-window-x11.c's gs_window_real_draw, under the window's content. The background is
- * made at the first draw at a size, as the window has its size from Caminito only then. */
+ * made at the first draw at a size, as the window has its size from Caminito only then. The
+ * window is the sharp wallpaper as much as Esmeril doesn't show: Esmeril shows through a pixel
+ * as much as it's see-through (ADR 0048), so this is its fade (CMN-301). */
 static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_GNUC_UNUSED)
 {
 	Background *background;
+	GSBackdrop *backdrop;
 	int width = gtk_widget_get_allocated_width(window);
 	int height = gtk_widget_get_allocated_height(window);
+	int scale = gtk_widget_get_scale_factor(window);
+	double amount = blur_amount();
 
-	background = g_object_get_data(G_OBJECT(window), "background");
-	if (background == NULL || background->width != width || background->height != height)
+	backdrop = g_object_get_data(G_OBJECT(window), "backdrop");
+	if (backdrop == NULL && !GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "no-backdrop")))
 	{
-		background = apply_background_to_window(window, width, height);
+		backdrop = gs_backdrop_new(window);
+		g_object_set_data(G_OBJECT(window), "backdrop", backdrop);
+		g_object_set_data(G_OBJECT(window), "no-backdrop", GINT_TO_POINTER(backdrop == NULL));
 	}
 
+	background = g_object_get_data(G_OBJECT(window), "background");
+	if (background == NULL || background->width != width || background->height != height || background->scale != scale)
+	{
+		background = apply_background_to_window(window, width, height, scale);
+	}
+	if (backdrop != NULL)
+	{
+		gs_backdrop_set_blurred(backdrop, blur_wanted || amount > 0.0);
+	}
+
+	cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
+	cairo_paint (cr);
 	cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
 	if (background->surface != NULL)
 	{
 		cairo_set_source_surface (cr, background->surface, 0, 0);
 		/* MateBG makes a solid colour's surface 1x1, which X tiled as the window's
-		 * background pixmap, and which cairo has to be told to. */
-		cairo_pattern_set_extend (cairo_get_source (cr), CAIRO_EXTEND_REPEAT);
+		 * background pixmap, and which cairo has to be told to. A backdrop's picture is
+		 * already whole, and tiling takes a third longer at each frame of the fade. */
+		if (backdrop == NULL)
+		{
+			cairo_pattern_set_extend (cairo_get_source (cr), CAIRO_EXTEND_REPEAT);
+		}
 	}
 	else
 	{
 		cairo_set_source_rgb (cr, 0, 0, 0);
 	}
-	cairo_paint (cr);
+	cairo_paint_with_alpha (cr, 1.0 - amount);
 
 	return FALSE;
+}
+
+/* Before its wl_surface goes. */
+static void window_unrealized(GtkWidget* window, gpointer data G_GNUC_UNUSED)
+{
+	GSBackdrop* backdrop = g_object_get_data(G_OBJECT(window), "backdrop");
+
+	if (backdrop != NULL)
+	{
+		g_object_set_data(G_OBJECT(window), "background", NULL);
+		g_object_set_data(G_OBJECT(window), "backdrop", NULL);
+		gs_backdrop_free(backdrop);
+	}
 }
 
 /* Puts `widget`, the dialog or the notifications, in the lock window `window`'s overlay. With
@@ -1103,7 +1258,9 @@ static void add_lock_window(GdkMonitor* monitor)
 	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	/* The background is drawn instead of the theme's. */
 	gtk_widget_set_app_paintable(window, TRUE);
+	gtk_style_context_add_class(gtk_widget_get_style_context(window), "lock-window");
 	g_signal_connect(window, "draw", G_CALLBACK(draw_background), NULL);
+	g_signal_connect(window, "unrealize", G_CALLBACK(window_unrealized), NULL);
 	gtk_widget_add_events(window, GDK_ENTER_NOTIFY_MASK | GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK);
 	g_signal_connect(window, "button-press-event", G_CALLBACK(show_dialog_at_click), NULL);
 	g_signal_connect(window, "key-press-event", G_CALLBACK(show_dialog_at_key), NULL);
@@ -1219,6 +1376,9 @@ static void load_css(void)
 	GtkCssProvider* provider = gtk_css_provider_new();
 
 	gtk_css_provider_load_from_data(provider,
+	                                /* GTK would say a window with a solid background is opaque,
+	                                 * and Caminito wouldn't draw the wallpaper under it. */
+	                                ".lock-window { background: transparent; }"
 	                                ".lock-clock {"
 	                                " color: white;"
 	                                " background-color: rgba(0, 0, 0, 0.3);"
@@ -1291,6 +1451,8 @@ int main(int argc, char** argv)
 		exit(1);
 	}
 
+	gs_backdrop_start(gdk_display_get_default());
+
 	lock = gtk_session_lock_prepare_lock();
 	g_signal_connect(lock, "locked", G_CALLBACK(locked_cb), NULL);
 	g_signal_connect(lock, "finished", G_CALLBACK(finished_cb), NULL);
@@ -1325,7 +1487,11 @@ int main(int argc, char** argv)
 	g_signal_connect_swapped(plug, "size-allocate", G_CALLBACK(queue_place_notifications), NULL);
 	g_signal_connect_swapped(plug, "show", G_CALLBACK(queue_place_notifications), NULL);
 	g_signal_connect_swapped(plug, "hide", G_CALLBACK(queue_place_notifications), NULL);
+	gs_backdrop_follow_can_blur(update_blur);
+	g_signal_connect_swapped(plug, "show", G_CALLBACK(update_blur), NULL);
+	g_signal_connect_swapped(plug, "hide", G_CALLBACK(update_blur), NULL);
 	follow_notification_corner();
+	follow_animations();
 
 	lock_windows = g_hash_table_new_full(NULL, NULL, NULL, (GDestroyNotify) gtk_widget_destroy);
 	update_clocks(NULL);

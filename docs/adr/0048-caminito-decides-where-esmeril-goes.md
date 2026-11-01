@@ -30,7 +30,7 @@ Plasma does it with KWin's Blur effect, for the surfaces that ask through `org_k
 - A client's region replaces a listed application's or a namespace's whole-surface Esmeril, on that surface only. The window's other surfaces keep theirs.
 - In the region, Esmeril goes under every pixel, a wholly clear one too, as the protocol has the region alone say where the blur goes. The surface is drawn over it as usual. The alpha rule above stays for the places Caminito chooses.
 - `esmeril` off and `reduced-resources` win over a client that asks. `capabilities` then has no `blur`, and is sent again when that changes. It follows the settings alone, not the renderer.
-- A window's or a layer surface's Esmeril for its own surfaces goes under all of them, so a subsurface below its parent hides the Esmeril of its parent's region, and an opaque parent hides the Esmeril of its subsurface's region. A popup's goes just under the popup. Drawing it between a surface tree's layers is the spike of CMN-301, which also has the lock scene.
+- A window's or a layer surface's Esmeril for its own surfaces goes under all of them, so a subsurface below its parent hides the Esmeril of its parent's region, and an opaque parent hides the Esmeril of its subsurface's region. A popup's goes just under the popup. Only a lock surface's tree has it between its layers, right under the surface that asks (CMN-301).
 - As for a listed window, a region has no Esmeril in the animations, and a closing popup's picture has none as it slides. An empty region asks for none, and so removes a listed surface's.
 
 ## Consequences

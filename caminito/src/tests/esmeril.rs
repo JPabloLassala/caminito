@@ -7,7 +7,8 @@
 //! popups are xdg's own, and once a window has it, its pixels and its place in the stack don't
 //! depend on the kind. A layer surface is a Wayland client's, and the window that hides an
 //! Intellihide panel only has to overlap it. A client's region (CMN-238) is asked for through
-//! ext-background-effect-v1, whichever kind of Wayland surface has it.
+//! ext-background-effect-v1, whichever kind of Wayland surface has it. A lock surface's goes between
+//! the layers of its tree (CMN-301); caminito_locker.rs has the real Locker's.
 
 use std::time::Duration;
 
@@ -90,7 +91,7 @@ fn window(f: &mut Fixture, output: &Output) {
 }
 
 /// Each Esmeril element the scene has for `output`, front to back.
-fn esmerils(f: &mut Fixture, output: &Output) -> Vec<Esmeril> {
+pub(super) fn esmerils(f: &mut Fixture, output: &Output) -> Vec<Esmeril> {
     let drawing = f.state.backend.headless_mut().drawing();
     drawing!(drawing, renderer, _memory, _T => {
         scene::output_elements(renderer, &f.state.caminito, output)
@@ -104,7 +105,7 @@ fn esmerils(f: &mut Fixture, output: &Output) -> Vec<Esmeril> {
 }
 
 /// The channels of an ARGB8888 pixel, red first.
-fn channels(pixel: u32) -> [i32; 3] {
+pub(super) fn channels(pixel: u32) -> [i32; 3] {
     [(pixel >> 16) & 0xff, (pixel >> 8) & 0xff, pixel & 0xff].map(|c| c as i32)
 }
 
@@ -118,14 +119,14 @@ fn pixel(f: &mut Fixture, output: &Output, at: Point<i32, Physical>) -> u32 {
 }
 
 /// `color` as Esmeril shows it over a uniform stretch of it.
-fn saturated_and_contrasted(color: u32) -> [f64; 3] {
+pub(super) fn saturated_and_contrasted(color: u32) -> [f64; 3] {
     let [r, g, b] = channels(color).map(|c| f64::from(c) / 255.0);
     let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     [r, g, b].map(|c| ((luma + (c - luma) * 1.7) * 1.2 - 0.1).clamp(0.0, 1.0) * 255.0)
 }
 
 /// Each channel of `got` within 3 of `want`'s.
-fn assert_near(got: [i32; 3], want: [f64; 3]) {
+pub(super) fn assert_near(got: [i32; 3], want: [f64; 3]) {
     for (got, want) in got.into_iter().zip(want) {
         assert!(
             (f64::from(got) - want).abs() <= 3.0,
@@ -1440,4 +1441,76 @@ fn a_new_region_in_the_same_bounds_is_drawn_at_once() {
         channels(pixel(&mut f, &output, at)),
         channels(BENEATH).map(f64::from),
     );
+}
+
+/// A window of `OTHER` under the lock, on an output of `OUTPUT`, and a lock surface that's wholly
+/// clear and asks for Esmeril over all of itself, over a subsurface of `wallpaper`, if any.
+fn locked_over_a_window(f: &mut Fixture, wallpaper: Option<u32>) -> Output {
+    let (output, ..) = asking_desk(f, "pluma", OTHER);
+    let locker = f.connect(Kind::Xdg);
+    f.client(locker).bind_outputs();
+    let lock = f.client(locker).lock_session();
+    f.roundtrip(locker);
+    let surface = f.client(locker).create_lock_surface(lock, 0);
+    f.roundtrip(locker);
+    if let Some(wallpaper) = wallpaper {
+        f.client(locker)
+            .add_lock_subsurface_below(surface, OUTPUT, wallpaper);
+    }
+    f.client(locker).map_lock_surface(surface, 0x00_00_00_00);
+    let wl_surface = f.client(locker).lock_surface(surface).surface.clone();
+    ask(f, locker, &wl_surface, Some(&[(0, 0, OUTPUT.0, OUTPUT.1)]));
+    f.draw(&output);
+    output
+}
+
+#[test]
+fn a_window_under_the_lock_reaches_no_pixel_of_a_lock_surfaces_esmeril() {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSolid", 15)) else {
+        return;
+    };
+    let output = locked_over_a_window(&mut f, Some(BENEATH));
+    let want = saturated_and_contrasted(BENEATH);
+    let pixels = f.state.backend.headless_mut().pixels(&output).unwrap();
+    for (i, &got) in pixels.iter().enumerate() {
+        let (x, y) = (i as i32 % OUTPUT.0, i as i32 / OUTPUT.0);
+        // Past the cursor at the top left corner.
+        if x >= 24 || y >= 24 {
+            assert_near(channels(got), want);
+        }
+    }
+}
+
+#[test]
+fn with_nothing_under_a_lock_surface_its_esmeril_reads_only_the_lock_background() {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSolid", 15)) else {
+        return;
+    };
+    let output = locked_over_a_window(&mut f, None);
+    let pixels = f.state.backend.headless_mut().pixels(&output).unwrap();
+    for (i, &got) in pixels.iter().enumerate() {
+        let (x, y) = (i as i32 % OUTPUT.0, i as i32 / OUTPUT.0);
+        if x >= 24 || y >= 24 {
+            assert_eq!(channels(got), [0, 0, 0], "the pixel at ({x}, {y})");
+        }
+    }
+}
+
+#[test]
+fn a_lock_surfaces_esmeril_goes_between_it_and_its_subsurface() {
+    let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+    let output = locked_over_a_window(&mut f, Some(BENEATH));
+    let drawing = f.state.backend.headless_mut().drawing();
+    let order: Vec<&str> = drawing!(drawing, renderer, _memory, _T => {
+        scene::output_elements(renderer, &f.state.caminito, &output)
+            .into_iter()
+            .filter_map(|element| match element {
+                SceneElement::Esmeril(_) => Some("esmeril"),
+                SceneElement::Window(_) => Some("surface"),
+                _ => None,
+            })
+            .collect()
+    });
+    // Front to back: the lock's come first, and the window under the lock after them.
+    assert_eq!(&order[..3], ["surface", "esmeril", "surface"]);
 }
