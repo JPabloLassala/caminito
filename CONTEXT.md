@@ -92,6 +92,18 @@ _Avoid_: second window manager, X helper
 The helper that draws the lock screen and checks the password: `caminito-locker` by default, MATE's unlock dialog on ext-session-lock. The lock itself is Caminito's; the locker can crash without unlocking the session.
 _Avoid_: screensaver (Caminito only blanks), lock screen (for the program)
 
+**Lock screen**:
+What a locked session shows on its outputs, drawn by the Locker: the Idle view, and the Unlock dialog when asked for.
+_Avoid_: screensaver, locker (for what's on screen)
+
+**Idle view**:
+The Lock screen while nobody is using it: each output's wallpaper and clock, and on the output under the pointer any notifications its mode allows.
+_Avoid_: shield, curtain
+
+**Unlock dialog**:
+The Lock screen's password prompt, shown on the output under the pointer at a key or a click until it times out.
+_Avoid_: lock dialog, password dialog, lock plug
+
 **Screensaver shim**:
 Caminito's implementation of `org.mate.ScreenSaver` and `org.freedesktop.ScreenSaver`, which turns MATE's lock, activity and inhibit calls into Caminito's idle, blanking and lock state. mate-screensaver's daemon doesn't run under Caminito.
 _Avoid_: mate-screensaver (the X11 program)

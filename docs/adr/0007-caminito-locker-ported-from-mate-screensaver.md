@@ -1,7 +1,7 @@
 # 7. Caminito ships its own locker, ported from mate-screensaver's unlock dialog
 
 Date: 2026-09-28
-Status: Accepted
+Status: Accepted, with its dependency on the mate-screensaver package and its always-shown dialog replaced by [ADR 0056](0056-caminito-locker-owns-its-lock-screen-without-mate-screensaver.md)
 
 ## Context
 
