@@ -192,6 +192,14 @@ _Avoid_: per-monitor workspaces, independent workspaces, separate workspaces
 One set of workspaces and one active workspace for every output, as in Marco. It is what Caminito does when Per-output workspaces is off.
 _Avoid_: shared workspaces, global workspaces
 
+**Fullscreen workspace**:
+A workspace of one output, outside the Workspace grid and without a number, that holds one fullscreen window and its transients for as long as the window is fullscreen. It comes right after the window's Home workspace when switching, and only its own output shows it, under Spanning workspaces too. It is what Caminito does with a fullscreen window when `org.mate.Caminito`'s `fullscreen-workspaces` is on; off, a fullscreen window stays on its workspace.
+_Avoid_: fullscreen space, space (Smithay's `desktop::Space`), game workspace (any fullscreen window gets one)
+
+**Home workspace**:
+The numbered workspace a window on a Fullscreen workspace belongs to and returns to when it leaves fullscreen. Moving the window to a workspace changes its Home workspace, and X11 clients are told it as the window's desktop.
+_Avoid_: origin workspace, parent workspace
+
 **Workspace grid**:
 The rows and columns the workspaces are in, which the workspace switcher shows and the bindings for the workspace to the left or right move through. It comes from `org.mate.Caminito`'s three `workspace-layout-*` keys and the number of workspaces, and each workspace's cell is its ext-workspace coordinates.
 _Avoid_: layout (that's the outputs'), pager layout, desktop layout (`_NET_DESKTOP_LAYOUT` is X11's, which Caminito doesn't publish)

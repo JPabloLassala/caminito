@@ -1,7 +1,7 @@
 # 32. Each output has its own workspaces
 
 Date: 2026-10-12
-Status: Accepted. Qualified on 2026-10-23 by [ADR 0040](0040-a-workspace-switch-is-the-pointers-outputs.md): a binding that switches the workspace acts on the pointer's output, which it makes the Active output, and the pointer's output for the bindings is no longer rejected for the switches.
+Status: Accepted. Qualified on 2026-10-23 by [ADR 0040](0040-a-workspace-switch-is-the-pointers-outputs.md): a binding that switches the workspace acts on the pointer's output, which it makes the Active output, and the pointer's output for the bindings is no longer rejected for the switches. Qualified on 2026-10-31 by [ADR 0057](0057-a-fullscreen-window-can-have-a-workspace-of-its-own.md): a Fullscreen workspace is on one output and outside the numbered workspaces, under Spanning workspaces too.
 
 ## Context
 
