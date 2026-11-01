@@ -24,7 +24,7 @@ use std::process::Command;
 
 use smithay::output::Output;
 
-use super::fixture::{BTN_LEFT, Fixture, KEY_A, KEY_ENTER, test_schemas};
+use super::fixture::{BTN_LEFT, Fixture, KEY_A, KEY_ENTER, KEY_ESC, KEY_LEFTSHIFT, test_schemas};
 use crate::output::output_geometry;
 use crate::settings::Value;
 use crate::settings::translate::CAMINITO;
@@ -40,7 +40,7 @@ const PROMPT: &str = "Setting prompt to: Password:";
 struct Locker {
     dir: tempfile::TempDir,
     listener: UnixListener,
-    /// How long the dialog waits for a key before it puts its prompt away, if not a minute.
+    /// How long the dialog waits for a key before it hides, if not a minute.
     dialog_timeout_msec: Option<u32>,
 }
 
@@ -226,6 +226,15 @@ fn locked_with(
     let mut locker = Locker::new();
     locker.dialog_timeout_msec = dialog_timeout_msec;
     locker.set_settings(keyfile);
+    lock_with(locker, outputs, wallpapers)
+}
+
+/// Caminito with `outputs` and `locker` as its `locker-command`, asked to lock.
+fn lock_with(
+    locker: Locker,
+    outputs: &[(i32, i32)],
+    wallpapers: impl FnOnce(&[Output]) -> Option<String>,
+) -> (Fixture, Locker) {
     let command = Value::StrList(locker.command());
     let mut f = Fixture::with_settings(vec![(CAMINITO, "locker-command".into(), command)]);
     let added: Vec<Output> = outputs
@@ -297,9 +306,6 @@ fn the_password_typed_at_caminito_lockers_dialog_unlocks_after_a_wrong_one() {
     );
 }
 
-/// What the dialog puts in its debug line when the prompt is put away.
-const PUT_AWAY: &str = "The prompt is put away, the conversation stays open";
-
 /// The failures `pam_faillock` has recorded for the user in the stand-in service's tally.
 fn faillock_records(locker: &Locker) -> usize {
     std::fs::read_to_string(locker.path("faillock").join(users_name()))
@@ -320,47 +326,208 @@ fn a_dialog_that_times_out_leaves_the_conversation_open_and_counts_no_failure() 
     f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
     f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
 
-    // The timeout puts the prompt away. The conversation is the same one, still waiting:
-    // PAM has no result, so pam_faillock has no record.
-    f.dispatch_until_explained(|_| locker.count(PUT_AWAY) == 1, seen);
+    // Typed and left: the timeout hides the dialog with its entry cleared. The conversation
+    // is the same one, still waiting: PAM has no result, so pam_faillock has no record.
+    f.key(KEY_A, true);
+    f.key(KEY_A, false);
+    f.dispatch_until_explained(|_| locker.count(SHOWS) == 1, seen);
+    f.dispatch_until_explained(|_| locker.count(HIDES) == 1, seen);
     // Three of the timeouts: a cancel that answered PAM would restart the conversation at
     // once, and its failure would be recorded well before this ends.
     f.dispatch_for(std::time::Duration::from_millis(1500));
+    assert_eq!(
+        locker.count(HIDES),
+        1,
+        "the hidden dialog has no timeout: {}",
+        seen()
+    );
     assert_eq!(locker.count("Starting conversation"), 1, "{}", seen());
     assert_eq!(locker.count("Verify user returned"), 0, "{}", seen());
     assert_eq!(faillock_records(&locker), 0, "{}", seen());
     assert_eq!(f.lock_state(), "locked");
 
-    // A key asks the same prompt again, and the password typed at it unlocks.
+    // A password typed from the Idle view unlocks: the `a` from before isn't in the entry.
     type_and_enter(&mut f, PASSWORD);
     f.dispatch_until_explained(
         |f| f.lock_state() == "unlocked" && dump(f)["locker"]["state"] == "idle",
         seen,
     );
-    assert_eq!(locker.count(PROMPT), 2, "{}", seen());
+    assert_eq!(locker.count(PROMPT), 1, "{}", seen());
     assert_eq!(locker.count("Starting conversation"), 1, "{}", seen());
     assert_eq!(faillock_records(&locker), 0, "{}", seen());
 }
 
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
-fn a_click_asks_the_prompt_again_after_the_timeout() {
-    let (mut f, locker) = locked_with(&[(1920, 1080)], "", Some(500), |_| None);
-    let seen = || locker.seen();
-    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
-    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
-    f.dispatch_until_explained(|_| locker.count(PUT_AWAY) == 1, seen);
+fn a_click_shows_the_dialog_and_motion_does_not() {
+    let (mut f, locker, output) = idle_with_prompt(None);
 
-    // Moving the pointer asks nothing: only the press does.
     f.pointer_move(100.0, 100.0);
-    f.dispatch_for(std::time::Duration::from_millis(100));
-    assert_eq!(locker.count(PROMPT), 1, "{}", seen());
+    f.pointer_move(300.0, 200.0);
+    f.dispatch_for(std::time::Duration::from_millis(300));
+    assert_eq!(locker.count(SHOWS), 0, "{}", locker.seen());
+    wait_for_no_dialog_on(&mut f, &output);
 
     f.pointer_button(BTN_LEFT, true);
     f.pointer_button(BTN_LEFT, false);
-    f.dispatch_until_explained(|_| locker.count(PROMPT) == 2, seen);
-    assert_eq!(locker.count("Starting conversation"), 1, "{}", seen());
-    assert_eq!(faillock_records(&locker), 0, "{}", seen());
+    wait_for_dialog_on(&mut f, &locker, &output);
+    assert_eq!(
+        locker.count("Starting conversation"),
+        1,
+        "{}",
+        locker.seen()
+    );
+    assert_eq!(faillock_records(&locker), 0, "{}", locker.seen());
+
+    // With focus in the entry.
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_modifier_or_esc_shows_the_dialog_with_nothing_typed() {
+    for key in [KEY_LEFTSHIFT, KEY_ESC] {
+        let (mut f, locker, output) = idle_with_prompt(None);
+
+        f.key(key, true);
+        f.key(key, false);
+        wait_for_dialog_on(&mut f, &locker, &output);
+
+        // A character typed by the key would make this password wrong.
+        type_and_enter(&mut f, PASSWORD);
+        f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
+    }
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn hiding_and_showing_the_dialog_many_times_counts_no_failure() {
+    let (mut f, locker, _output) = idle_with_prompt(None);
+
+    for times in 1..=25 {
+        f.key(KEY_A, true);
+        f.key(KEY_A, false);
+        f.dispatch_until_explained(|_| locker.count(SHOWS) == times, || locker.seen());
+        f.key(KEY_ESC, true);
+        f.key(KEY_ESC, false);
+        f.dispatch_until_explained(|_| locker.count(HIDES) == times, || locker.seen());
+    }
+
+    assert_eq!(
+        locker.count("Starting conversation"),
+        1,
+        "{}",
+        locker.seen()
+    );
+    assert_eq!(locker.count("Verify user returned"), 0, "{}", locker.seen());
+    assert_eq!(faillock_records(&locker), 0, "{}", locker.seen());
+
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_dialog_follows_the_pointer_and_survives_its_outputs_removal() {
+    let (mut f, locker) =
+        locked_by_caminito_locker_with(&[(1920, 1080), (1920, 1080)], SOLID_BACKGROUND);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, || locker.seen());
+    let outputs = f.state.caminito.outputs.clone();
+
+    // Hidden, it follows too, and shows on the output the pointer chose.
+    f.pointer_move(2020.0, 100.0);
+    f.dispatch_for(std::time::Duration::from_millis(200));
+    assert_eq!(locker.count(SHOWS), 0, "{}", locker.seen());
+    f.key(KEY_LEFTSHIFT, true);
+    f.key(KEY_LEFTSHIFT, false);
+    wait_for_dialog_on(&mut f, &locker, &outputs[1]);
+    wait_for_no_dialog_on(&mut f, &outputs[0]);
+
+    f.pointer_move(100.0, 100.0);
+    wait_for_dialog_on(&mut f, &locker, &outputs[0]);
+    wait_for_no_dialog_on(&mut f, &outputs[1]);
+
+    // Its output goes, with the dialog showing: it goes on on the other, and takes the
+    // password there.
+    f.unplug(&outputs[0]);
+    wait_for_dialog_on(&mut f, &locker, &outputs[1]);
+    assert_eq!(f.lock_state(), "locked");
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_module_that_gives_up_starts_the_next_conversation_quietly() {
+    let locker = Locker::new();
+    locker.set_settings(SOLID_BACKGROUND);
+    std::fs::write(
+        locker.path("pam.d").join("mate-screensaver"),
+        "auth required pam_deny.so\naccount required pam_deny.so\n",
+    )
+    .unwrap();
+    let (mut f, locker) = lock_with(locker, &[(1920, 1080)], |_| None);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    let output = f.state.caminito.outputs[0].clone();
+
+    // Sooner than the 3 s a message on show gets, and with nothing on show.
+    let started = std::time::Instant::now();
+    f.dispatch_until_explained(
+        |_| locker.count("Starting conversation") >= 3,
+        || locker.seen(),
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{}",
+        locker.seen()
+    );
+    assert_eq!(locker.count(SHOWS), 0, "{}", locker.seen());
+    wait_for_no_dialog_on(&mut f, &output);
+
+    // A key still shows the dialog, and the lock holds.
+    f.key(KEY_LEFTSHIFT, true);
+    f.key(KEY_LEFTSHIFT, false);
+    wait_for_dialog_on(&mut f, &locker, &output);
+    assert_eq!(f.lock_state(), "locked");
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn every_output_has_a_clock_in_the_idle_view() {
+    let (mut f, locker) =
+        locked_by_caminito_locker_with(&[(1920, 1080), (1280, 720)], SOLID_BACKGROUND);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    // The clock's at the top in the middle, with the wallpaper around it.
+    for output in f.state.caminito.outputs.clone() {
+        let width = output_geometry(&output).size.w;
+        wait_for_not_wallpaper(&mut f, &locker, &output, width / 2, 60);
+        f.wait_for_pixel_on(&output, 20, 60, WALLPAPER);
+    }
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_clock_is_smaller_only_on_an_output_too_short_for_it_and_the_dialog() {
+    const SMALLER: &str = "The clock is smaller";
+    const BACK: &str = "The clock is back at its size";
+    let (mut f, locker) =
+        locked_by_caminito_locker_with(&[(1920, 1080), (1024, 400)], SOLID_BACKGROUND);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    f.key(KEY_LEFTSHIFT, true);
+    f.key(KEY_LEFTSHIFT, false);
+    f.dispatch_until_explained(|_| locker.count(SHOWS) == 1, || locker.seen());
+    f.dispatch_for(std::time::Duration::from_millis(300));
+    assert_eq!(locker.count(SMALLER), 0, "{}", locker.seen());
+
+    f.pointer_move(2000.0, 100.0);
+    f.dispatch_until_explained(|_| locker.count(SMALLER) == 1, || locker.seen());
+    f.key(KEY_ESC, true);
+    f.key(KEY_ESC, false);
+    f.dispatch_until_explained(|_| locker.count(BACK) == 1, || locker.seen());
 }
 
 #[test]
@@ -371,8 +538,11 @@ fn an_empty_answer_is_not_sent_to_pam() {
     f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
     f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
 
-    f.key(KEY_ENTER, true);
-    f.key(KEY_ENTER, false);
+    // The first Enter shows the dialog, and the second answers it.
+    for _ in 0..2 {
+        f.key(KEY_ENTER, true);
+        f.key(KEY_ENTER, false);
+    }
     f.dispatch_until_explained(
         |_| locker.count("An empty answer is not sent to PAM") == 1,
         seen,
@@ -414,6 +584,78 @@ fn caminito_lockers_windows_show_the_desktop_background_on_every_output() {
     for output in &outputs {
         f.wait_for_pixel_on(output, 100, 100, 0x608040);
     }
+}
+
+/// The wallpaper's colour in `SOLID_BACKGROUND`.
+const WALLPAPER: u32 = 0x608040;
+
+/// The debug lines of the Unlock dialog showing and hiding.
+const SHOWS: &str = "The Unlock dialog shows";
+const HIDES: &str = "The Unlock dialog hides";
+
+/// Waits until `(x, y)` on `output` isn't the wallpaper, and fails rather than hangs.
+#[track_caller]
+fn wait_for_not_wallpaper(f: &mut Fixture, locker: &Locker, output: &Output, x: i32, y: i32) {
+    let wallpaper = 0xff00_0000 | WALLPAPER;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    f.dispatch_until_mut(|f| {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "({x}, {y}) is still the wallpaper after 5 s: {}",
+            locker.seen()
+        );
+        let at = (x, y).into();
+        let pixel = f.state.backend.headless_mut().pixel(output, at);
+        pixel.is_some_and(|pixel| pixel != wallpaper)
+    });
+}
+
+/// Waits until the dialog covers the middle of `output`, where it shows.
+#[track_caller]
+fn wait_for_dialog_on(f: &mut Fixture, locker: &Locker, output: &Output) {
+    let size = output_geometry(output).size;
+    wait_for_not_wallpaper(f, locker, output, size.w / 2, size.h / 2);
+}
+
+/// Waits until the middle of `output` is the wallpaper's.
+#[track_caller]
+fn wait_for_no_dialog_on(f: &mut Fixture, output: &Output) {
+    let size = output_geometry(output).size;
+    f.wait_for_pixel_on(output, size.w / 2, size.h / 2, WALLPAPER);
+}
+
+/// The lock on one output with its prompt asked, in the Idle view.
+fn idle_with_prompt(dialog_timeout_msec: Option<u32>) -> (Fixture, Locker, Output) {
+    let (mut f, locker) = locked_with(
+        &[(1920, 1080)],
+        SOLID_BACKGROUND,
+        dialog_timeout_msec,
+        |_| None,
+    );
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, || locker.seen());
+    let output = f.state.caminito.outputs[0].clone();
+    wait_for_no_dialog_on(&mut f, &output);
+    (f, locker, output)
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_lock_shows_no_dialog_and_a_key_shows_it_and_is_typed() {
+    let (mut f, locker, output) = idle_with_prompt(None);
+    assert_eq!(locker.count(SHOWS), 0, "{}", locker.seen());
+
+    // The first key opens the dialog and goes in the entry: the rest of the password and
+    // Enter unlock.
+    f.key(KEY_A, true);
+    f.key(KEY_A, false);
+    wait_for_dialog_on(&mut f, &locker, &output);
+    type_and_enter(&mut f, &PASSWORD[1..]);
+    f.dispatch_until_explained(
+        |f| f.lock_state() == "unlocked" && dump(f)["locker"]["state"] == "idle",
+        || locker.seen(),
+    );
+    assert_eq!(locker.count(PROMPT), 1, "{}", locker.seen());
 }
 
 /// A PNG of one pixel, `0x406080`.

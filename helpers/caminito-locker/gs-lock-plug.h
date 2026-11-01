@@ -77,7 +77,10 @@ void        gs_lock_plug_enable_prompt  (GSLockPlug *plug,
         const char *message,
         gboolean    visible);
 void        gs_lock_plug_disable_prompt (GSLockPlug *plug);
-void        gs_lock_plug_ask_prompt_again (GSLockPlug *plug);
+gboolean    gs_lock_plug_is_open        (GSLockPlug *plug);
+void        gs_lock_plug_open           (GSLockPlug *plug);
+void        gs_lock_plug_open_at_key    (GSLockPlug  *plug,
+        GdkEventKey *event);
 void        gs_lock_plug_set_busy       (GSLockPlug *plug);
 void        gs_lock_plug_set_ready      (GSLockPlug *plug);
 

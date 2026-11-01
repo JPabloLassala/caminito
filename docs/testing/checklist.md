@@ -1554,8 +1554,9 @@ session_env() {
      Unlock.
   6. In *Appearance*, pick another GTK theme, such as *TraditionalOk*, and lock again. Unlock,
      and set the theme back.
-- **Expected:** in step 1 the session is behind the lock, and the dialog is mate-screensaver's
-  as X11 MATE shows it: the clock and date, the user's face (`~/.face`, if there is one) and
+- **Expected:** in step 1 the session is behind the lock, in the Idle view, and the first key
+  of step 2 shows the dialog, which is mate-screensaver's as X11 MATE shows it, without the
+  clock and date: the user's face (`~/.face`, if there is one) and
   real name, *user on host*, the *Password:* prompt, and *Cancel* and *Unlock*, in the GTK
   theme's colours, on the desktop's background (132). No tooltip shows over the
   prompt's eye icon. In step 2 the dialog says *Incorrect password.* and asks again, and the
@@ -1567,6 +1568,36 @@ session_env() {
 - **Debug tool:** `DumpState`'s `lock` and each output's `lock_surface`. `--verbose` logs the
   PAM conversation (`Got message style 1: 'Password: '`), `No theme at …` for step 3, and
   `Moving the dialog` for step 5.
+
+### The Lock screen's Idle view, and the Unlock dialog on demand
+
+- **Milestone:** M7
+- **Steps:**
+  1. Log into *MATE on Caminito* with two monitors, a dark wallpaper on one and a nearly white
+     one on the other. Lock with *System* ▸ *Lock Screen*, and move the pointer across both
+     without pressing anything.
+  2. Click on the second monitor. Wait a minute without touching anything.
+  3. Press Shift, then Cancel. Press Esc, then Esc again. Type the password from the Idle view,
+     starting with its first character, and press Enter.
+  4. Lock on a monitor 768 pixels high or less, or with the scale raised until it's that high
+     in logical pixels, and press a key.
+  5. Give your account no real name (`sudo chfn -f '' $USER`, and put it back after), lock and
+     press a key.
+  6. Lock, let the screens blank (wait for the idle timers), and switch off or
+     unplug the monitor the pointer is on while it's in standby. Bring the other back with a
+     key and unlock. Do it again with the dialog showing before the screens blank.
+- **Expected:** in step 1 each monitor has its wallpaper and, at the top in the middle, the
+  time and the date, which can be read on the white wallpaper too. No dialog shows. In step 2
+  the dialog shows in the middle of the second monitor with the cursor in its entry, and it
+  hides after a minute, leaving the clock where it was. In step 3 Shift and Esc show the dialog
+  with nothing in the entry, and Cancel and the second Esc hide it; the first character of the
+  password is in the entry, and the password unlocks. In step 4 the clock is smaller while the
+  dialog shows, on that monitor only, clear of the dialog, and it's back at its size when the
+  dialog hides. In step 5 the dialog shows the user name, not *Unknown*. In step 6 the Locker
+  doesn't crash: the session stays locked, the dialog shows on the monitor that's left, and the
+  password unlocks.
+- **Debug tool:** `caminito-locker --verbose`: `The Unlock dialog shows`, `The Unlock dialog
+  hides`, `Moving the dialog` and `The clock is smaller, to clear the dialog`.
 
 ### caminito-locker's background, status message, Switch User and Log Out
 
@@ -1645,7 +1676,7 @@ session_env() {
   4. Reset `locker-command`, and repeat step 2 with the default locker.
 - **Expected:** after each resume the lock is what shows, never the desktop, not even for a
   frame. In step 2 the machine sleeps about 2 s after the request with the dark lock on screen,
-  and in step 3 likewise; caminito-locker's dialog is there on resume in step 4. Caminito's
+  and in step 3 likewise; caminito-locker's Idle view is there on resume in step 4, and a key shows its dialog. Caminito's
   `sleep` delay is in `systemd-inhibit --list` again after each resume.
 - **Debug tool:** `journalctl --user -b -t caminito -p warning` has `the lock isn't on screen 2 s
   after logind asked to sleep` for steps 2 and 3, and not for 4. `journalctl -b -u
@@ -1663,7 +1694,7 @@ session_env() {
      back.
   4. Reset `locker-command`, lock with `loginctl lock-session`, and unlock from a console with
      `loginctl unlock-session` and the session's ID while caminito-locker shows.
-- **Expected:** step 1 locks with caminito-locker's dialog, and `LockedHint=yes`; step 2 gives
+- **Expected:** step 1 locks with caminito-locker's Idle view, and `LockedHint=yes`; step 2 gives
   `LockedHint=no`. In step 3 the console's command unlocks: back on Caminito's VT the desktop is
   there, and the next lock gets caminito-locker again. In step 4 the dialog goes, and the
   desktop is back.
@@ -1692,7 +1723,7 @@ session_env() {
 - **Expected:** in step 2 every monitor goes black a minute after the last input, the cursor
   too, and Shift brings the desktop back, unlocked, as the lock delay hadn't passed (128). In
   step 3 the screens stay on. In step 4 they go black a minute after the window is minimised,
-  and a minute later the session locks under the blank: the mouse brings up
+  and a minute later the session locks under the blank: a click brings up
   `caminito-locker`'s dialog, not the desktop, and the password unlocks.
 - **Debug tool:** `DumpState`'s `idle`, whose `blanked` follows the screens and whose
   `inhibitors` has mpv's surface with its window and `shown`, and its `lock`. `--verbose`
@@ -1741,7 +1772,7 @@ session_env() {
   4. Set `org.mate.session idle-delay` to 1, run `mate-screensaver-command --inhibit &`, then
      `mate-screensaver-command --query`, and leave everything alone for two minutes. Kill the
      background command and leave everything alone for a minute more. Reset `idle-delay`.
-- **Expected:** step 1 locks with caminito-locker's dialog, and the password unlocks. In step
+- **Expected:** step 1 locks with caminito-locker's Idle view, and a key and the password unlock. In step
   2 the queries say "The screensaver is inactive", and `--lock` locks as the panel did. In
   step 3 the screens go black at once, Shift brings the desktop back, unlocked, and the query
   says it's inactive. In step 4 the query lists the inhibitor, the screens stay on while it
@@ -2584,7 +2615,7 @@ session_env() {
      caminito-wallpaperd`. Reset `locker-command`.
 - **Expected:** in step 2 each monitor's lock screen shows that monitor's wallpaper, the
   picture as its *Positioning* places it on the desktop and the colour plain, under the
-  unlock dialog on the monitor under the pointer. In step 3 the second monitor's lock screen
+  clock, and under the unlock dialog on the monitor under the pointer once a key shows it. In step 3 the second monitor's lock screen
   shows the picture of the pair that the desktop shows more of then. In step 4 the lock
   comes up as quickly as before, each monitor with the wallpaper it had when the drawer was
   killed. In step 5 the lock comes up with the drawer stopped, the same way.

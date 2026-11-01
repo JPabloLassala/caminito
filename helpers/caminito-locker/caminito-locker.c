@@ -23,17 +23,18 @@
  * Authors: William Jon McCann <mccann@jhu.edu>
  *
  * caminito-locker: the lock screen's locker (12, 131, ADR 0007). It takes the session lock
- * over ext-session-lock through gtk-session-lock, puts a lock window on every monitor, and
- * shows mate-screensaver's unlock dialog on the one under the pointer. The right password
- * unlocks and the locker exits; nothing else ends the lock.
+ * over ext-session-lock through gtk-session-lock, and puts a lock window on every monitor,
+ * with its wallpaper and a clock: the Idle view. A key or a click shows the Unlock dialog,
+ * mate-screensaver's, on the monitor under the pointer (CMN-298, ADR 0056). The right
+ * password unlocks and the locker exits; nothing else ends the lock.
  *
  * Ported from mate-screensaver 60b2db3's src/mate-screensaver-dialog.c, which mate-screensaver
  * runs as a GtkPlug in its own lock window and which tells the daemon how the conversation
  * went on stdout. Here the program is the lock: the conversation's outcome unlocks it, and
  * neither a cancel nor the fifth failure ends it, as mate-screensaver's daemon would end its
  * dialog. A failure starts the conversation again. A cancel or a timeout doesn't answer
- * PAM, whose pam_faillock would count it: the prompt stays open in the conversation's
- * thread until a key or a click asks it again (CMN-256). The dialog isn't setuid, so
+ * PAM, whose pam_faillock would count it: the dialog hides, and the prompt stays open in the
+ * conversation's thread for the next time it shows (CMN-256). The dialog isn't setuid, so
  * hack_uid and the privileged start-up are gone.
  *
  * What the daemon gave the dialog, the locker finds itself (132), where the daemon did:
@@ -75,6 +76,13 @@
 
 #define gs_debug g_debug
 
+/* How soon a conversation starts again after a module gave up by itself in the Idle view:
+ * no message has to be read, but a service that denies everyone mustn't go round at once. */
+#define QUIET_RESTART_MSEC 1000
+
+/* How far the clock stays above the dialog, or it's made smaller. */
+#define CLOCK_GAP 8
+
 static gboolean verbose = FALSE;
 static gboolean show_version = FALSE;
 
@@ -101,6 +109,11 @@ static GSWatcher *watcher = NULL;
 static MateBG *bg = NULL;
 static GTimer *timer = NULL;
 static guint logout_timeout_id = 0;
+
+/* The clock's text, and the idle that fits the clocks around the dialog. */
+static char *clock_time = NULL;
+static char *clock_date = NULL;
+static guint fit_clocks_id = 0;
 
 static char* request_response(GSLockPlug* plug, const char* prompt, gboolean visible)
 {
@@ -187,7 +200,6 @@ static gboolean auth_message_handler(GSAuthMessageStyle style, const char* msg, 
 
 	gs_debug("Got message style %d: '%s'", style, msg);
 
-	gtk_widget_show(GTK_WIDGET(plug));
 	gs_lock_plug_set_ready(plug);
 
 	ret = TRUE;
@@ -213,7 +225,11 @@ static gboolean auth_message_handler(GSAuthMessageStyle style, const char* msg, 
 			}
 			break;
 		case GS_AUTH_MESSAGE_ERROR_MSG:
-			gs_lock_plug_show_message(plug, message);
+			/* An error shows only if the dialog is open. */
+			if (gs_lock_plug_is_open(plug))
+			{
+				gs_lock_plug_show_message(plug, message);
+			}
 			break;
 		case GS_AUTH_MESSAGE_TEXT_INFO:
 			gs_lock_plug_show_message(plug, message);
@@ -272,15 +288,16 @@ static gboolean do_auth_check(GSLockPlug* plug)
 
 	if (! res)
 	{
+		const char *message = _("Authentication failed.");
+
 		if (error != NULL)
 		{
 			gs_debug("Verify user returned error: %s", error->message);
-			gs_lock_plug_show_message(plug, error->message);
+			message = error->message;
 		}
-		else
-		{
-			gs_lock_plug_show_message(plug, _("Authentication failed."));
-		}
+
+		/* What a module's giving up says isn't for the Idle view. */
+		gs_lock_plug_show_message(plug, gs_lock_plug_is_open(plug) ? message : NULL);
 	}
 
 	g_clear_error(&error);
@@ -323,6 +340,12 @@ static gboolean auth_check_idle(gpointer data)
 	 * many failed, once the failure's message has shown for its 3 s. That also keeps a
 	 * service that denies everyone from going round at once. */
 	gs_debug ("Authentication failed, retrying");
+	if (! gs_lock_plug_is_open(plug))
+	{
+		gs_debug("The conversation ended with the dialog hidden: the next starts quietly");
+		g_timeout_add(QUIET_RESTART_MSEC, (GSourceFunc) reset_idle_cb, plug);
+		return G_SOURCE_REMOVE;
+	}
 	g_timeout_add (3000, (GSourceFunc) reset_idle_cb, plug);
 	return G_SOURCE_REMOVE;
 }
@@ -631,13 +654,15 @@ static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_
 	return FALSE;
 }
 
-/* The dialog moves to the lock window the pointer or the keyboard is in, so it shows on
- * the monitor under the pointer, where Caminito gives the keyboard (12). */
+/* The dialog moves to the lock window the pointer or the keyboard is in, shown or hidden, so
+ * it shows on the monitor under the pointer, where Caminito gives the keyboard (12). Motion
+ * chooses its output and doesn't show it. */
 static gboolean move_dialog(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 {
 	GtkWidget* parent = gtk_widget_get_parent(plug);
+	GtkWidget* overlay = g_object_get_data(G_OBJECT(window), "overlay");
 
-	if (parent != window)
+	if (parent != overlay)
 	{
 		gs_debug("Moving the dialog to %s", gdk_monitor_get_model(g_object_get_data(G_OBJECT(window), "monitor")));
 
@@ -646,30 +671,212 @@ static gboolean move_dialog(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gp
 		{
 			gtk_container_remove(GTK_CONTAINER(parent), plug);
 		}
-		gtk_container_add(GTK_CONTAINER(window), plug);
+		gtk_overlay_add_overlay(GTK_OVERLAY(overlay), plug);
 	}
 
 	return FALSE;
 }
 
-/* A click asks the prompt again if the dialog's timeout or Cancel put it away. */
-static gboolean ask_prompt_again(GtkWidget* window G_GNUC_UNUSED, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+/* A click on any output shows the dialog there. */
+static gboolean show_dialog_at_click(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 {
-	gs_lock_plug_ask_prompt_again(GS_LOCK_PLUG(plug));
+	move_dialog(window, NULL, NULL);
+	gs_lock_plug_open(GS_LOCK_PLUG(plug));
 
 	return FALSE;
+}
+
+/* A key in the Idle view shows the dialog, before the dialog's own handler of the window's
+ * keys. Once it shows, keys go to the dialog. */
+static gboolean show_dialog_at_key(GtkWidget* window, GdkEventKey* event, gpointer data G_GNUC_UNUSED)
+{
+	if (gs_lock_plug_is_open(GS_LOCK_PLUG(plug)))
+	{
+		return FALSE;
+	}
+
+	move_dialog(window, NULL, NULL);
+	gs_lock_plug_open_at_key(GS_LOCK_PLUG(plug), event);
+
+	return TRUE;
+}
+
+/* The clock's markup, at its size. */
+static void set_clock_markup(GtkWidget* window)
+{
+	gboolean small = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "clock-small"));
+	char* markup;
+
+	markup = g_markup_printf_escaped("<span size=\"%s\" weight=\"light\">%s</span>", small ? "xx-large" : "60000", clock_time);
+	gtk_label_set_markup(GTK_LABEL(g_object_get_data(G_OBJECT(window), "clock-time")), markup);
+	g_free(markup);
+
+	markup = g_markup_printf_escaped("<span size=\"%s\">%s</span>", small ? "large" : "x-large", clock_date);
+	gtk_label_set_markup(GTK_LABEL(g_object_get_data(G_OBJECT(window), "clock-date")), markup);
+	g_free(markup);
+}
+
+/* lock-dialog-time-format's text for now. "locale" is the locale's time without its seconds,
+ * which strftime has no conversion for: a locale's AM and PM say whether it's a 12-hour one. */
+static char* format_time(GDateTime* now, GSettings* settings)
+{
+	char* format = g_settings_get_string(settings, "lock-dialog-time-format");
+	char* text;
+
+	if (g_strcmp0(format, "locale") == 0)
+	{
+		char* am_pm = g_date_time_format(now, "%p");
+
+		text = g_date_time_format(now, am_pm != NULL && am_pm[0] != '\0' ? "%l:%M %p" : "%H:%M");
+		g_free(am_pm);
+	}
+	else
+	{
+		text = g_date_time_format(now, format);
+	}
+
+	g_free(format);
+
+	return text != NULL ? g_strstrip(text) : g_strdup("");
+}
+
+/* lock-dialog-date-format's text for now. */
+static char* format_date(GDateTime* now, GSettings* settings)
+{
+	char* format = g_settings_get_string(settings, "lock-dialog-date-format");
+	char* text = g_date_time_format(now, g_strcmp0(format, "locale") == 0 ? _("%A, %B %e") : format);
+
+	g_free(format);
+
+	return text != NULL ? text : g_strdup("");
+}
+
+/* Each second, for a format with seconds. The labels change only when the text does. */
+static gboolean update_clocks(gpointer data G_GNUC_UNUSED)
+{
+	static GSettings* settings = NULL;
+	GDateTime* now = g_date_time_new_now_local();
+	GHashTableIter iter;
+	gpointer window;
+	char* time;
+	char* date;
+
+	if (settings == NULL)
+	{
+		settings = g_settings_new("org.mate.screensaver");
+	}
+
+	time = format_time(now, settings);
+	date = format_date(now, settings);
+	g_date_time_unref(now);
+
+	if (g_strcmp0(time, clock_time) == 0 && g_strcmp0(date, clock_date) == 0)
+	{
+		g_free(time);
+		g_free(date);
+		return G_SOURCE_CONTINUE;
+	}
+
+	g_free(clock_time);
+	g_free(clock_date);
+	clock_time = time;
+	clock_date = date;
+
+	g_hash_table_iter_init(&iter, lock_windows);
+	while (g_hash_table_iter_next(&iter, NULL, &window))
+	{
+		set_clock_markup(window);
+	}
+
+	return G_SOURCE_CONTINUE;
+}
+
+/* The clock is made smaller only on the output where the open dialog would reach it. */
+static gboolean fit_clocks(gpointer data G_GNUC_UNUSED)
+{
+	GHashTableIter iter;
+	gpointer each;
+
+	fit_clocks_id = 0;
+
+	g_hash_table_iter_init(&iter, lock_windows);
+	while (g_hash_table_iter_next(&iter, NULL, &each))
+	{
+		GtkWidget* window = each;
+		gboolean small = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "clock-small"));
+		gboolean should_be_small = FALSE;
+
+		if (gs_lock_plug_is_open(GS_LOCK_PLUG(plug))
+		    && gtk_widget_get_parent(plug) == g_object_get_data(G_OBJECT(window), "overlay"))
+		{
+			int clock_height;
+			int dialog_height;
+
+			/* Its height at the large size, kept from before it was made small. */
+			if (!small)
+			{
+				gtk_widget_get_preferred_height(g_object_get_data(G_OBJECT(window), "clock"), NULL, &clock_height);
+				g_object_set_data(G_OBJECT(window), "clock-height", GINT_TO_POINTER(clock_height));
+			}
+			clock_height = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "clock-height"));
+			gtk_widget_get_preferred_height(plug, NULL, &dialog_height);
+			should_be_small = clock_height + CLOCK_GAP > (gtk_widget_get_allocated_height(window) - dialog_height) / 2;
+		}
+
+		if (small != should_be_small)
+		{
+			gs_debug("The clock is %s", should_be_small ? "smaller, to clear the dialog" : "back at its size");
+			g_object_set_data(G_OBJECT(window), "clock-small", GINT_TO_POINTER(should_be_small));
+			set_clock_markup(window);
+		}
+	}
+
+	return G_SOURCE_REMOVE;
+}
+
+/* The dialog was shown, hidden, moved or resized, or its window was. */
+static void queue_fit_clocks(void)
+{
+	if (fit_clocks_id == 0)
+	{
+		fit_clocks_id = g_idle_add(fit_clocks, NULL);
+	}
+}
+
+/* The Idle view's clock and date, at the top in the middle of a lock window. */
+static GtkWidget* add_clock(GtkWidget* window)
+{
+	GtkWidget* clock = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+	GtkWidget* time = gtk_label_new(NULL);
+	GtkWidget* date = gtk_label_new(NULL);
+
+	gtk_style_context_add_class(gtk_widget_get_style_context(clock), "lock-clock");
+	gtk_widget_set_halign(clock, GTK_ALIGN_CENTER);
+	gtk_widget_set_valign(clock, GTK_ALIGN_START);
+	gtk_widget_set_margin_top(clock, 24);
+	gtk_container_add(GTK_CONTAINER(clock), time);
+	gtk_container_add(GTK_CONTAINER(clock), date);
+
+	g_object_set_data(G_OBJECT(window), "clock", clock);
+	g_object_set_data(G_OBJECT(window), "clock-time", time);
+	g_object_set_data(G_OBJECT(window), "clock-date", date);
+	set_clock_markup(window);
+
+	return clock;
 }
 
 static void add_lock_window(GdkMonitor* monitor)
 {
 	GtkWidget* window;
+	GtkWidget* overlay;
 
 	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	/* The background is drawn instead of the theme's. */
 	gtk_widget_set_app_paintable(window, TRUE);
 	g_signal_connect(window, "draw", G_CALLBACK(draw_background), NULL);
 	gtk_widget_add_events(window, GDK_ENTER_NOTIFY_MASK | GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK);
-	g_signal_connect(window, "button-press-event", G_CALLBACK(ask_prompt_again), NULL);
+	g_signal_connect(window, "button-press-event", G_CALLBACK(show_dialog_at_click), NULL);
+	g_signal_connect(window, "key-press-event", G_CALLBACK(show_dialog_at_key), NULL);
 	g_signal_connect(window, "enter-notify-event", G_CALLBACK(move_dialog), NULL);
 	g_signal_connect(window, "motion-notify-event", G_CALLBACK(move_dialog), NULL);
 	g_signal_connect(window, "focus-in-event", G_CALLBACK(move_dialog), NULL);
@@ -679,9 +886,14 @@ static void add_lock_window(GdkMonitor* monitor)
 	gtk_session_lock_lock_new_surface(lock, GTK_WINDOW(window), monitor);
 	g_hash_table_insert(lock_windows, monitor, window);
 
+	overlay = gtk_overlay_new();
+	g_object_set_data(G_OBJECT(window), "overlay", overlay);
+	gtk_container_add(GTK_CONTAINER(overlay), add_clock(window));
+	gtk_container_add(GTK_CONTAINER(window), overlay);
+
 	if (gtk_widget_get_parent(plug) == NULL)
 	{
-		gtk_container_add(GTK_CONTAINER(window), plug);
+		gtk_overlay_add_overlay(GTK_OVERLAY(overlay), plug);
 	}
 
 	gtk_widget_show_all(window);
@@ -698,6 +910,7 @@ static void monitor_added_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* moni
 static void monitor_removed_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* monitor, gpointer data G_GNUC_UNUSED)
 {
 	GtkWidget* window;
+	GtkWidget* overlay;
 	GHashTableIter iter;
 	gpointer other;
 
@@ -709,7 +922,8 @@ static void monitor_removed_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* mo
 		return;
 	}
 
-	if (gtk_widget_get_parent(plug) == window)
+	overlay = g_object_get_data(G_OBJECT(window), "overlay");
+	if (gtk_widget_get_parent(plug) == overlay)
 	{
 		g_hash_table_iter_init(&iter, lock_windows);
 		while (g_hash_table_iter_next(&iter, NULL, &other))
@@ -722,9 +936,9 @@ static void monitor_removed_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* mo
 		}
 	}
 
-	if (gtk_widget_get_parent(plug) == window)
+	if (gtk_widget_get_parent(plug) == overlay)
 	{
-		gtk_container_remove(GTK_CONTAINER(window), plug);
+		gtk_container_remove(GTK_CONTAINER(overlay), plug);
 	}
 
 	g_hash_table_remove(lock_windows, monitor);
@@ -750,6 +964,27 @@ static void finished_cb(GtkSessionLockLock* session_lock, gpointer data G_GNUC_U
 	gtk_session_lock_lock_destroy(session_lock);
 	gdk_display_sync(gdk_display_get_default());
 	exit(1);
+}
+
+/* The clock has to be read over any wallpaper, a light one too. The Idle view has no blur. */
+static void load_css(void)
+{
+	GtkCssProvider* provider = gtk_css_provider_new();
+
+	gtk_css_provider_load_from_data(provider,
+	                                ".lock-clock {"
+	                                " color: white;"
+	                                " background-color: rgba(0, 0, 0, 0.3);"
+	                                " border-radius: 12px;"
+	                                " padding: 6px 24px;"
+	                                " text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.6);"
+	                                " }",
+	                                -1,
+	                                NULL);
+	gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+	                                          GTK_STYLE_PROVIDER(provider),
+	                                          GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+	g_object_unref(provider);
 }
 
 int main(int argc, char** argv)
@@ -809,7 +1044,13 @@ int main(int argc, char** argv)
 	timer = g_timer_new();
 	update_from_prefs();
 
+	load_css();
+	g_signal_connect_swapped(plug, "size-allocate", G_CALLBACK(queue_fit_clocks), NULL);
+	g_signal_connect_swapped(plug, "hide", G_CALLBACK(queue_fit_clocks), NULL);
+
 	lock_windows = g_hash_table_new_full(NULL, NULL, NULL, (GDestroyNotify) gtk_widget_destroy);
+	update_clocks(NULL);
+	g_timeout_add_seconds(1, update_clocks, NULL);
 	display = gdk_display_get_default();
 	for (int i = 0; i < gdk_display_get_n_monitors(display); i++)
 	{

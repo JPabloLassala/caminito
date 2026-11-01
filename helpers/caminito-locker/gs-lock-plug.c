@@ -68,9 +68,6 @@
 
 #define KEY_LOCK_DIALOG_THEME "lock-dialog-theme"
 
-#define KEY_LOCK_DIALOG_T_FMT "lock-dialog-time-format"
-#define KEY_LOCK_DIALOG_D_FMT "lock-dialog-date-format"
-
 #define MDM_FLEXISERVER_COMMAND "mdmflexiserver"
 #define MDM_FLEXISERVER_ARGS    "--startnew Standard"
 
@@ -90,8 +87,6 @@ struct GSLockPlugPrivate
 
 	GtkWidget   *notebook;
 	GtkWidget   *auth_face_image;
-	GtkWidget   *auth_time_label;
-	GtkWidget   *auth_date_label;
 	GtkWidget   *auth_realname_label;
 	GtkWidget   *auth_username_label;
 	GtkWidget   *auth_prompt_label;
@@ -123,16 +118,13 @@ struct GSLockPlugPrivate
 
 	guint        timeout;
 
-	guint        datetime_timeout_id;
 	guint        cancel_timeout_id;
 	guint        auth_check_idle_id;
 	guint        response_idle_id;
 
-	/* The prompt PAM asked and has had no answer to, kept while it is put away (a timeout
-	   or Cancel): the next key or click asks it again. */
+	/* The prompt PAM asked and has had no answer to, which stays while the dialog is hidden. */
 	char        *prompt;
 	gboolean     prompt_visible;
-	gboolean     prompt_put_away;
 
 	GList       *key_events;
 };
@@ -273,68 +265,6 @@ set_status_text (GSLockPlug *plug,
 	}
 }
 
-static gboolean
-date_time_update (GSLockPlug *plug)
-{
-	GDateTime *datetime;
-	gchar *time;
-	gchar *date;
-	gchar *tfmt;
-	gchar *dfmt;
-
-	gchar *str;
-
-	GSettings *settings;
-
-	settings = g_settings_new (GSETTINGS_SCHEMA);
-	tfmt = g_settings_get_string (settings, KEY_LOCK_DIALOG_T_FMT);
-	dfmt = g_settings_get_string (settings, KEY_LOCK_DIALOG_D_FMT);
-	g_object_unref (settings);
-
-	/* Time/Date formating https://developer.gnome.org/glib/stable/glib-GDateTime.html#g-date-time-format */
-
-	datetime = g_date_time_new_now_local ();
-	if (g_strcmp0(tfmt, "locale") == 0)
-	{
-		// Use locale default format
-		time = g_date_time_format (datetime, "%X");
-	}
-	else
-	{
-		// Apply user defined format
-		time = g_date_time_format (datetime, tfmt);
-	}
-
-	if (g_strcmp0(dfmt, "locale") == 0)
-	{
-		// Use locale default format
-		date = g_date_time_format (datetime, _("%A, %B %e"));
-	}
-	else
-	{
-		// Apply user defined format
-		date = g_date_time_format (datetime, dfmt);
-	}
-
-	str = g_strdup_printf ("<span size=\"xx-large\" weight=\"ultrabold\">%s</span>", time);
-	gtk_label_set_text (GTK_LABEL (plug->priv->auth_time_label), str);
-	gtk_label_set_use_markup (GTK_LABEL (plug->priv->auth_time_label), TRUE);
-	g_free (str);
-
-	str = g_strdup_printf ("<span size=\"large\">%s</span>", date);
-	gtk_label_set_markup (GTK_LABEL (plug->priv->auth_date_label), str);
-	gtk_label_set_use_markup (GTK_LABEL (plug->priv->auth_date_label), TRUE);
-	g_free (str);
-
-	g_free (time);
-	g_free (date);
-	g_free (tfmt);
-	g_free (dfmt);
-	g_date_time_unref (datetime);
-
-	return G_SOURCE_CONTINUE;
-}
-
 void
 gs_lock_plug_set_sensitive (GSLockPlug *plug,
                             gboolean    sensitive)
@@ -343,16 +273,6 @@ gs_lock_plug_set_sensitive (GSLockPlug *plug,
 
 	gtk_widget_set_sensitive (plug->priv->auth_prompt_entry, sensitive);
 	gtk_widget_set_sensitive (plug->priv->auth_action_area, sensitive);
-}
-
-static void
-remove_datetime_timeout (GSLockPlug *plug)
-{
-	if (plug->priv->datetime_timeout_id > 0)
-	{
-		g_source_remove (plug->priv->datetime_timeout_id);
-		plug->priv->datetime_timeout_id = 0;
-	}
 }
 
 static void
@@ -376,48 +296,84 @@ remove_response_idle (GSLockPlug *plug)
 }
 
 static void restart_cancel_timeout (GSLockPlug *plug);
+static void queue_key_event (GSLockPlug *plug, GdkEventKey *event);
+static void forward_key_events (GSLockPlug *plug);
+static void set_default_button (GSLockPlug *plug, GtkWidget *button);
 
 /* The dialog's timeout and its Cancel button don't answer PAM: a cancelled prompt makes
- * pam_authenticate fail, and pam_faillock counts that. The prompt is put away and the
- * entry cleared, and the conversation stays open in its thread until the next key or click
- * asks the same prompt again (CMN-256). Only a submitted password is a response. */
+ * pam_authenticate fail, and pam_faillock counts that. The dialog hides and its entry is
+ * cleared, and the conversation stays open in its thread (CMN-256). Only a submitted
+ * password is a response. */
 static void
-put_prompt_away (GSLockPlug *plug)
+hide_dialog (GSLockPlug *plug)
 {
 	remove_cancel_timeout (plug);
 	remove_response_idle (plug);
 
-	/* Between prompts there is nothing to put away. */
-	if (plug->priv->prompt == NULL)
+	if (! gtk_widget_get_visible (GTK_WIDGET (plug)))
 	{
 		return;
 	}
 
-	gs_debug ("The prompt is put away, the conversation stays open");
-	plug->priv->prompt_put_away = TRUE;
+	gs_debug ("The Unlock dialog hides");
 	gtk_entry_set_text (GTK_ENTRY (plug->priv->auth_prompt_entry), "");
+	gtk_entry_set_visibility (GTK_ENTRY (plug->priv->auth_prompt_entry), plug->priv->prompt_visible);
 	set_status_text (plug, "");
-	gs_lock_plug_set_sensitive (plug, FALSE);
-	gtk_widget_hide (plug->priv->auth_prompt_label);
-	gtk_widget_hide (plug->priv->auth_prompt_entry);
-	gtk_widget_hide (plug->priv->auth_unlock_button);
-	/* What was typed before it went away isn't for the prompt asked again. */
+	gs_lock_plug_set_ready (plug);
+	/* What was typed before it hid isn't for the next time it shows. */
 	g_list_free_full (plug->priv->key_events, (GDestroyNotify) gdk_event_free);
 	plug->priv->key_events = NULL;
+	gtk_widget_hide (GTK_WIDGET (plug));
+}
+
+gboolean
+gs_lock_plug_is_open (GSLockPlug *plug)
+{
+	g_return_val_if_fail (GS_IS_LOCK_PLUG (plug), FALSE);
+
+	return gtk_widget_get_visible (GTK_WIDGET (plug));
 }
 
 void
-gs_lock_plug_ask_prompt_again (GSLockPlug *plug)
+gs_lock_plug_open (GSLockPlug *plug)
 {
 	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
 
-	if (! plug->priv->prompt_put_away)
+	if (gs_lock_plug_is_open (plug))
 	{
+		restart_cancel_timeout (plug);
 		return;
 	}
 
-	gs_debug ("Asking the prompt again");
-	gs_lock_plug_enable_prompt (plug, plug->priv->prompt, plug->priv->prompt_visible);
+	gs_debug ("The Unlock dialog shows");
+	gtk_widget_show (GTK_WIDGET (plug));
+	/* Hiding took the window's focus and default from what's inside the plug. */
+	set_default_button (plug, plug->priv->default_button);
+
+	if (plug->priv->prompt != NULL)
+	{
+		gs_lock_plug_set_sensitive (plug, TRUE);
+		gtk_widget_grab_focus (plug->priv->auth_prompt_entry);
+		forward_key_events (plug);
+	}
+}
+
+/* A character is typed in the entry. A modifier, Esc, Enter or a shortcut only opens it. */
+void
+gs_lock_plug_open_at_key (GSLockPlug  *plug,
+                          GdkEventKey *event)
+{
+	const GdkModifierType shortcut = GDK_CONTROL_MASK | GDK_MOD1_MASK | GDK_MOD4_MASK
+	                                 | GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_META_MASK;
+
+	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
+
+	if (g_unichar_isprint (gdk_keyval_to_unicode (event->keyval)) && (event->state & shortcut) == 0)
+	{
+		queue_key_event (plug, event);
+	}
+
+	gs_lock_plug_open (plug);
 }
 
 static void
@@ -439,7 +395,7 @@ gs_lock_plug_response (GSLockPlug *plug,
 
 	if (response_id == GS_LOCK_PLUG_RESPONSE_CANCEL)
 	{
-		put_prompt_away (plug);
+		hide_dialog (plug);
 		return;
 	}
 
@@ -623,11 +579,6 @@ gs_lock_plug_run (GSLockPlug *plug)
 	g_return_val_if_fail (GS_IS_LOCK_PLUG (plug), -1);
 
 	g_object_ref (plug);
-
-	if (!gtk_widget_get_visible (GTK_WIDGET (plug)))
-	{
-		gtk_widget_show (GTK_WIDGET (plug));
-	}
 
 	keymap = gdk_keymap_get_for_display (gtk_widget_get_display (GTK_WIDGET (plug)));
 
@@ -1210,7 +1161,7 @@ gs_lock_plug_hierarchy_changed (GtkWidget *widget,
 
 	set_default_button (plug, plug->priv->default_button);
 
-	if (gtk_widget_is_sensitive (plug->priv->auth_prompt_entry))
+	if (gs_lock_plug_is_open (plug) && gtk_widget_is_sensitive (plug->priv->auth_prompt_entry))
 	{
 		gtk_widget_grab_focus (plug->priv->auth_prompt_entry);
 	}
@@ -1388,6 +1339,12 @@ set_cursor (GSLockPlug    *plug,
 void
 gs_lock_plug_set_busy (GSLockPlug *plug)
 {
+	/* The Idle view has nothing to wait for. */
+	if (! gs_lock_plug_is_open (plug))
+	{
+		return;
+	}
+
 	set_cursor (plug, GDK_WATCH);
 }
 
@@ -1406,12 +1363,10 @@ gs_lock_plug_enable_prompt (GSLockPlug *plug,
 
 	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
 
-	/* The message may be the stored prompt itself, when it's asked again. */
 	prompt = g_strdup (message);
 	g_free (plug->priv->prompt);
 	plug->priv->prompt = prompt;
 	plug->priv->prompt_visible = visible;
-	plug->priv->prompt_put_away = FALSE;
 	gs_lock_plug_set_sensitive (plug, TRUE);
 
 	gtk_widget_set_sensitive (plug->priv->auth_unlock_button, TRUE);
@@ -1423,6 +1378,12 @@ gs_lock_plug_enable_prompt (GSLockPlug *plug,
 	gtk_entry_set_visibility (GTK_ENTRY (plug->priv->auth_prompt_entry), visible);
 	gtk_widget_set_sensitive (plug->priv->auth_prompt_entry, TRUE);
 	gtk_widget_show (plug->priv->auth_prompt_entry);
+
+	/* PAM asks whether or not the dialog shows: a prompt doesn't open it. */
+	if (! gs_lock_plug_is_open (plug))
+	{
+		return;
+	}
 
 	if (! gtk_widget_has_focus (plug->priv->auth_prompt_entry))
 	{
@@ -1443,7 +1404,6 @@ gs_lock_plug_disable_prompt (GSLockPlug *plug)
 	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
 
 	g_clear_pointer (&plug->priv->prompt, g_free);
-	plug->priv->prompt_put_away = FALSE;
 
 	/* gtk_widget_hide (plug->priv->auth_prompt_entry); */
 	/* gtk_widget_hide (plug->priv->auth_prompt_label); */
@@ -1452,6 +1412,12 @@ gs_lock_plug_disable_prompt (GSLockPlug *plug)
 	/* gtk_widget_hide (plug->priv->auth_unlock_button); */
 
 	set_default_button (plug, plug->priv->auth_cancel_button);
+
+	/* With no prompt to type at, the dialog still hides after its time. */
+	if (gs_lock_plug_is_open (plug))
+	{
+		restart_cancel_timeout (plug);
+	}
 }
 
 void
@@ -1481,17 +1447,6 @@ toplevel_key_press (GtkWidget   *toplevel G_GNUC_UNUSED,
                     GdkEventKey *event,
                     GSLockPlug  *plug)
 {
-	/* A key asks a put-away prompt again, and is typed at it. */
-	if (plug->priv->prompt_put_away)
-	{
-		if (strcmp (event->string, "") != 0)
-		{
-			queue_key_event (plug, event);
-		}
-		gs_lock_plug_ask_prompt_again (plug);
-		return TRUE;
-	}
-
 	restart_cancel_timeout (plug);
 
 	/* if the input widget is visible and ready for input
@@ -1842,8 +1797,6 @@ load_theme (GSLockPlug *plug)
 
 	plug->priv->auth_face_image = GTK_WIDGET (gtk_builder_get_object(builder, "auth-face-image"));
 	plug->priv->auth_action_area = GTK_WIDGET (gtk_builder_get_object(builder, "auth-action-area"));
-	plug->priv->auth_time_label = GTK_WIDGET (gtk_builder_get_object(builder, "auth-time-label"));
-	plug->priv->auth_date_label = GTK_WIDGET (gtk_builder_get_object(builder, "auth-date-label"));
 	plug->priv->auth_realname_label = GTK_WIDGET (gtk_builder_get_object(builder, "auth-realname-label"));
 	plug->priv->auth_username_label = GTK_WIDGET (gtk_builder_get_object(builder, "auth-username-label"));
 	plug->priv->auth_prompt_label = GTK_WIDGET (gtk_builder_get_object(builder, "auth-prompt-label"));
@@ -1872,9 +1825,19 @@ load_theme (GSLockPlug *plug)
 		gtk_widget_set_no_show_all (plug->priv->auth_note_button, TRUE);
 	}
 
-	date_time_update (plug);
 	remove_tooltips (lock_dialog, NULL);
 	gtk_widget_show_all (lock_dialog);
+
+	/* The clock is the Idle view's. A theme's labels for one would show their templates. */
+	for (const char **id = (const char *[]) { "auth-time-label", "auth-date-label", NULL }; *id != NULL; id++)
+	{
+		GObject *label = gtk_builder_get_object (builder, *id);
+
+		if (label != NULL)
+		{
+			gtk_widget_hide (GTK_WIDGET (label));
+		}
+	}
 
 	plug->priv->status_message_label = GTK_WIDGET (gtk_builder_get_object(builder, "status-message-label"));
 	/* Hidden without a message, so a lock window's show_all mustn't show it. */
@@ -1927,9 +1890,10 @@ gs_lock_plug_init (GSLockPlug *plug)
 	/* The dialog's size, in the middle of the lock window, as in mate-screensaver's. */
 	gtk_widget_set_halign (GTK_WIDGET (plug), GTK_ALIGN_CENTER);
 	gtk_widget_set_valign (GTK_WIDGET (plug), GTK_ALIGN_CENTER);
+	/* Hidden in the Idle view, so a lock window's show_all mustn't show it. */
+	gtk_widget_set_no_show_all (GTK_WIDGET (plug), TRUE);
 
 	load_theme (plug);
-	plug->priv->datetime_timeout_id = g_timeout_add_seconds (1, G_SOURCE_FUNC (date_time_update), plug);
 
 	/* Layout indicator: libmatekbd's, on X11 alone. No show_all of a lock window's shows it. */
 	if (plug->priv->auth_prompt_kbd_layout_indicator != NULL)
@@ -2049,7 +2013,6 @@ gs_lock_plug_finalize (GObject *object)
 
 	remove_response_idle (plug);
 	remove_cancel_timeout (plug);
-	remove_datetime_timeout (plug);
 
 	G_OBJECT_CLASS (gs_lock_plug_parent_class)->finalize (object);
 }
