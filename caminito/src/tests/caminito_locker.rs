@@ -107,6 +107,8 @@ impl Locker {
             ("GIO_USE_VFS", "local".into()),
             ("LD_PRELOAD", "libpam_wrapper.so".into()),
             ("PAM_WRAPPER", "1".into()),
+            // glibc fills freed memory, so a prompt read after it's freed never looks right.
+            ("MALLOC_PERTURB_", "165".into()),
             ("PAM_WRAPPER_SERVICE_DIR", quoted(&self.path("pam.d"))),
         ];
         let mut env: Vec<(&str, String)> = env.to_vec();

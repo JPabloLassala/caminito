@@ -1406,8 +1406,6 @@ gs_lock_plug_enable_prompt (GSLockPlug *plug,
 
 	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
 
-	gs_debug ("Setting prompt to: %s", message);
-
 	/* The message may be the stored prompt itself, when it's asked again. */
 	prompt = g_strdup (message);
 	g_free (plug->priv->prompt);
@@ -1419,7 +1417,8 @@ gs_lock_plug_enable_prompt (GSLockPlug *plug,
 	gtk_widget_set_sensitive (plug->priv->auth_unlock_button, TRUE);
 	gtk_widget_show (plug->priv->auth_unlock_button);
 	set_default_button (plug, plug->priv->auth_unlock_button);
-	gtk_label_set_text (GTK_LABEL (plug->priv->auth_prompt_label), message);
+	gtk_label_set_text (GTK_LABEL (plug->priv->auth_prompt_label), prompt);
+	gs_debug ("Setting prompt to: %s", gtk_label_get_text (GTK_LABEL (plug->priv->auth_prompt_label)));
 	gtk_widget_show (plug->priv->auth_prompt_label);
 	gtk_entry_set_visibility (GTK_ENTRY (plug->priv->auth_prompt_entry), visible);
 	gtk_widget_set_sensitive (plug->priv->auth_prompt_entry, TRUE);
