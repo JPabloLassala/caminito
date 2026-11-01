@@ -101,6 +101,7 @@ use crate::input::accessx;
 use crate::input::bindings::accelerators::Grabs;
 use crate::input::devices::InputDevices;
 use crate::input::frame::FramePointer;
+use crate::input::keyboard::KeyboardLayout;
 use crate::input::repeat::Repeat;
 use crate::input::{GrabKind, InputSerials, PointerFocus};
 use crate::intellihide::IntellihideSlides;
@@ -386,6 +387,11 @@ pub struct Caminito {
     pub(crate) input_devices: InputDevices,
     /// NumLock's state when the refresh pass last looked, so a change is written back once.
     pub(crate) numlock_seen: bool,
+    /// The layouts the seat keyboard's keymap was compiled from, comma-joined: not the
+    /// settings', when those didn't compile. Empty for xkbcommon's default.
+    pub(crate) keymap_layouts: String,
+    /// The active layout, as the refresh pass last read it (CMN-299).
+    pub(crate) keyboard_layout: KeyboardLayout,
     /// AccessX's filter, stage 2 of the keyboard path (134).
     pub(crate) accessx: accessx::Filter,
 
@@ -680,6 +686,8 @@ impl State {
         self.caminito.advance_session();
         // Before the views and the focus, which follow the lock.
         self.caminito.refresh_lock();
+        // Before the views, which publish it.
+        self.refresh_keyboard_layout();
         self.caminito.refresh_views();
         // Before the pointer's focus, which a keyboard move or resize (156) and a manual
         // placement (154) take.
@@ -933,6 +941,7 @@ impl Caminito {
             keyboard_settings.repeat_rate,
         );
         let xkb = crate::input::keyboard::xkb_config(&settings.keymap);
+        let mut keymap_layouts = settings.keymap.layouts.clone();
         let keyboard = seat
             .add_keyboard(xkb, delay, rate)
             .or_else(|err| {
@@ -940,6 +949,7 @@ impl Caminito {
                     "can't compile the keymap {:?}: {err}; using xkbcommon's default",
                     settings.keymap
                 );
+                keymap_layouts.clear();
                 seat.add_keyboard(XkbConfig::default(), delay, rate)
             })
             .expect("the default xkb keymap compiles");
@@ -1100,6 +1110,8 @@ impl Caminito {
             frame_context,
             input_devices: InputDevices::new(settings.devices),
             numlock_seen,
+            keymap_layouts,
+            keyboard_layout: KeyboardLayout::default(),
             accessx: accessx::Filter::new(settings.accessx),
             settings,
             settings_thread,

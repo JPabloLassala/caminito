@@ -46,6 +46,8 @@
  *  - the buttons and the status message, from gs-prefs.c's keys as gs-monitor.c's
  *    _gs_monitor_update_from_prefs gives them to the windows, and the status message from
  *    gs-watcher.c, as gs-monitor.c's on_watcher_status_message_changed;
+ *  - the keyboard layout, from org.mate.Caminito's KeyboardLayout, where mate-screensaver's
+ *    libmatekbd indicator read X11's (CMN-299);
  *  - Log Out only once logout-delay has passed, as gs-window-x11.c's is_logout_enabled. The
  *    daemon asks when it starts a dialog, and its timer starts when its windows show; the
  *    locker's dialog lasts the whole lock, so the button shows once the delay has passed
@@ -420,6 +422,58 @@ static void prefs_changed_cb(GSPrefs* changed_prefs G_GNUC_UNUSED, gpointer data
 static void on_watcher_status_message_changed(GSWatcher* changed_watcher G_GNUC_UNUSED, GParamSpec* pspec G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 {
 	update_status_message();
+}
+
+/* Tells the dialog what KeyboardLayout says, and hides the indicator for one layout, or with
+ * no Caminito to ask, which `caminito` NULL is for a bus that can't be reached. */
+static void update_kbd_layout(GDBusProxy* caminito)
+{
+	static gboolean told_dialog = FALSE;
+	static char* shown = NULL;
+	g_autoptr(GVariant) layout = NULL;
+	const char* name = NULL;
+	gboolean multiple = FALSE;
+
+	if (caminito != NULL)
+	{
+		layout = g_dbus_proxy_get_cached_property(caminito, "KeyboardLayout");
+	}
+	if (layout != NULL && g_variant_is_of_type(layout, G_VARIANT_TYPE("a{sv}"))
+	    && g_variant_lookup(layout, "multiple", "b", &multiple) && multiple)
+	{
+		g_variant_lookup(layout, "name", "&s", &name);
+	}
+
+	/* The other properties' changes come here too, the sun's each minute. */
+	if (told_dialog && g_strcmp0(shown, name) == 0)
+	{
+		return;
+	}
+	told_dialog = TRUE;
+	g_free(shown);
+	shown = g_strdup(name);
+
+	gs_lock_plug_set_kbd_layout(GS_LOCK_PLUG(plug), name);
+	gs_debug("Keyboard layout indicator: %s", name != NULL ? name : "(hidden)");
+}
+
+static void got_caminito_proxy(GObject* source G_GNUC_UNUSED, GAsyncResult* result, gpointer data G_GNUC_UNUSED)
+{
+	g_autoptr(GError) error = NULL;
+	GDBusProxy* caminito = g_dbus_proxy_new_for_bus_finish(result, &error);
+
+	if (caminito == NULL)
+	{
+		gs_debug("Can't ask Caminito for the keyboard layout: %s", error->message);
+		update_kbd_layout(NULL);
+		return;
+	}
+
+	/* It lasts as long as the locker. The cached properties go with Caminito's name, and come
+	 * back with a new owner's before g-name-owner is notified. */
+	g_signal_connect(caminito, "g-properties-changed", G_CALLBACK(update_kbd_layout), NULL);
+	g_signal_connect(caminito, "notify::g-name-owner", G_CALLBACK(update_kbd_layout), NULL);
+	update_kbd_layout(caminito);
 }
 
 /* A lock window's background, at the size it was made for. */
@@ -1059,6 +1113,16 @@ int main(int argc, char** argv)
 	g_signal_connect(watcher, "notify::status-message", G_CALLBACK(on_watcher_status_message_changed), NULL);
 	timer = g_timer_new();
 	update_from_prefs();
+	/* Asynchronous, so that the dialog never waits for Caminito's answer. */
+	g_dbus_proxy_new_for_bus(G_BUS_TYPE_SESSION,
+	                         G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
+	                         NULL,
+	                         "org.mate.Caminito",
+	                         "/org/mate/Caminito",
+	                         "org.mate.Caminito",
+	                         NULL,
+	                         got_caminito_proxy,
+	                         NULL);
 
 	load_css();
 	g_signal_connect_swapped(plug, "size-allocate", G_CALLBACK(queue_fit_clocks), NULL);

@@ -30,10 +30,11 @@ use super::fixture::{
     BTN_LEFT, Bus, Fixture, KEY_A, KEY_ENTER, KEY_ESC, KEY_LEFTALT, KEY_LEFTSHIFT, KEY_S,
     test_schemas,
 };
+use super::keymap::strings;
 use super::locker::fixture_with;
 use crate::output::output_geometry;
 use crate::settings::Value;
-use crate::settings::translate::CAMINITO;
+use crate::settings::translate::{CAMINITO, KEYBOARD_XKB};
 
 /// The password of the stand-in service, typed as three presses of `KEY_A`.
 const PASSWORD: &str = "aaa";
@@ -1301,4 +1302,83 @@ logout-command=''
     );
     f.dispatch_until_explained(|_| locker.count("Switch User: enabled") >= 1, seen);
     f.dispatch_until_explained(|_| locker.count("Log Out: hidden") >= 1, seen);
+}
+
+/// The debug line of the keyboard layout the dialog's indicator shows.
+fn indicator(name: &str) -> String {
+    format!("Keyboard layout indicator: {name}")
+}
+
+/// The debug line of a hidden keyboard layout indicator.
+const INDICATOR_HIDDEN: &str = "Keyboard layout indicator: (hidden)";
+
+/// Caminito with `names` as its layouts, switched by Alt+Shift, and caminito-locker as its
+/// `locker-command`, asked to lock. `start_dbus` has Caminito answer on the bus or not, as
+/// it needs the name that the Locker looks for.
+fn locked_with_layouts(names: &[&str], start_dbus: fn(&mut Fixture)) -> (Fixture, Locker) {
+    let locker = Locker::new();
+    locker.set_settings("");
+    let options = strings(&["grp\tgrp:alt_shift_toggle"]);
+    let mut f = Fixture::with_settings(vec![
+        (
+            CAMINITO,
+            "locker-command".into(),
+            Value::StrList(locker.command()),
+        ),
+        (KEYBOARD_XKB, "layouts".into(), strings(names)),
+        (KEYBOARD_XKB, "options".into(), options),
+    ]);
+    f.add_output((1920, 1080), 1.0);
+    f.dispatch();
+    start_dbus(&mut f);
+    assert!(f.state.request_lock());
+    locker.connect(&mut f);
+    (f, locker)
+}
+
+fn answering(f: &mut Fixture) {
+    f.start_dbus_with_names();
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_layout_indicator_shows_with_two_layouts_and_follows_the_switch() {
+    let (mut f, locker) = locked_with_layouts(&["us", "es"], answering);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|_| locker.count(&indicator("us")) == 1, seen);
+
+    f.chord(&[KEY_LEFTALT, KEY_LEFTSHIFT]);
+    f.dispatch_until_explained(|_| locker.count(&indicator("es")) == 1, seen);
+
+    f.chord(&[KEY_LEFTALT, KEY_LEFTSHIFT]);
+    f.dispatch_until_explained(|_| locker.count(&indicator("us")) == 2, seen);
+    assert_eq!(locker.count(INDICATOR_HIDDEN), 0, "{}", locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_layout_indicator_hides_with_one_layout_until_a_second_is_set() {
+    let (mut f, locker) = locked_with_layouts(&["de"], answering);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|_| locker.count(INDICATOR_HIDDEN) == 1, seen);
+    assert_eq!(locker.count(&indicator("de")), 0, "{}", locker.seen());
+
+    // Showing it now says that the hidden one was Caminito's answer, not its absence.
+    f.set_setting(KEYBOARD_XKB, "layouts", strings(&["de", "fr"]));
+    f.dispatch_until_explained(|_| locker.count(&indicator("de")) == 1, seen);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_layout_indicator_hides_when_caminito_cant_be_asked_and_the_dialog_still_opens() {
+    // The names are held and not served, so no other fixture answers the Locker meanwhile.
+    let (mut f, locker) = locked_with_layouts(&["us", "es"], Fixture::reserve_names);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
+    f.dispatch_until_explained(|_| locker.count(INDICATOR_HIDDEN) == 1, seen);
+
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
+    tap(&mut f, KEY_A);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == 1, seen);
+    assert_eq!(locker.count(&indicator("us")), 0, "{}", locker.seen());
 }

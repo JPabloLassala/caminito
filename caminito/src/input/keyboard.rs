@@ -1,11 +1,21 @@
 //! The seat keyboard's settings (09, 53, 54): its keymap, the repeat info clients get, and
-//! NumLock restored at start-up and written back, on every backend.
+//! NumLock restored at start-up and written back, and the active layout as it's published
+//! (CMN-299), on every backend.
 
 use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
 
 use crate::settings::Value;
 use crate::settings::translate::{KEYBOARD, Keyboard, Keymap};
 use crate::state::{Caminito, State};
+
+/// The keyboard's active layout, as `org.mate.Caminito` publishes it (CMN-299).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct KeyboardLayout {
+    /// Its short name.
+    pub(crate) name: String,
+    /// Whether the keymap has more than one layout.
+    pub(crate) multiple: bool,
+}
 
 /// The keymap's names for xkbcommon, with rules `evdev` (09). Empty options are left to
 /// xkbcommon, like the other parts, rather than meaning none.
@@ -41,6 +51,7 @@ impl State {
             tracing::warn!("can't compile the keymap {keymap:?}: {err}; keeping the current one");
             return;
         }
+        self.caminito.keymap_layouts = keymap.layouts.clone();
         let mut mods = keyboard.modifier_state();
         if (mods.num_lock, mods.caps_lock) != (locks.num_lock, locks.caps_lock) {
             mods.num_lock = locks.num_lock;
@@ -48,6 +59,26 @@ impl State {
             keyboard.set_modifier_state(mods);
             keyboard.advertise_modifier_state(self);
         }
+    }
+
+    /// Reads the active layout, from the refresh pass, as only `State` can ask the keyboard.
+    /// The short name is the one the compiled keymap's layouts were asked for by, since
+    /// xkbcommon has only the long one, which stands in for a keymap with none.
+    pub(crate) fn refresh_keyboard_layout(&mut self) {
+        let keyboard = self.caminito.seat.get_keyboard().unwrap();
+        let layouts = self.caminito.keymap_layouts.clone();
+        self.caminito.keyboard_layout = keyboard.with_xkb_state(self, |context| {
+            let xkb = context.xkb().lock().unwrap();
+            let active = xkb.active_layout();
+            let named = layouts.split(',').nth(active.0 as usize);
+            KeyboardLayout {
+                name: named
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| xkb.layout_name(active))
+                    .to_owned(),
+                multiple: xkb.layouts().count() > 1,
+            }
+        });
     }
 }
 

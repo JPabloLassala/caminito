@@ -4,7 +4,8 @@
 //! grabs (98), the window a window screenshot is of (104), the global menu (110), the
 //! menu claim (115), Night Light (137) and its pause (140), the sun's position (215),
 //! bringing an app forward for caminito-notifications (ADR 0054), and what that daemon turns
-//! Do Not Disturb on for, a fullscreen window under the pointer and a screencast (CMN-264).
+//! Do Not Disturb on for, a fullscreen window under the pointer and a screencast (CMN-264),
+//! and the keyboard layout the Unlock dialog shows (CMN-299).
 
 use std::collections::HashMap;
 
@@ -18,6 +19,7 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue, Str};
 
 use super::global_menu::{GlobalMenu, Published};
 use super::{Callers, caller};
+use crate::input::keyboard::KeyboardLayout;
 use crate::night_light;
 use crate::output::{primary, saved};
 use crate::state::{Caminito, SEAT};
@@ -84,6 +86,8 @@ pub(crate) enum Request {
     FullscreenWindows(oneshot::Sender<Vec<String>>),
     /// Reads `Screencasting`.
     Screencasting(oneshot::Sender<bool>),
+    /// Reads `KeyboardLayout`.
+    KeyboardLayout(oneshot::Sender<KeyboardLayout>),
 }
 
 /// A property Caminito signals itself, when it changes without a caller writing it, in the
@@ -116,11 +120,13 @@ enum Property {
     FullscreenWindows,
     /// A capture session opened, or the last one closed (CMN-264).
     Screencasting,
+    /// The keyboard's layout was switched, or the keymap changed (CMN-299).
+    KeyboardLayout,
 }
 
 impl Property {
     /// Each property, in the enum's order, which `Heard` indexes by.
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::PrimaryOutput,
         Self::ShowingDesktop,
         Self::NightLight,
@@ -131,6 +137,7 @@ impl Property {
         Self::PointerOutputFullscreenWindow,
         Self::FullscreenWindows,
         Self::Screencasting,
+        Self::KeyboardLayout,
     ];
     /// That `ALL` is in the enum's order, checked as `Heard` is first made, so that each
     /// property's value is at its own index.
@@ -160,6 +167,7 @@ impl Property {
             }
             Self::FullscreenWindows => Value::FullscreenWindows(caminito.fullscreen_windows()),
             Self::Screencasting => Value::Screencasting(caminito.is_screencasting()),
+            Self::KeyboardLayout => Value::KeyboardLayout(caminito.keyboard_layout.clone()),
         }
     }
 }
@@ -177,6 +185,7 @@ enum Value {
     PointerOutputFullscreenWindow(String),
     FullscreenWindows(Vec<String>),
     Screencasting(bool),
+    KeyboardLayout(KeyboardLayout),
 }
 
 /// The properties as `org.mate.Caminito`'s callers last heard them: a value for each, by
@@ -485,6 +494,24 @@ impl CaminitoInterface {
         super::ask(&self.requests, Request::Screencasting).await
     }
 
+    /// The keyboard's active layout, as the Unlock dialog shows it (CMN-299). It's kept up
+    /// to date while the session is locked too:
+    ///
+    /// - `name` (`s`): its short name, as `org.mate.peripherals-keyboard-xkb.kbd`'s `layouts`
+    ///   has it without the variant, such as `es`, so two variants of a layout have the same
+    ///   name and a switch between them isn't signalled. A keymap with no layouts named has
+    ///   xkbcommon's long name instead.
+    /// - `multiple` (`b`): whether the keymap has more than one layout.
+    #[zbus(property)]
+    async fn keyboard_layout(&self) -> zbus::fdo::Result<HashMap<String, OwnedValue>> {
+        let layout = super::ask(&self.requests, Request::KeyboardLayout).await?;
+        let name = Str::from(layout.name).into();
+        Ok(HashMap::from([
+            ("name".into(), name),
+            ("multiple".into(), layout.multiple.into()),
+        ]))
+    }
+
     /// Turns Night Light on if it's off, and off if it's on, by writing
     /// `night-light-enabled`. It's what a shortcut the user binds to
     /// `caminito-displays --toggle-night-light` calls.
@@ -639,6 +666,9 @@ impl Caminito {
             }
             Request::Screencasting(reply) => {
                 let _ = reply.send(self.is_screencasting());
+            }
+            Request::KeyboardLayout(reply) => {
+                let _ = reply.send(self.keyboard_layout.clone());
             }
         }
     }
@@ -806,6 +836,7 @@ impl Caminito {
                         interface.fullscreen_windows_changed(emitter).await
                     }
                     Property::Screencasting => interface.screencasting_changed(emitter).await,
+                    Property::KeyboardLayout => interface.keyboard_layout_changed(emitter).await,
                 }
             };
             if let Err(err) = signalled.await {
