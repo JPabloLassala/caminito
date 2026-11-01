@@ -179,10 +179,10 @@ impl Schedule {
         let Some(today) = local_time(now, zone) else {
             return false;
         };
-        let ends_after = i32::from(self.to < self.from);
+        let days_to_end = i32::from(self.to < self.from);
         [-1, 0].into_iter().any(|days| {
             let start = time_on(&today, days, self.from, zone);
-            let end = time_on(&today, days + ends_after, self.to, zone);
+            let end = time_on(&today, days + days_to_end, self.to, zone);
             start
                 .zip(end)
                 .is_some_and(|(start, end)| (start..end).contains(&now))
@@ -427,7 +427,8 @@ fn local_time(now: u64, zone: &glib::TimeZone) -> Option<glib::DateTime> {
 }
 
 /// When the time of day `minute` is in `zone`, `days` after `today`. GLib places a time the
-/// clocks repeat at its second occurrence, and one they skip at or after the change.
+/// clocks repeat at its standard-time occurrence, the second in most zones, and one they skip
+/// at or after the change.
 fn time_on(today: &glib::DateTime, days: i32, minute: u32, zone: &glib::TimeZone) -> Option<u64> {
     let minute = i32::try_from(minute).ok()?;
     let (year, month, day) = today.add_days(days).ok()?.ymd();
@@ -515,9 +516,13 @@ mod tests {
     /// 13:46:40 on 12 January 1970, in UTC.
     const NOW: u64 = 1_000_000;
 
-    fn utc_time(day: i32, hour: i32, minute: i32) -> u64 {
-        let time = glib::DateTime::from_utc(1970, 1, day, hour, minute, 0.0).unwrap();
+    fn utc_date_time(month: i32, day: i32, hour: i32, minute: i32) -> u64 {
+        let time = glib::DateTime::from_utc(1970, month, day, hour, minute, 0.0).unwrap();
         u64::try_from(time.to_unix()).unwrap()
+    }
+
+    fn utc_time(day: i32, hour: i32, minute: i32) -> u64 {
+        utc_date_time(1, day, hour, minute)
     }
 
     #[test]
@@ -651,14 +656,12 @@ mod tests {
     /// The time in UTC on the night the clocks go back: 00:00 to 01:00 is the first 02:00 to
     /// 03:00 there, and 01:00 to 02:00 the second.
     fn clocks_back(hour: i32, minute: i32) -> u64 {
-        let time = glib::DateTime::from_utc(1970, 10, 25, hour, minute, 0.0).unwrap();
-        u64::try_from(time.to_unix()).unwrap()
+        utc_date_time(10, 25, hour, minute)
     }
 
     /// The time in UTC on the night the clocks go forward: 01:00 is 03:00 there.
     fn clocks_forward(hour: i32, minute: i32) -> u64 {
-        let time = glib::DateTime::from_utc(1970, 3, 29, hour, minute, 0.0).unwrap();
-        u64::try_from(time.to_unix()).unwrap()
+        utc_date_time(3, 29, hour, minute)
     }
 
     fn scheduled(from: u32, to: u32) -> Triggers {
@@ -687,6 +690,26 @@ mod tests {
                 "{hour}:{minute} in UTC"
             );
         }
+    }
+
+    #[test]
+    fn turning_it_off_in_the_repeated_hour_holds_it_off_until_the_next_nights_start() {
+        let zone = zone_with_clock_changes();
+        let mut sources = Sources::default();
+        let triggers = scheduled(22 * 60, 2 * 60 + 30);
+        sources.turn_off(&triggers, clocks_back(0, 15), &zone);
+        for (hour, minute) in [(0, 15), (1, 15), (1, 30), (20, 59)] {
+            assert_eq!(
+                sources.effective(&triggers, clocks_back(hour, minute), &zone),
+                Effective::Off,
+                "{hour}:{minute} in UTC"
+            );
+        }
+        // 22:00 there is 21:00 in UTC with the clocks back, and 02:30 the next night 01:30.
+        assert_eq!(
+            sources.effective(&triggers, clocks_back(21, 0), &zone),
+            on(Reason::Schedule, Some(clocks_back(1, 30) + 24 * 60 * 60))
+        );
     }
 
     #[test]
