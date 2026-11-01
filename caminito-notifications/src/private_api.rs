@@ -2,9 +2,9 @@
 //! `/org/mate/Caminito/Notifications`, on the name the program owns as a single-instance
 //! application. Its clients are the Notifications applet and the Dock applet, the Locker for
 //! the Lock screen's list (CMN-300), and Caminito for Super+N and Do Not Disturb's shortcut,
-//! which all ship in the same package, so it's unversioned. It opens the settings window (CMN-261), and serves the Notification history
-//! (CMN-259), the Notification center's calls (CMN-285) and Do Not Disturb (CMN-263), which
-//! the server answers.
+//! which all ship in the same package, so it's unversioned. It opens the settings window
+//! (CMN-261), and serves the Notification history (CMN-259), the Notification center's calls
+//! (CMN-285), Do Not Disturb (CMN-263) and the Lock screen's list, which the server answers.
 
 use gio::glib::{self, Variant};
 

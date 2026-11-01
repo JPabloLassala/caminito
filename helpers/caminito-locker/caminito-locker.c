@@ -1025,7 +1025,7 @@ static gboolean place_notifications(gpointer data G_GNUC_UNUSED)
 	}
 	/* The newest is nearest the corner. */
 	gs_notifications_set_newest_last(notifications, !narrow && !top);
-	visible = gs_notifications_get_count(notifications) > 0 && !(narrow && dialog_here);
+	visible = gs_notifications_get_count() > 0 && !(narrow && dialog_here);
 	if (visible != gtk_widget_get_visible(notifications))
 	{
 		gs_debug("Notifications are %s", visible ? "shown" : "hidden");

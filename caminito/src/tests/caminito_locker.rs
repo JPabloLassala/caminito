@@ -1768,6 +1768,8 @@ fn a_notification_does_not_wake_a_blanked_output() {
 
     daemon.list(vec![entry("Mail", "Ana", "Lunch?")]);
     f.dispatch_until_explained(|_| locker.count("Notifications: 1 shown") == 1, seen);
+    // Nothing should happen: a wake comes within a few frames of the locker's new list, far
+    // sooner than this.
     f.dispatch_for(std::time::Duration::from_millis(300));
 
     // The list is in the locker's window, which a blanked output doesn't show.

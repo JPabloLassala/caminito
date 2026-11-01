@@ -711,7 +711,9 @@ fn take(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -> 
     let replaced = live || guard.history.get(replaces).is_some();
     let id = if replaced { replaces } else { guard.next_id() };
     guard.remember(id, &notification, now);
+    // Both as the clock and Caminito have them now, not as their signals were last handled.
     guard.refresh_do_not_disturb();
+    guard.refresh_locked();
     guard.track_for_lock_screen(id, &notification, &app);
 
     // A bubble on screen is replaced whatever the Delivery is now.

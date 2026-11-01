@@ -28,7 +28,7 @@ void gs_notifications_start(GtkWidget *list, GSNotificationsChanged changed);
 void gs_notifications_set_newest_last(GtkWidget *list, gboolean newest_last);
 
 /* How many entries the list shows. */
-guint gs_notifications_get_count(GtkWidget *list);
+guint gs_notifications_get_count(void);
 
 G_END_DECLS
 

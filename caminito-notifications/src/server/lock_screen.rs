@@ -19,16 +19,18 @@ use super::{State, emit_on};
 use crate::markup;
 use crate::notification::Notification;
 use crate::private_api::{INTERFACE_NAME as PRIVATE_INTERFACE, PATH as PRIVATE_PATH};
-use crate::settings::{AppSettings, LOCK_SCREEN, LockScreen, NO_PREVIEW, PREVIEWS};
+use crate::settings::{AppSettings, Delivery, LOCK_SCREEN, LockScreen, NO_PREVIEW, PREVIEWS};
 
 /// Caminito's property that says whether the session is locked.
 pub(super) const LOCKED: &str = "Locked";
 
 /// How many notifications the list holds. The newest stay.
 const MAX_ENTRIES: usize = 8;
-/// The most characters of an app's name, of a summary and of a body.
+/// The most characters of an app's name.
 const MAX_APP: usize = 60;
+/// The most characters of a summary.
 const MAX_SUMMARY: usize = 120;
+/// The most characters of a body.
 const MAX_BODY: usize = 300;
 
 /// An entry as the Locker gets it: the app, the summary and the body.
@@ -99,13 +101,13 @@ impl State {
         if !self.lock_screen.locked {
             return;
         }
-        let bubbles = app.delivery == crate::settings::Delivery::Bubble
+        let bubbles = app.delivery == Delivery::Bubble
             && (!self.do_not_disturb_now.is_on() || self.breaks_through(notification));
-        let arrived = &mut self.lock_screen.arrived;
+        let list = &mut self.lock_screen.arrived;
         if !bubbles {
-            arrived.retain(|(arrived, _)| *arrived != id);
-        } else if !arrived.iter().any(|(arrived, _)| *arrived == id) {
-            arrived.push((id, notification.settings_key.clone()));
+            list.retain(|(held, _)| *held != id);
+        } else if !list.iter().any(|(held, _)| *held == id) {
+            list.push((id, notification.settings_key.clone()));
         }
     }
 
@@ -140,6 +142,11 @@ impl State {
 
     /// Tells the Locker to ask again if the list isn't what it last heard.
     pub(super) fn refresh_lock_screen(&mut self) {
+        // What the history let go of, by its limits or its week, is gone from the list too.
+        let history = &self.history;
+        self.lock_screen
+            .arrived
+            .retain(|(id, _)| history.get(*id).is_some());
         let list = self.lock_screen_list();
         if list == self.lock_screen.told {
             return;

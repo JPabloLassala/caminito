@@ -251,7 +251,7 @@ void gs_notifications_set_newest_last(GtkWidget* list, gboolean last)
 	g_list_free(children);
 }
 
-guint gs_notifications_get_count(GtkWidget* list G_GNUC_UNUSED)
+guint gs_notifications_get_count(void)
 {
 	return count;
 }

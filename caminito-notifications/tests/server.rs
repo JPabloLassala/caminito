@@ -630,7 +630,9 @@ impl Daemon<'_> {
             .collect()
     }
 
-    /// Caminito locks the session, and the daemon has heard of it.
+    /// Caminito locks the session, and the daemon has heard of it. Nothing the daemon does
+    /// tells that it has, and the signal crosses the bus in a millisecond or two, so `QUIET`
+    /// is many times what it needs.
     fn lock(&self, caminito: &FakeCaminito) {
         caminito.set("Locked", true);
         self.bus.run_for(QUIET);
