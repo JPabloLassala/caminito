@@ -28,10 +28,10 @@ typedef struct
   const char *typed;
   /* How long the dialog is cancelled or timed out before it types: it has no answer for
      PAM then, and the conversation waits. */
-  guint       asleep_msec;
-  /* The failures pam_faillock had counted when the dialog woke. */
-  guint       failures_asleep;
-  gboolean    slept;
+  guint       wait_msec;
+  /* The failures pam_faillock had counted when the wait ended. */
+  guint       failures_waiting;
+  gboolean    waited;
   /* Each message the conversation gave the dialog, as "STYLE: message". */
   GPtrArray  *messages;
 } Dialog;
@@ -74,7 +74,7 @@ failures (void)
 }
 
 static gboolean
-wake (gpointer data)
+stop_waiting (gpointer data)
 {
   g_main_loop_quit (data);
   return G_SOURCE_REMOVE;
@@ -96,15 +96,15 @@ answer (GSAuthMessageStyle style,
   *response = NULL;
   if (style == GS_AUTH_MESSAGE_PROMPT_ECHO_OFF || style == GS_AUTH_MESSAGE_PROMPT_ECHO_ON)
     {
-      if (dialog->asleep_msec > 0)
+      if (dialog->wait_msec > 0)
         {
           GMainLoop *loop = g_main_loop_new (NULL, FALSE);
 
-          g_timeout_add (dialog->asleep_msec, wake, loop);
+          g_timeout_add (dialog->wait_msec, stop_waiting, loop);
           g_main_loop_run (loop);
           g_main_loop_unref (loop);
-          dialog->slept = TRUE;
-          dialog->failures_asleep = failures ();
+          dialog->waited = TRUE;
+          dialog->failures_waiting = failures ();
         }
       *response = g_strdup (dialog->typed);
       return *response != NULL;
@@ -115,7 +115,7 @@ answer (GSAuthMessageStyle style,
 /* Runs the conversation as the dialog would, with `typed` at the prompt. */
 static gboolean
 verify_after (const char *typed,
-              guint       asleep_msec,
+              guint       wait_msec,
               Dialog     *dialog,
               GError    **error)
 {
@@ -123,7 +123,7 @@ verify_after (const char *typed,
 
   /* Each conversation starts from no failures. */
   g_unlink (tally);
-  *dialog = (Dialog) { typed, asleep_msec, 0, FALSE, g_ptr_array_new_with_free_func (g_free) };
+  *dialog = (Dialog) { typed, wait_msec, 0, FALSE, g_ptr_array_new_with_free_func (g_free) };
 
   return gs_auth_verify_user (g_get_user_name (), ":0", answer, dialog, error);
 }
@@ -221,8 +221,8 @@ only_a_submitted_password_ends_the_conversation (void)
 
   g_assert_true (verify_after (PASSWORD, 300, &dialog, &error));
   g_assert_no_error (error);
-  g_assert_true (dialog.slept);
-  g_assert_cmpuint (dialog.failures_asleep, ==, 0);
+  g_assert_true (dialog.waited);
+  g_assert_cmpuint (dialog.failures_waiting, ==, 0);
   g_assert_cmpuint (failures (), ==, 0);
   /* The prompt was asked once: the conversation wasn't restarted for it. */
   g_assert_cmpuint (count_message (dialog.messages, "echo off: Password: "), ==, 1);
@@ -238,7 +238,7 @@ a_wrong_password_after_the_wait_is_one_failure (void)
 
   g_assert_false (verify_after ("a wrong one", 300, &dialog, &error));
   g_assert_error (error, GS_AUTH_ERROR, GS_AUTH_ERROR_AUTH_ERROR);
-  g_assert_cmpuint (dialog.failures_asleep, ==, 0);
+  g_assert_cmpuint (dialog.failures_waiting, ==, 0);
   g_assert_cmpuint (failures (), ==, 1);
   g_ptr_array_unref (dialog.messages);
 }

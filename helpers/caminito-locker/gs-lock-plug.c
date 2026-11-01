@@ -128,11 +128,11 @@ struct GSLockPlugPrivate
 	guint        auth_check_idle_id;
 	guint        response_idle_id;
 
-	/* The prompt PAM asked and has had no answer to, kept while the dialog is asleep (a
-	   timeout or Cancel): the next key or click asks it again. */
+	/* The prompt PAM asked and has had no answer to, kept while it is put away (a timeout
+	   or Cancel): the next key or click asks it again. */
 	char        *prompt;
 	gboolean     prompt_visible;
-	gboolean     asleep;
+	gboolean     prompt_put_away;
 
 	GList       *key_events;
 };
@@ -382,7 +382,7 @@ static void restart_cancel_timeout (GSLockPlug *plug);
  * entry cleared, and the conversation stays open in its thread until the next key or click
  * asks the same prompt again (CMN-256). Only a submitted password is a response. */
 static void
-gs_lock_plug_sleep (GSLockPlug *plug)
+put_prompt_away (GSLockPlug *plug)
 {
 	remove_cancel_timeout (plug);
 	remove_response_idle (plug);
@@ -394,18 +394,24 @@ gs_lock_plug_sleep (GSLockPlug *plug)
 	}
 
 	gs_debug ("The prompt is put away, the conversation stays open");
-	plug->priv->asleep = TRUE;
+	plug->priv->prompt_put_away = TRUE;
 	gtk_entry_set_text (GTK_ENTRY (plug->priv->auth_prompt_entry), "");
 	set_status_text (plug, "");
 	gs_lock_plug_set_sensitive (plug, FALSE);
+	gtk_widget_hide (plug->priv->auth_prompt_label);
+	gtk_widget_hide (plug->priv->auth_prompt_entry);
+	gtk_widget_hide (plug->priv->auth_unlock_button);
+	/* What was typed before it went away isn't for the prompt asked again. */
+	g_list_free_full (plug->priv->key_events, (GDestroyNotify) gdk_event_free);
+	plug->priv->key_events = NULL;
 }
 
 void
-gs_lock_plug_wake (GSLockPlug *plug)
+gs_lock_plug_ask_prompt_again (GSLockPlug *plug)
 {
 	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
 
-	if (! plug->priv->asleep)
+	if (! plug->priv->prompt_put_away)
 	{
 		return;
 	}
@@ -433,7 +439,7 @@ gs_lock_plug_response (GSLockPlug *plug,
 
 	if (response_id == GS_LOCK_PLUG_RESPONSE_CANCEL)
 	{
-		gs_lock_plug_sleep (plug);
+		put_prompt_away (plug);
 		return;
 	}
 
@@ -474,20 +480,11 @@ dialog_timed_out (gpointer user_data)
 {
 	GSLockPlug *plug = user_data;
 
-	gs_debug ("The dialog timed out, which cancels the prompt");
-	gs_lock_plug_set_sensitive (plug, FALSE);
-	set_status_text (plug, _("Time has expired."));
+	gs_debug ("The dialog timed out");
+	/* The source ends with this return. */
+	plug->priv->cancel_timeout_id = 0;
+	gs_lock_plug_response (plug, GS_LOCK_PLUG_RESPONSE_CANCEL);
 
-	if (plug->priv->response_idle_id != 0)
-	{
-		g_warning ("Response idle ID already set but shouldn't be");
-	}
-
-	remove_response_idle (plug);
-
-	plug->priv->response_idle_id = g_timeout_add (2000,
-	                                              response_cancel_idle_cb,
-	                                              plug);
 	return FALSE;
 }
 
@@ -1405,18 +1402,18 @@ gs_lock_plug_enable_prompt (GSLockPlug *plug,
                             const char *message,
                             gboolean    visible)
 {
+	char *prompt;
+
 	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
 
 	gs_debug ("Setting prompt to: %s", message);
 
-	/* The message may be the stored prompt itself, from a wake. */
-	if (message != plug->priv->prompt)
-	{
-		g_free (plug->priv->prompt);
-		plug->priv->prompt = g_strdup (message);
-	}
+	/* The message may be the stored prompt itself, when it's asked again. */
+	prompt = g_strdup (message);
+	g_free (plug->priv->prompt);
+	plug->priv->prompt = prompt;
 	plug->priv->prompt_visible = visible;
-	plug->priv->asleep = FALSE;
+	plug->priv->prompt_put_away = FALSE;
 	gs_lock_plug_set_sensitive (plug, TRUE);
 
 	gtk_widget_set_sensitive (plug->priv->auth_unlock_button, TRUE);
@@ -1447,7 +1444,7 @@ gs_lock_plug_disable_prompt (GSLockPlug *plug)
 	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
 
 	g_clear_pointer (&plug->priv->prompt, g_free);
-	plug->priv->asleep = FALSE;
+	plug->priv->prompt_put_away = FALSE;
 
 	/* gtk_widget_hide (plug->priv->auth_prompt_entry); */
 	/* gtk_widget_hide (plug->priv->auth_prompt_label); */
@@ -1486,13 +1483,13 @@ toplevel_key_press (GtkWidget   *toplevel G_GNUC_UNUSED,
                     GSLockPlug  *plug)
 {
 	/* A key asks a put-away prompt again, and is typed at it. */
-	if (plug->priv->asleep)
+	if (plug->priv->prompt_put_away)
 	{
 		if (strcmp (event->string, "") != 0)
 		{
 			queue_key_event (plug, event);
 		}
-		gs_lock_plug_wake (plug);
+		gs_lock_plug_ask_prompt_again (plug);
 		return TRUE;
 	}
 
@@ -1916,6 +1913,8 @@ entry_icon_clicked (GtkEntry       *entry,
 static void
 gs_lock_plug_init (GSLockPlug *plug)
 {
+	guint64 timeout;
+
 	plug->priv = gs_lock_plug_get_instance_private (plug);
 
 	clear_clipboards (plug);
@@ -1978,10 +1977,10 @@ gs_lock_plug_init (GSLockPlug *plug)
 
 	plug->priv->timeout = DIALOG_TIMEOUT_MSEC;
 	/* For the tests, which can't wait a minute for the timeout. */
-	if (g_getenv ("CAMINITO_LOCKER_DIALOG_TIMEOUT_MSEC") != NULL)
+	timeout = g_ascii_strtoull (g_getenv ("CAMINITO_LOCKER_DIALOG_TIMEOUT_MSEC") ?: "", NULL, 10);
+	if (timeout > 0 && timeout <= G_MAXUINT)
 	{
-		plug->priv->timeout = g_ascii_strtoull (g_getenv ("CAMINITO_LOCKER_DIALOG_TIMEOUT_MSEC"),
-		                                        NULL, 10);
+		plug->priv->timeout = timeout;
 	}
 
 	/* button press handler used to inhibit popup menu */

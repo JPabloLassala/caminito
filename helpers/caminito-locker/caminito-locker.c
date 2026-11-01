@@ -107,7 +107,6 @@ static char* request_response(GSLockPlug* plug, const char* prompt, gboolean vis
 	int response;
 	char* text;
 
-	gs_lock_plug_set_sensitive(plug, TRUE);
 	gs_lock_plug_enable_prompt(plug, prompt, visible);
 	response = gs_lock_plug_run(plug);
 
@@ -654,9 +653,9 @@ static gboolean move_dialog(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gp
 }
 
 /* A click asks the prompt again if the dialog's timeout or Cancel put it away. */
-static gboolean wake_dialog(GtkWidget* window G_GNUC_UNUSED, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+static gboolean ask_prompt_again(GtkWidget* window G_GNUC_UNUSED, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 {
-	gs_lock_plug_wake(GS_LOCK_PLUG(plug));
+	gs_lock_plug_ask_prompt_again(GS_LOCK_PLUG(plug));
 
 	return FALSE;
 }
@@ -670,7 +669,7 @@ static void add_lock_window(GdkMonitor* monitor)
 	gtk_widget_set_app_paintable(window, TRUE);
 	g_signal_connect(window, "draw", G_CALLBACK(draw_background), NULL);
 	gtk_widget_add_events(window, GDK_ENTER_NOTIFY_MASK | GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK);
-	g_signal_connect(window, "button-press-event", G_CALLBACK(wake_dialog), NULL);
+	g_signal_connect(window, "button-press-event", G_CALLBACK(ask_prompt_again), NULL);
 	g_signal_connect(window, "enter-notify-event", G_CALLBACK(move_dialog), NULL);
 	g_signal_connect(window, "motion-notify-event", G_CALLBACK(move_dialog), NULL);
 	g_signal_connect(window, "focus-in-event", G_CALLBACK(move_dialog), NULL);

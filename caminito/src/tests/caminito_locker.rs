@@ -24,7 +24,7 @@ use std::process::Command;
 
 use smithay::output::Output;
 
-use super::fixture::{Fixture, KEY_A, KEY_ENTER, test_schemas};
+use super::fixture::{BTN_LEFT, Fixture, KEY_A, KEY_ENTER, test_schemas};
 use crate::output::output_geometry;
 use crate::settings::Value;
 use crate::settings::translate::CAMINITO;
@@ -79,7 +79,7 @@ impl Locker {
         std::fs::create_dir(self.path("pam.d")).unwrap();
         std::fs::create_dir(self.path("faillock")).unwrap();
         let service = format!(
-            "auth required pam_faillock.so preauth silent dir={faillock}\n\
+            "auth required pam_faillock.so preauth silent nodelay dir={faillock}\n\
              auth [success=1 default=bad] {modules}/pam_matrix.so passdb={passdb}\n\
              auth [default=die] pam_faillock.so authfail nodelay dir={faillock}\n\
              auth sufficient pam_faillock.so authsucc dir={faillock}\n\
@@ -321,6 +321,8 @@ fn a_dialog_that_times_out_leaves_the_conversation_open_and_counts_no_failure() 
     // The timeout puts the prompt away. The conversation is the same one, still waiting:
     // PAM has no result, so pam_faillock has no record.
     f.dispatch_until_explained(|_| locker.count(PUT_AWAY) == 1, seen);
+    // Three of the timeouts: a cancel that answered PAM would restart the conversation at
+    // once, and its failure would be recorded well before this ends.
     f.dispatch_for(std::time::Duration::from_millis(1500));
     assert_eq!(locker.count("Starting conversation"), 1, "{}", seen());
     assert_eq!(locker.count("Verify user returned"), 0, "{}", seen());
@@ -333,6 +335,28 @@ fn a_dialog_that_times_out_leaves_the_conversation_open_and_counts_no_failure() 
         |f| f.lock_state() == "unlocked" && dump(f)["locker"]["state"] == "idle",
         seen,
     );
+    assert_eq!(locker.count(PROMPT), 2, "{}", seen());
+    assert_eq!(locker.count("Starting conversation"), 1, "{}", seen());
+    assert_eq!(faillock_records(&locker), 0, "{}", seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_click_asks_the_prompt_again_after_the_timeout() {
+    let (mut f, locker) = locked_with(&[(1920, 1080)], "", Some(500), |_| None);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
+    f.dispatch_until_explained(|_| locker.count(PUT_AWAY) == 1, seen);
+
+    // Moving the pointer asks nothing: only the press does.
+    f.pointer_move(100.0, 100.0);
+    f.dispatch_for(std::time::Duration::from_millis(100));
+    assert_eq!(locker.count(PROMPT), 1, "{}", seen());
+
+    f.pointer_button(BTN_LEFT, true);
+    f.pointer_button(BTN_LEFT, false);
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 2, seen);
     assert_eq!(locker.count("Starting conversation"), 1, "{}", seen());
     assert_eq!(faillock_records(&locker), 0, "{}", seen());
 }
@@ -351,6 +375,7 @@ fn an_empty_answer_is_not_sent_to_pam() {
         |_| locker.count("An empty answer is not sent to PAM") == 1,
         seen,
     );
+    // An answer sent to PAM comes back from pam_matrix in milliseconds.
     f.dispatch_for(std::time::Duration::from_millis(1000));
     assert_eq!(locker.count("got response"), 0, "{}", seen());
     assert_eq!(locker.count("Verify user returned"), 0, "{}", seen());
