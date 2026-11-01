@@ -4146,6 +4146,14 @@ They are the developer's to run.
   picture beneath, at once. Rounded corners stay clear. Moving a window drops no frames. On
   the turned output the blur still lines up with what's beneath.
 
+### A client can ask for Esmeril through ext-background-effect-v1
+
+- **Milestone:** esmeril
+- **Steps:**
+  1. Start a Nested run with `tools/dev-nested`. In it, run `wayland-info | grep -A1 ext_background_effect_manager_v1`.
+  2. Run `gsettings set org.mate.Marco.general reduced-resources true`, and have a client that asks through the protocol open, then set it back to `false`.
+- **Expected:** Step 1 lists the global. In step 2, what the client asked for loses its blur at once and gets it back at once.
+
 ### Esmeril shows blurred behind a translucent mate-terminal
 
 - **Milestone:** esmeril

@@ -1,5 +1,6 @@
 //! Smithay's protocol handlers, implemented for `State`, one file per area (15).
 
+mod background_effect;
 mod compositor;
 mod decoration;
 mod ext_workspace;

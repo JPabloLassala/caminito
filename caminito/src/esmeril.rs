@@ -26,6 +26,11 @@
 //! A layer surface and its popups (CMN-232) get it by the same road, once their buffer is known
 //! to have see-through pixels, and fade and slide as they do.
 //!
+//! A client that asks through `ext-background-effect-v1` (CMN-238) gets it in its region, under
+//! every pixel there, a wholly clear one too: the region alone says where, and the surface is
+//! drawn over it as usual. That region replaces a listed window's or a layer surface's whole-surface
+//! Esmeril, on that surface only.
+//!
 //! Pixman draws nothing for it (ADR 0048), though its damage is the same.
 
 use std::cell::RefCell;
@@ -49,7 +54,8 @@ use smithay::reexports::wayland_server::protocol::wl_shm::Format as ShmFormat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size};
-use smithay::wayland::compositor::SurfaceData;
+use smithay::wayland::background_effect::BackgroundEffectSurfaceCachedState;
+use smithay::wayland::compositor::{RectangleKind, RegionAttributes, SurfaceData};
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::with_buffer_contents;
 
@@ -217,17 +223,77 @@ impl Mask {
     }
 }
 
+/// The blur region a client asked for on a surface (CMN-238). One region keeps its [`Id`], and so
+/// its blur, for as long as it's the same; a new one is damaged whole, even in the same bounds.
+#[derive(Debug, Clone)]
+pub(crate) struct AskedRegion {
+    id: Id,
+    /// Apart from one another, in the surface's coordinates.
+    rects: Arc<Vec<Rectangle<i32, Logical>>>,
+}
+
+/// `region`'s rectangles, added and subtracted in their order, as ones apart from one another.
+fn flattened(region: &RegionAttributes) -> Vec<Rectangle<i32, Logical>> {
+    let mut rects = Vec::new();
+    for &(kind, rect) in &region.rects {
+        rects = Rectangle::subtract_rects_many_in_place(rects, [rect]);
+        if let RectangleKind::Add = kind {
+            rects.push(rect);
+        }
+    }
+    rects
+}
+
+/// The region the client has committed on this surface, if it has: an empty one asks for none.
+pub(crate) fn asked_region(states: &SurfaceData) -> Option<AskedRegion> {
+    let rects = {
+        let mut cached = states
+            .cached_state
+            .get::<BackgroundEffectSurfaceCachedState>();
+        flattened(cached.current().blur_region.as_ref()?)
+    };
+    states
+        .data_map
+        .insert_if_missing_threadsafe(|| Mutex::new(None::<AskedRegion>));
+    let kept = states.data_map.get::<Mutex<Option<AskedRegion>>>();
+    let mut kept = kept.expect("it was just inserted").lock().unwrap();
+    match &*kept {
+        Some(region) if *region.rects == rects => {}
+        _ => {
+            *kept = Some(AskedRegion {
+                id: Id::new(),
+                rects: Arc::new(rects),
+            });
+        }
+    }
+    kept.clone()
+}
+
 /// What says where an [`Esmeril`] goes.
 #[derive(Debug, Clone)]
 enum Behind {
     Strip(Mask),
     /// A surface of a listed window, by whose texture's alpha it goes.
     Surface(WlSurface),
+    /// A client's region, under every pixel of it, from the corner of the surface.
+    Region(Vec<Rectangle<i32, Physical>>),
 }
 
 /// The id of the Esmeril behind one surface, which keeps its blur for as long as the surface
 /// lives. The surface's own element has the id of its resource.
 struct SurfaceId(Id);
+
+/// Where and how a surface's Esmeril is drawn, for one frame of an output.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SurfacePlace {
+    /// The output's logical size.
+    pub output: Size<i32, Logical>,
+    pub scale: f64,
+    pub strength: u32,
+    pub alpha: f32,
+    /// Where it's cut off, if it is.
+    pub cut: Option<Rectangle<i32, Physical>>,
+}
 
 /// Esmeril behind one strip of a frame, one popup of Caminito's or one surface, of a listed
 /// window or a layer surface, for one frame of an output.
@@ -290,19 +356,84 @@ impl Esmeril {
         )
     }
 
-    /// Esmeril behind `surface`, with its origin at `location` on an output of the logical size
-    /// `output`, at `scale` and `alpha`, cut off at `cut` if it has one, or `None` if it has no
-    /// view yet or none of it shows.
+    /// Esmeril behind `surface`, with its origin at `location`, as `place` has it, or `None` if
+    /// it has no view yet or none of it shows.
     pub(crate) fn behind_surface(
         surface: &WlSurface,
         states: &SurfaceData,
         location: Point<f64, Physical>,
-        output: Size<i32, Logical>,
-        scale: f64,
-        strength: u32,
-        alpha: f32,
-        cut: Option<Rectangle<i32, Physical>>,
+        place: &SurfacePlace,
     ) -> Option<Self> {
+        let (strip, on_output) = Self::surface_strip(states, location, place)?;
+        states
+            .data_map
+            .insert_if_missing_threadsafe(|| SurfaceId(Id::new()));
+        let id = states.data_map.get::<SurfaceId>()?.0.clone();
+        let behind = Behind::Surface(surface.clone());
+        let shown = match place.cut {
+            Some(cut) => strip.intersection(cut)?,
+            None => strip,
+        };
+        Self::at(
+            id,
+            behind,
+            strip,
+            shown,
+            place.alpha,
+            on_output,
+            place.strength,
+        )
+    }
+
+    /// Esmeril in a client's `region` of a surface, with its arguments as in
+    /// [`Esmeril::behind_surface`], or `None` too if the region has nothing on the surface.
+    pub(crate) fn in_region(
+        region: &AskedRegion,
+        states: &SurfaceData,
+        location: Point<f64, Physical>,
+        place: &SurfacePlace,
+    ) -> Option<Self> {
+        let (strip, on_output) = Self::surface_strip(states, location, place)?;
+        // By their corners, so that rectangles apart from one another stay apart.
+        let on_strip: Vec<_> = region
+            .rects
+            .iter()
+            .filter_map(|rect| {
+                let rect = rect.to_f64().to_physical(place.scale);
+                let corner = (location + rect.loc).to_i32_round();
+                let far = (location + rect.loc + rect.size.to_point()).to_i32_round();
+                Rectangle::new(corner, (far - corner).to_size()).intersection(strip)
+            })
+            .collect();
+        let bounds = on_strip.iter().copied().reduce(Rectangle::merge)?;
+        let shown = match place.cut {
+            Some(cut) => bounds.intersection(cut)?,
+            None => bounds,
+        };
+        let rects = on_strip
+            .into_iter()
+            .map(|rect| Rectangle::new(rect.loc - strip.loc, rect.size))
+            .collect();
+        let behind = Behind::Region(rects);
+        let id = region.id.clone();
+        Self::at(
+            id,
+            behind,
+            strip,
+            shown,
+            place.alpha,
+            on_output,
+            place.strength,
+        )
+    }
+
+    /// The rectangle of a surface with its origin at `location`, and the output's size, both
+    /// physical, or `None` if it has no view yet or is off the output.
+    fn surface_strip(
+        states: &SurfaceData,
+        location: Point<f64, Physical>,
+        &SurfacePlace { output, scale, .. }: &SurfacePlace,
+    ) -> Option<(Rectangle<i32, Physical>, Size<i32, Physical>)> {
         let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
         let view = data.lock().unwrap().view()?;
         // As its surface's element rounds it, so that the two line up.
@@ -310,19 +441,9 @@ impl Esmeril {
         let far = (view.dst.to_f64().to_physical(scale).to_point() + location).to_i32_round();
         let strip = Rectangle::new(corner, (far - corner).to_size());
         let on_output: Size<i32, Physical> = output.to_f64().to_physical_precise_round(scale);
-        if !strip.overlaps(Rectangle::from_size(on_output)) {
-            return None;
-        }
-        states
-            .data_map
-            .insert_if_missing_threadsafe(|| SurfaceId(Id::new()));
-        let id = states.data_map.get::<SurfaceId>()?.0.clone();
-        let behind = Behind::Surface(surface.clone());
-        let shown = match cut {
-            Some(cut) => strip.intersection(cut)?,
-            None => strip,
-        };
-        Self::at(id, behind, strip, shown, alpha, on_output, strength)
+        strip
+            .overlaps(Rectangle::from_size(on_output))
+            .then_some((strip, on_output))
     }
 
     fn at(
@@ -530,6 +651,11 @@ uniform sampler2D mask;
     )
 }
 
+/// The last pass in a client's region, under every pixel of it.
+fn region_composite_shader() -> String {
+    format!("precision highp float;\n{}", composite_main("1.0"))
+}
+
 /// The last pass behind a surface: a texture shader of Smithay's, drawn as the surface's element
 /// draws its texture, so that the kind of its buffer, its transform and its viewport are
 /// Smithay's to take care of, and `tex` is the surface's own.
@@ -589,6 +715,7 @@ struct Programs {
     down: Pass,
     up: Pass,
     composite: GlesPixelProgram,
+    region_composite: GlesPixelProgram,
     surface_composite: GlesTexProgram,
     framebuffer: ffi::types::GLuint,
 }
@@ -626,6 +753,13 @@ fn compile(frame: &mut GlesFrame<'_, '_>) -> Result<Programs, GlesError> {
             UniformName::new("region", UniformType::_4f),
         ],
     )?;
+    let region_composite = renderer.as_mut().compile_custom_pixel_shader(
+        region_composite_shader(),
+        &[
+            UniformName::new("blurred", UniformType::_1i),
+            UniformName::new("region", UniformType::_4f),
+        ],
+    )?;
     let surface_composite = renderer.as_mut().compile_custom_texture_shader(
         surface_composite_shader(),
         &[
@@ -637,6 +771,7 @@ fn compile(frame: &mut GlesFrame<'_, '_>) -> Result<Programs, GlesError> {
         down,
         up,
         composite,
+        region_composite,
         surface_composite,
         framebuffer,
     })
@@ -886,6 +1021,7 @@ impl DrawsEsmeril for GlesRenderer {
                 };
                 Some(drawn)
             }
+            Behind::Region(_) => None,
         };
 
         // From the corner of what it reads to the corner of the strip, of which only what's
@@ -901,6 +1037,13 @@ impl DrawsEsmeril for GlesRenderer {
                 rect.intersection(shown)
             })
             .collect();
+        let damage: Vec<_> = match &esmeril.behind {
+            Behind::Region(rects) => damage
+                .iter()
+                .flat_map(|damaged| rects.iter().filter_map(|rect| rect.intersection(*damaged)))
+                .collect(),
+            _ => damage,
+        };
         if damage.is_empty() {
             return Ok(());
         }
@@ -937,6 +1080,17 @@ impl DrawsEsmeril for GlesRenderer {
                 transform,
                 esmeril.alpha,
                 Some(&programs.surface_composite),
+                &[Uniform::new("blurred", UniformValue::_1i(1)), region],
+            );
+        }
+        if let Behind::Region(_) = esmeril.behind {
+            return frame.render_pixel_shader_to(
+                &programs.region_composite,
+                Rectangle::from_size((f64::from(strip.size.w), f64::from(strip.size.h)).into()),
+                strip,
+                (strip.size.w, strip.size.h).into(),
+                Some(&damage),
+                esmeril.alpha,
                 &[Uniform::new("blurred", UniformValue::_1i(1)), region],
             );
         }
@@ -995,6 +1149,26 @@ mod tests {
                 want.1,
             );
         }
+    }
+
+    #[test]
+    fn a_region_is_added_and_subtracted_in_its_order() {
+        let rect = |x, y, w, h| Rectangle::<i32, Logical>::new((x, y).into(), (w, h).into());
+        let region = RegionAttributes {
+            rects: vec![
+                (RectangleKind::Add, rect(0, 0, 10, 10)),
+                (RectangleKind::Add, rect(5, 0, 10, 10)),
+                (RectangleKind::Subtract, rect(0, 0, 15, 5)),
+            ],
+        };
+        let rects = flattened(&region);
+        let area: i32 = rects.iter().map(|rect| rect.size.w * rect.size.h).sum();
+        assert_eq!(area, 15 * 5, "{rects:?}");
+        assert!(
+            rects
+                .iter()
+                .all(|rect| rect.loc.y >= 5 && rect.loc.x + rect.size.w <= 15)
+        );
     }
 
     #[test]
