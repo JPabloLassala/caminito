@@ -104,6 +104,9 @@ struct GSLockPlugPrivate
 
 	gboolean     caps_lock_on;
 	gboolean     switch_enabled;
+	/* The read of the seat's CanSwitch under way, and the bus it was last read on. */
+	GCancellable *seat_read;
+	GDBusConnection *system_bus;
 	gboolean     logout_enabled;
 	char        *logout_command;
 	char        *status_message;
@@ -148,76 +151,164 @@ static guint lock_plug_signals [LAST_SIGNAL] = { 0 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (GSLockPlug, gs_lock_plug, GTK_TYPE_BIN)
 
-/* Whether a display manager answers for the session's seat, and says it can switch: without
- * one, the proxy has no properties. */
-static gboolean
-seat_can_switch (void)
+#define SEAT_NAME              "org.freedesktop.DisplayManager"
+#define SEAT_INTERFACE         "org.freedesktop.DisplayManager.Seat"
+#define SEAT_READ_TIMEOUT_MSEC 1000
+
+static void
+set_switch_button_shown (GSLockPlug *plug,
+                         gboolean    shown)
 {
-	const char *seat = g_getenv ("XDG_SEAT_PATH");
-	GDBusProxy *proxy;
+	gs_debug ("Switch User button: %s", shown ? "shown" : "hidden");
+	gtk_widget_set_visible (plug->priv->auth_switch_button, shown);
+}
+
+static void
+seat_can_switch_cb (GObject      *source,
+                    GAsyncResult *result,
+                    gpointer      data)
+{
+	GSLockPlug *plug = data;
+	GError     *error = NULL;
+	GVariant   *reply;
 	GVariant   *can_switch;
 	gboolean    res = FALSE;
 
-	if (seat == NULL)
+	reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result, &error);
+	if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
 	{
-		return FALSE;
-	}
-
-	proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
-	                                       G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
-	                                       NULL,
-	                                       "org.freedesktop.DisplayManager",
-	                                       seat,
-	                                       "org.freedesktop.DisplayManager.Seat",
-	                                       NULL,
-	                                       NULL);
-	if (proxy == NULL)
-	{
-		return FALSE;
-	}
-
-	can_switch = g_dbus_proxy_get_cached_property (proxy, "CanSwitch");
-	if (can_switch != NULL)
-	{
-		res = g_variant_is_of_type (can_switch, G_VARIANT_TYPE_BOOLEAN)
-		      && g_variant_get_boolean (can_switch);
-		g_variant_unref (can_switch);
-	}
-	g_object_unref (proxy);
-
-	return res;
-}
-
-/* LightDM's request, on the seat the display manager names. */
-static void
-do_user_switch (GSLockPlug *plug G_GNUC_UNUSED)
-{
-	GError     *error = NULL;
-	GDBusProxy *proxy;
-
-	proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
-	                                       G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
-	                                       NULL,
-	                                       "org.freedesktop.DisplayManager",
-	                                       g_getenv ("XDG_SEAT_PATH"),
-	                                       "org.freedesktop.DisplayManager.Seat",
-	                                       NULL,
-	                                       &error);
-	if (proxy == NULL)
-	{
-		gs_debug ("Unable to start the greeter: %s", error->message);
 		g_error_free (error);
 		return;
 	}
 
-	g_dbus_proxy_call_sync (proxy,
+	if (reply == NULL)
+	{
+		gs_debug ("Unable to read the seat's CanSwitch: %s", error->message);
+		g_error_free (error);
+	}
+	else
+	{
+		g_variant_get (reply, "(v)", &can_switch);
+		res = g_variant_is_of_type (can_switch, G_VARIANT_TYPE_BOOLEAN)
+		      && g_variant_get_boolean (can_switch);
+		g_variant_unref (can_switch);
+		g_variant_unref (reply);
+	}
+
+	set_switch_button_shown (plug, res);
+}
+
+static void
+system_bus_cb (GObject      *source G_GNUC_UNUSED,
+               GAsyncResult *result,
+               gpointer      data)
+{
+	GSLockPlug *plug = data;
+	GError     *error = NULL;
+	GDBusConnection *bus;
+
+	bus = g_bus_get_finish (result, &error);
+	if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+	{
+		g_error_free (error);
+		return;
+	}
+
+	if (bus == NULL)
+	{
+		gs_debug ("Unable to reach the system bus: %s", error->message);
+		g_error_free (error);
+		set_switch_button_shown (plug, FALSE);
+		return;
+	}
+
+	/* The Locker goes on without the system bus: only the button needs it. */
+	g_dbus_connection_set_exit_on_close (bus, FALSE);
+	g_set_object (&plug->priv->system_bus, bus);
+	g_dbus_connection_call (bus,
+	                        SEAT_NAME,
+	                        g_getenv ("XDG_SEAT_PATH"),
+	                        "org.freedesktop.DBus.Properties",
+	                        "Get",
+	                        g_variant_new ("(ss)", SEAT_INTERFACE, "CanSwitch"),
+	                        G_VARIANT_TYPE ("(v)"),
+	                        G_DBUS_CALL_FLAGS_NO_AUTO_START,
+	                        SEAT_READ_TIMEOUT_MSEC,
+	                        plug->priv->seat_read,
+	                        seat_can_switch_cb,
+	                        plug);
+	g_object_unref (bus);
+}
+
+static void
+cancel_seat_read (GSLockPlug *plug)
+{
+	if (plug->priv->seat_read != NULL)
+	{
+		g_cancellable_cancel (plug->priv->seat_read);
+		g_clear_object (&plug->priv->seat_read);
+	}
+}
+
+/* Whether the keys allow the button, and a display manager answers for the session's seat
+ * and says it can switch. The dialog doesn't wait: the button is hidden until the answer. */
+static void
+update_switch_button (GSLockPlug *plug)
+{
+	if (plug->priv->auth_switch_button == NULL)
+	{
+		return;
+	}
+
+	cancel_seat_read (plug);
+
+	if (!plug->priv->switch_enabled || g_getenv ("XDG_SEAT_PATH") == NULL)
+	{
+		set_switch_button_shown (plug, FALSE);
+		return;
+	}
+
+	gtk_widget_hide (plug->priv->auth_switch_button);
+	plug->priv->seat_read = g_cancellable_new ();
+	g_bus_get (G_BUS_TYPE_SYSTEM, plug->priv->seat_read, system_bus_cb, plug);
+}
+
+static void
+switch_to_greeter_cb (GObject      *source,
+                      GAsyncResult *result,
+                      gpointer      data G_GNUC_UNUSED)
+{
+	GError   *error = NULL;
+	GVariant *reply;
+
+	reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source), result, &error);
+	if (reply == NULL)
+	{
+		g_warning ("Unable to start the greeter: %s", error->message);
+		g_error_free (error);
+		return;
+	}
+
+	g_variant_unref (reply);
+}
+
+/* The display manager's request, on the seat it names. The button shows only after a read
+ * on this connection, so there is one; a seat that's gone since is the call's failure. */
+static void
+do_user_switch (GSLockPlug *plug)
+{
+	g_dbus_connection_call (plug->priv->system_bus,
+	                        SEAT_NAME,
+	                        g_getenv ("XDG_SEAT_PATH"),
+	                        SEAT_INTERFACE,
 	                        "SwitchToGreeter",
-	                        g_variant_new ("()"),
-	                        G_DBUS_CALL_FLAGS_NONE,
+	                        NULL,
+	                        NULL,
+	                        G_DBUS_CALL_FLAGS_NO_AUTO_START,
 	                        -1,
 	                        NULL,
+	                        switch_to_greeter_cb,
 	                        NULL);
-	g_object_unref (proxy);
 }
 
 static void
@@ -312,6 +403,7 @@ gs_lock_plug_open (GSLockPlug *plug)
 
 	gs_debug ("The Unlock dialog shows");
 	gtk_widget_show (GTK_WIDGET (plug));
+	update_switch_button (plug);
 	/* Hiding took the window's focus and default from what's inside the plug. */
 	set_default_button (plug, plug->priv->default_button);
 
@@ -1004,20 +1096,10 @@ gs_lock_plug_set_switch_enabled (GSLockPlug *plug,
 	plug->priv->switch_enabled = switch_enabled;
 	g_object_notify (G_OBJECT (plug), "switch-enabled");
 
-	if (plug->priv->auth_switch_button == NULL)
+	/* A closed dialog reads the seat when it opens. */
+	if (gs_lock_plug_is_open (plug))
 	{
-		return;
-	}
-
-	if (switch_enabled && seat_can_switch ())
-	{
-		gs_debug ("Switch User button: shown");
-		gtk_widget_show (plug->priv->auth_switch_button);
-	}
-	else
-	{
-		gs_debug ("Switch User button: hidden");
-		gtk_widget_hide (plug->priv->auth_switch_button);
+		update_switch_button (plug);
 	}
 }
 
@@ -1973,6 +2055,8 @@ gs_lock_plug_finalize (GObject *object)
 
 	remove_response_idle (plug);
 	remove_cancel_timeout (plug);
+	cancel_seat_read (plug);
+	g_clear_object (&plug->priv->system_bus);
 
 	G_OBJECT_CLASS (gs_lock_plug_parent_class)->finalize (object);
 }

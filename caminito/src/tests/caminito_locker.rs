@@ -21,10 +21,15 @@ use std::io::ErrorKind;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use smithay::output::Output;
 
-use super::fixture::{BTN_LEFT, Fixture, KEY_A, KEY_ENTER, KEY_ESC, KEY_LEFTSHIFT, test_schemas};
+use super::fixture::{
+    BTN_LEFT, Bus, Fixture, KEY_A, KEY_ENTER, KEY_ESC, KEY_LEFTALT, KEY_LEFTSHIFT, KEY_S,
+    test_schemas,
+};
 use super::locker::fixture_with;
 use crate::output::output_geometry;
 use crate::settings::Value;
@@ -404,47 +409,251 @@ fn caminito_locker_locks_and_unlocks_in_spanish_with_nothing_of_mate_screensaver
 }
 
 const SWITCH_ENABLED: &str = "[org/mate/screensaver]\nuser-switch-enabled=true\n";
+const SWITCH_BUTTON_SHOWN: &str = "Switch User button: shown";
+const SWITCH_BUTTON_HIDDEN: &str = "Switch User button: hidden";
+const SEAT_NAME: &str = "org.freedesktop.DisplayManager";
+const SEAT_PATH: &str = "/org/freedesktop/DisplayManager/Seat0";
 
-#[test]
-#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
-fn switch_user_hides_without_a_display_managers_seat() {
-    let (mut f, locker) = locked_with_env(SWITCH_ENABLED, Vec::new());
-    let seen = || locker.seen();
-    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
-    f.dispatch_until_explained(|_| locker.count("Switch User: enabled") >= 1, seen);
-    assert_eq!(locker.count("Switch User button: shown"), 0, "{}", seen());
-    assert!(
-        locker.count("Switch User button: hidden") >= 1,
-        "{}",
-        seen()
-    );
+/// A display manager's Seat, as much of it as Switch User uses.
+struct FakeSeat {
+    can_switch: Arc<AtomicBool>,
+    requests: Arc<AtomicUsize>,
+    refuses: bool,
 }
 
-/// A seat path that no display manager answers for, as after a greeter's gone: the system bus
-/// here is one that can't be reached. That a seat which answers shows the button is the
-/// checklist's, with the real greeter.
+#[zbus::interface(name = "org.freedesktop.DisplayManager.Seat")]
+impl FakeSeat {
+    #[zbus(property)]
+    fn can_switch(&self) -> bool {
+        self.can_switch.load(Ordering::SeqCst)
+    }
+
+    fn switch_to_greeter(&self) -> zbus::fdo::Result<()> {
+        self.requests.fetch_add(1, Ordering::SeqCst);
+        if self.refuses {
+            return Err(zbus::fdo::Error::Failed("the seat refuses".to_owned()));
+        }
+        Ok(())
+    }
+}
+
+/// A private bus for the locker's system bus, and maybe a Seat on it.
+struct SeatBus {
+    _dir: tempfile::TempDir,
+    bus: Bus,
+    _seat: Option<zbus::blocking::Connection>,
+    can_switch: Arc<AtomicBool>,
+    requests: Arc<AtomicUsize>,
+}
+
+impl SeatBus {
+    /// A bus where nothing owns the display manager's name.
+    fn without_an_owner() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let bus = Bus::start(&dir.path().join("bus"));
+        SeatBus {
+            _dir: dir,
+            bus,
+            _seat: None,
+            can_switch: Arc::new(AtomicBool::new(false)),
+            requests: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn with_seat(can_switch: bool, refuses: bool) -> Self {
+        let mut seat_bus = Self::without_an_owner();
+        seat_bus.can_switch.store(can_switch, Ordering::SeqCst);
+        let seat = FakeSeat {
+            can_switch: seat_bus.can_switch.clone(),
+            requests: seat_bus.requests.clone(),
+            refuses,
+        };
+        seat_bus._seat = Some(
+            zbus::blocking::connection::Builder::address(seat_bus.bus.address.as_str())
+                .unwrap()
+                .name(SEAT_NAME)
+                .unwrap()
+                .serve_at(SEAT_PATH, seat)
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+        seat_bus
+    }
+
+    /// A bus where the name's owner takes messages and never answers them.
+    fn with_a_silent_owner() -> Self {
+        let mut seat_bus = Self::without_an_owner();
+        let owner = zbus::blocking::connection::Builder::address(seat_bus.bus.address.as_str())
+            .unwrap()
+            .build()
+            .unwrap();
+        owner.request_name(SEAT_NAME).unwrap();
+        seat_bus._seat = Some(owner);
+        seat_bus
+    }
+
+    /// The locker's environment on this bus, in a session with a seat.
+    fn env(&self) -> Vec<(&'static str, String)> {
+        seat_env(&self.bus.address)
+    }
+
+    fn requests(&self) -> usize {
+        self.requests.load(Ordering::SeqCst)
+    }
+}
+
+fn seat_env(address: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("XDG_SEAT_PATH", SEAT_PATH.to_owned()),
+        ("DBUS_SYSTEM_BUS_ADDRESS", address.to_owned()),
+    ]
+}
+
+/// The locker with `keyfile` and `env`, locked with its prompt asked, in the Idle view.
+fn locked_for_switch_user(keyfile: &str, env: Vec<(&'static str, String)>) -> (Fixture, Locker) {
+    let (mut f, locker) = locked_with_env(keyfile, env);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, || locker.seen());
+    (f, locker)
+}
+
+/// Opens the dialog from the Idle view.
+fn open_dialog(f: &mut Fixture, locker: &Locker) {
+    let times = locker.count(DIALOG_SHOWS) + 1;
+    tap(f, KEY_LEFTSHIFT);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == times, || locker.seen());
+}
+
+/// Presses *Switch User* by its mnemonic.
+fn press_switch_user(f: &mut Fixture) {
+    f.key(KEY_LEFTALT, true);
+    tap(f, KEY_S);
+    f.key(KEY_LEFTALT, false);
+}
+
+/// With `keyfile` and `env`, the opened dialog reads the button as hidden, and never shows it.
+#[track_caller]
+fn assert_switch_user_hides(keyfile: &str, env: Vec<(&'static str, String)>) {
+    let (mut f, locker) = locked_for_switch_user(keyfile, env);
+    open_dialog(&mut f, &locker);
+    f.dispatch_until_explained(
+        |_| locker.count(SWITCH_BUTTON_HIDDEN) >= 1,
+        || locker.seen(),
+    );
+    assert_eq!(locker.count(SWITCH_BUTTON_SHOWN), 0, "{}", locker.seen());
+}
+
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
-fn switch_user_hides_with_a_seat_that_no_display_manager_answers_for() {
-    let env = vec![
-        (
-            "XDG_SEAT_PATH",
-            "/org/freedesktop/DisplayManager/Seat0".to_owned(),
-        ),
-        (
-            "DBUS_SYSTEM_BUS_ADDRESS",
-            "unix:path=/nonexistent".to_owned(),
-        ),
-    ];
-    let (mut f, locker) = locked_with_env(SWITCH_ENABLED, env);
-    let seen = || locker.seen();
-    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
-    f.dispatch_until_explained(|_| locker.count("Switch User: enabled") >= 1, seen);
-    assert_eq!(locker.count("Switch User button: shown"), 0, "{}", seen());
-    assert!(
-        locker.count("Switch User button: hidden") >= 1,
-        "{}",
-        seen()
+fn switch_user_shows_when_the_seat_can_switch_and_asks_it_for_the_greeter() {
+    let seat = SeatBus::with_seat(true, false);
+    let (mut f, locker) = locked_for_switch_user(SWITCH_ENABLED, seat.env());
+    assert_eq!(locker.count(SWITCH_BUTTON_SHOWN), 0, "{}", locker.seen());
+
+    open_dialog(&mut f, &locker);
+    f.dispatch_until_explained(|_| locker.count(SWITCH_BUTTON_SHOWN) == 1, || locker.seen());
+    press_switch_user(&mut f);
+    f.dispatch_until_explained(|_| seat.requests() == 1, || locker.seen());
+
+    // The lock goes on, with the same Locker, and its password unlocks once the dialog's back.
+    let process = locker.process();
+    assert_eq!(f.lock_state(), "locked");
+    f.dispatch_until_explained(|_| locker.count(DIALOG_HIDES) == 1, || locker.seen());
+    assert_eq!(locker.process(), process);
+    open_dialog(&mut f, &locker);
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_logs_a_request_the_seat_refuses_and_stays_locked() {
+    let seat = SeatBus::with_seat(true, true);
+    let (mut f, locker) = locked_for_switch_user(SWITCH_ENABLED, seat.env());
+    open_dialog(&mut f, &locker);
+    f.dispatch_until_explained(|_| locker.count(SWITCH_BUTTON_SHOWN) == 1, || locker.seen());
+    press_switch_user(&mut f);
+    f.dispatch_until_explained(
+        |_| locker.count("Unable to start the greeter") == 1,
+        || locker.seen(),
+    );
+    assert_eq!(f.lock_state(), "locked");
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_reads_the_seat_each_time_the_dialog_opens() {
+    let seat = SeatBus::with_seat(true, false);
+    let (mut f, locker) = locked_for_switch_user(SWITCH_ENABLED, seat.env());
+    open_dialog(&mut f, &locker);
+    f.dispatch_until_explained(|_| locker.count(SWITCH_BUTTON_SHOWN) == 1, || locker.seen());
+
+    seat.can_switch.store(false, Ordering::SeqCst);
+    tap(&mut f, KEY_ESC);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_HIDES) == 1, || locker.seen());
+    open_dialog(&mut f, &locker);
+    f.dispatch_until_explained(
+        |_| locker.count(SWITCH_BUTTON_HIDDEN) >= 1,
+        || locker.seen(),
+    );
+    assert_eq!(locker.count(SWITCH_BUTTON_SHOWN), 1, "{}", locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_hides_when_the_seat_cannot_switch() {
+    let seat = SeatBus::with_seat(false, false);
+    assert_switch_user_hides(SWITCH_ENABLED, seat.env());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_hides_without_a_seat_path() {
+    let seat = SeatBus::with_seat(true, false);
+    let env = vec![("DBUS_SYSTEM_BUS_ADDRESS", seat.bus.address.clone())];
+    assert_switch_user_hides(SWITCH_ENABLED, env);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_hides_when_nothing_owns_the_display_managers_name() {
+    let seat = SeatBus::without_an_owner();
+    assert_switch_user_hides(SWITCH_ENABLED, seat.env());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_hides_with_a_system_bus_that_cannot_be_reached() {
+    assert_switch_user_hides(SWITCH_ENABLED, seat_env("unix:path=/nonexistent"));
+}
+
+/// The dialog is up before the read has an answer, and the read gives up by itself.
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_hides_when_the_seat_never_answers_and_the_dialog_does_not_wait() {
+    let seat = SeatBus::with_a_silent_owner();
+    let (mut f, locker) = locked_for_switch_user(SWITCH_ENABLED, seat.env());
+    open_dialog(&mut f, &locker);
+    assert_eq!(locker.count(SWITCH_BUTTON_HIDDEN), 0, "{}", locker.seen());
+    f.dispatch_until_explained(
+        |_| locker.count(SWITCH_BUTTON_HIDDEN) == 1,
+        || locker.seen(),
+    );
+    assert_eq!(locker.count(SWITCH_BUTTON_SHOWN), 0, "{}", locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_two_keys_hide_switch_user_when_the_seat_can_switch() {
+    let seat = SeatBus::with_seat(true, false);
+    assert_switch_user_hides(
+        "[org/mate/screensaver]\nuser-switch-enabled=false\n",
+        seat.env(),
+    );
+    assert_switch_user_hides(
+        "[org/mate/screensaver]\nuser-switch-enabled=true\n\n[org/mate/desktop/lockdown]\ndisable-user-switching=true\n",
+        seat.env(),
     );
 }
 

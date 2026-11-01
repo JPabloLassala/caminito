@@ -1645,8 +1645,10 @@ session_env() {
      While locked, from another tty, set it to `'Back at four'` in the same way, with the
      session's `DBUS_SESSION_BUS_ADDRESS`. Unlock, run `gsettings set org.mate.screensaver
      status-message-enabled false` and lock. Unlock, and reset the key.
-  4. Lock, and click *Switch User*. In the display manager's greeter, go back to the
-     session: pick it in the greeter, or press Ctrl+Alt+F<n> for its tty. Then unlock.
+  4. On SDDM, lock and note `pgrep -x caminito-locker` from another tty, and click *Switch
+     User*. In the greeter, go back to the session: pick it in the greeter, or press
+     Ctrl+Alt+F<n> for its tty. Note the process again, then unlock with the password. Then
+     do this step on Plasma Login Manager, on the Fedora machine.
   5. Run `gsettings set org.mate.lockdown disable-user-switching true` and lock. Unlock, and
      reset the key.
   6. Run `gsettings set org.mate.screensaver logout-enabled true`, `gsettings set
@@ -1657,15 +1659,17 @@ session_env() {
   screen does, and the dialog has the GTK theme's background, on the monitor under the
   pointer. In step 2 both show the other image, then the desktop background again. In step 3
   the dialog shows *Back at three* above its buttons, then *Back at four*, and no message
-  with the key off. In step 4 the display manager's greeter shows, and the session is still
-  locked when it's back. With sddm, the LightDM request reaches it: sddm sets
-  `XDG_SEAT_PATH` and has `SwitchToGreeter` on its seat. In step 5 there's no *Switch User*.
+  with the key off. In step 4, on each display manager, its greeter shows, and when the
+  session's back it is still locked, the same process is running, and the password unlocks
+  it. On Plasma Login Manager `CanSwitch` wasn't confirmed by reading its source: if the
+  button stays hidden there, that needs fixing. GDM has no `org.freedesktop.DisplayManager`,
+  so no button. In step 5 there's no *Switch User*.
   In step 6 *Log Out* appears a minute after the lock, and the session logs out.
 - **Debug tool:** the journal's `caminito-locker` lines: where each monitor's wallpaper came
   from (218, below), then `Creating background w:… h:…` for it, `Status message: …`, `Switch
   User: enabled` or `disabled`, `Switch User button: shown` or `hidden`, and `Log Out: after its delay` then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
-  "$XDG_SEAT_PATH" org.freedesktop.DisplayManager.Seat CanSwitch` says whether the greeter can
-  be reached that way.
+  "$XDG_SEAT_PATH" org.freedesktop.DisplayManager.Seat CanSwitch` says whether the button
+  shows, read each time the dialog opens; `Unable to start the greeter: …` is a request that failed.
 
 ### How the give-up state looks
 
