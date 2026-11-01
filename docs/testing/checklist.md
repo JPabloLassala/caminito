@@ -3933,6 +3933,25 @@ They are the developer's to run.
 - **Debug tool:** `busctl --user monitor org.freedesktop.Notifications`, for the calls and the
   signals.
 
+### A browser tab's notification and a site's settings
+
+- **Milestone:** `notifications`.
+- **Steps:**
+  1. In *MATE on Caminito*, allow notifications on a site in Firefox, and on one in Chromium.
+     In each browser's console there, run
+     `new Notification('Ready', {body: 'From this tab', icon: '/favicon.ico'})`.
+  2. Open *Notifications*, *Apps*. On the Chromium site's row, *claude.ai · Chromium* or the like,
+     set Delivery to Off, and notify again from that site and from another site in Chromium.
+  3. On Firefox's row, turn Previews off and notify from its tab. Turn Previews on and App icon
+     off, and notify again.
+- **Expected:** in step 1 each bubble has the site's icon on the left with the browser's icon as a
+  small circle on its top-right corner, and the top row reads *Firefox* for Firefox, which sends no
+  site, and *the site · Chromium* for Chromium. In step 2 the muted site gets no bubble and the
+  other site does, and the site's row has its Badge greyed out. In step 3 Firefox's icon leads with
+  no badge and the bubble says only *Notification*, and then the site's icon leads with no badge
+  (CMN-283).
+- **Debug tool:** `busctl --user monitor org.freedesktop.Notifications`, for the hints.
+
 ### Replying from a bubble, a progress bar, and a click that brings the app forward
 
 - **Milestone:** `notifications`.

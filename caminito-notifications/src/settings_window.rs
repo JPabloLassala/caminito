@@ -686,7 +686,14 @@ impl Row {
         self.delivery.set_selected(position);
         for ((key, _, _), check) in FLAGS.iter().zip(&self.checks) {
             check.set_active(values.flag(key).unwrap_or_default());
-            check.set_sensitive(settings::applies(values.delivery, key));
+            // A site has no Dock item: the Badge is its browser's.
+            let site = self
+                .app
+                .as_ref()
+                .is_some_and(|app| settings::site_of(&app.key).is_some());
+            check.set_sensitive(
+                settings::applies(values.delivery, key) && !(site && *key == settings::BADGE),
+            );
         }
         let own = self
             .app

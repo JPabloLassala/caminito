@@ -8,6 +8,7 @@ use gio::glib;
 
 use crate::notification::icon;
 use crate::server::Icon;
+use crate::settings::site_of;
 
 const GROUP: &str = "Desktop Entry";
 
@@ -56,7 +57,7 @@ fn listed_in(dirs: &[PathBuf], known: &[String]) -> Vec<App> {
         .map(
             |key| match entries.iter().find(|entry| entry.app.key == *key) {
                 Some(entry) => entry.app.clone(),
-                None => App::unnamed(key),
+                None => site_app(key, &entries).unwrap_or_else(|| App::unnamed(key)),
             },
         )
         .collect();
@@ -67,6 +68,20 @@ fn listed_in(dirs: &[PathBuf], known: &[String]) -> Vec<App> {
     }
     apps.sort_by_key(|app| app.name.to_lowercase());
     apps
+}
+
+/// The app of `key` if that's a browser's site, named "site · browser" with the browser's icon.
+fn site_app(key: &str, entries: &[Entry]) -> Option<App> {
+    let (browser, site) = site_of(key)?;
+    let entry = entries.iter().find(|entry| entry.app.key == browser);
+    Some(App {
+        key: key.to_owned(),
+        name: format!(
+            "{site} · {}",
+            entry.map_or(browser, |entry| entry.app.name.as_str())
+        ),
+        icon: entry.and_then(|entry| entry.app.icon.clone()),
+    })
 }
 
 /// An installed desktop entry.
@@ -160,6 +175,29 @@ mod tests {
 
     fn entry(name: &str, extra: &str) -> String {
         format!("[Desktop Entry]\nType=Application\nName={name}\nIcon=icon-{name}\n{extra}")
+    }
+
+    #[test]
+    fn a_site_is_listed_by_its_name_and_its_browsers_with_its_browsers_icon() {
+        let system = tempfile::tempdir().unwrap();
+        let system = system.path();
+        write(
+            system,
+            "applications/chromium.desktop",
+            &entry("Chromium", ""),
+        );
+
+        let known = [
+            crate::settings::site_key("chromium", "claude.ai"),
+            crate::settings::site_key("gone", "github.com"),
+        ];
+        let apps = listed_in(&[system.to_owned()], &known);
+
+        assert_eq!(apps[0].name, "claude.ai · Chromium");
+        assert_eq!(apps[0].key, known[0]);
+        assert_eq!(apps[0].icon, Some(Icon::Name("icon-Chromium".to_owned())));
+        assert_eq!(apps[1].name, "github.com · gone");
+        assert_eq!(apps[1].icon, None);
     }
 
     #[test]

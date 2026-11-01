@@ -16,7 +16,7 @@ use caminito_notifications::server::{
     Action, Bubble, Bubbles, Clock, Config, Events, Header, HeaderEvents, Icon, Image, Server,
     Sound, Sounds, TimeLeft,
 };
-use caminito_notifications::settings::Settings;
+use caminito_notifications::settings::{Settings, site_key};
 use gio::glib::{self, Variant, VariantDict};
 use gio::prelude::*;
 
@@ -658,7 +658,8 @@ fn the_server_names_itself_and_its_capabilities() {
                 "icon-static",
                 "inline-reply",
                 "persistence",
-                "sound"
+                "sound",
+                "x-kde-origin-name"
             ]
         );
     });
@@ -705,6 +706,8 @@ fn a_notification_gets_a_bubble_with_its_app_text_and_actions() {
                 summary: "New mail".to_owned(),
                 body: "From <b>Ann</b> &amp; Bob".to_owned(),
                 image: None,
+                site: None,
+                leads: false,
                 actions: vec![
                     Action {
                         key: "reply".to_owned(),
@@ -2065,6 +2068,8 @@ fn with_previews_off_a_bubble_shows_only_its_app_and_notification() {
                 summary: "Notification".to_owned(),
                 body: String::new(),
                 image: None,
+                site: None,
+                leads: false,
                 actions: vec![Action {
                     key: "reply".to_owned(),
                     label: "Reply".to_owned()
@@ -2318,6 +2323,179 @@ fn an_app_joins_the_known_apps_with_its_first_notification() {
         daemon.notify(notify("Second"));
 
         assert_eq!(daemon.apps.known_apps(), ["Test", "org.example.Mail"]);
+    });
+}
+
+/// A tab's notification, as Chromium sends it, for the site `site`.
+fn tab(summary: &'static str, site: &str) -> Notify {
+    Notify {
+        app_name: "Chromium",
+        icon: "chromium",
+        ..notify(summary)
+            .hint("desktop-entry", "chromium")
+            .hint("x-kde-origin-name", site)
+            .hint("image-path", "/tmp/site.png")
+    }
+}
+
+#[test]
+fn a_tabs_notification_leads_with_the_sites_icon_and_names_the_site() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+
+        let id = daemon.notify(tab("Your answer is ready", "claude.ai"));
+
+        let bubble = daemon.bubbles.bubble(id);
+        assert!(bubble.leads);
+        assert_eq!(bubble.site.as_deref(), Some("claude.ai"));
+        assert_eq!(bubble.app_name, "Chromium");
+        assert_eq!(bubble.app_icon, Some(Icon::Name("chromium".to_owned())));
+        assert_eq!(
+            bubble.image,
+            Some(Image::Icon(Icon::File("/tmp/site.png".into())))
+        );
+    });
+}
+
+#[test]
+fn another_apps_image_stays_beside_the_text() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+
+        let id = daemon.notify(Notify {
+            app_name: "Signal",
+            ..notify("Ana").hint("image-path", "/tmp/photo.png")
+        });
+
+        assert!(!daemon.bubbles.bubble(id).leads);
+    });
+}
+
+#[test]
+fn a_tabs_notification_without_an_image_keeps_the_ordinary_layout() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+
+        let id = daemon.notify(Notify {
+            app_name: "Chromium",
+            ..notify("No icon").hint("x-kde-origin-name", "claude.ai")
+        });
+
+        let bubble = daemon.bubbles.bubble(id);
+        assert!(!bubble.leads);
+        assert_eq!(bubble.site.as_deref(), Some("claude.ai"));
+    });
+}
+
+#[test]
+fn with_previews_off_a_tabs_bubble_hides_the_site_and_its_icon() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.settings.set_boolean("previews", false).unwrap();
+
+        let id = daemon.notify(tab("Secret", "claude.ai"));
+
+        let bubble = daemon.bubbles.bubble(id);
+        assert_eq!(bubble.summary, "Notification");
+        assert_eq!(bubble.site, None);
+        assert_eq!(bubble.image, None);
+        assert!(bubble.leads);
+        assert_eq!(bubble.app_icon, Some(Icon::Name("chromium".to_owned())));
+    });
+}
+
+#[test]
+fn with_the_app_icon_off_a_tabs_bubble_keeps_the_sites_icon() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.settings.set_boolean("app-icon", false).unwrap();
+
+        let id = daemon.notify(tab("Ready", "claude.ai"));
+
+        let bubble = daemon.bubbles.bubble(id);
+        assert_eq!(bubble.app_icon, None);
+        assert!(bubble.image.is_some());
+        assert!(bubble.leads);
+    });
+}
+
+#[test]
+fn a_site_follows_its_browser_until_it_has_settings_of_its_own() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon
+            .apps
+            .app("chromium")
+            .set_boolean("previews", false)
+            .unwrap();
+        daemon
+            .apps
+            .app(&site_key("chromium", "github.com"))
+            .set_boolean("previews", true)
+            .unwrap();
+
+        let followed = daemon.notify(tab("Followed", "claude.ai"));
+        let own = daemon.notify(tab("Own", "github.com"));
+
+        assert_eq!(daemon.bubbles.bubble(followed).summary, "Notification");
+        assert_eq!(daemon.bubbles.bubble(own).summary, "Own");
+    });
+}
+
+#[test]
+fn muting_a_site_leaves_its_browser_and_its_other_sites() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon
+            .apps
+            .app(&site_key("chromium", "claude.ai"))
+            .set_string("delivery", "off")
+            .unwrap();
+
+        daemon.notify(tab("Muted", "claude.ai"));
+        let other = daemon.notify(tab("Heard", "github.com"));
+        let browser = daemon.notify(Notify {
+            app_name: "Chromium",
+            ..notify("Download finished").hint("desktop-entry", "chromium")
+        });
+
+        assert_eq!(daemon.bubbles.ids(), [other, browser]);
+    });
+}
+
+#[test]
+fn a_site_joins_the_known_apps_and_its_entries_count_for_the_browser() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+
+        daemon.notify(tab("One", "claude.ai"));
+        daemon.notify(tab("Two", "github.com"));
+
+        assert_eq!(
+            daemon.apps.known_apps(),
+            [
+                "chromium".to_owned(),
+                site_key("chromium", "claude.ai"),
+                site_key("chromium", "github.com"),
+            ]
+        );
+        assert_eq!(daemon.counts(), [("chromium".to_owned(), 2)]);
+    });
+}
+
+#[test]
+fn a_sites_notifications_group_with_each_other_and_not_with_another_sites() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+
+        let first = daemon.notify(tab("One", "claude.ai"));
+        let other = daemon.notify(tab("Elsewhere", "github.com"));
+        daemon.notify(tab("Two", "claude.ai"));
+        let third = daemon.notify(tab("Three", "claude.ai"));
+
+        assert!(daemon.bubbles.ids().contains(&other));
+        assert!(!daemon.bubbles.ids().contains(&first));
+        assert_eq!(earlier(&daemon, third), ["Two", "One"]);
     });
 }
 

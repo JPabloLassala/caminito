@@ -268,6 +268,8 @@ impl HistoryEntry {
                 summary: text(4)?,
                 body: text(5)?,
                 image,
+                site: None,
+                leads: false,
                 actions: actions
                     .into_iter()
                     .map(|(key, label)| Action { key, label })
@@ -366,6 +368,8 @@ mod tests {
                 summary: format!("Summary {id}"),
                 body: "A <b>body</b>".to_owned(),
                 image: None,
+                site: None,
+                leads: false,
                 actions: vec![Action {
                     key: "reply".to_owned(),
                     label: "Reply".to_owned(),
