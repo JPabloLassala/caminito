@@ -1,0 +1,184 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# karthik holla <karthikholla87@gmail.com>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Kannada (https://app.transifex.com/mate/teams/13566/kn/)\n"
+"Language: kn\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "Show debugging output"
+msgstr "ದೋಷನಿವಾರಣಾ ಔಟ್‌ಪುಟ್ ಅನ್ನು ತೋರಿಸು"
+
+msgid "Version of this application"
+msgstr "ಈ ಅನ್ವಯದ ಆವೃತ್ತಿ"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "ಬಳಕೆದಾರ ಹೆಸರು:"
+
+msgid "Password:"
+msgstr "ಗುಪ್ತಪದ:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "ನೀವು ಈ ಕೂಡಲೆ ನಿಮ್ಮ ಗುಪ್ತಪದವನ್ನು ಬದಲಾಯಿಸುವ ಅಗತ್ಯವಿದೆ (ಗುಪ್ತಪದ ಹಳತಾಗಿದೆ)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "ನೀವು ಈ ಕೂಡಲೆ ನಿಮ್ಮ ಗುಪ್ತಪದವನ್ನು ಬದಲಾಯಿಸುವ ಅಗತ್ಯವಿದೆ (ಮೂಲದಿಂದ ಒತ್ತಾಯಿತಗೊಂಡ)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "ನಿಮ್ಮ ಖಾತೆಯು ವಾಯಿದೆಯು ಮುಗಿದಿದೆ; ದಯವಿಟ್ಟು ನಿಮ್ಮ ಗಣಕ ವ್ಯವಸ್ಥಾಪಕರನ್ನು ಸಂಪರ್ಕಿಸಿ"
+
+msgid "No password supplied"
+msgstr "ಯಾವುದೆ ಗುಪ್ತಪದವನ್ನು ಒದಗಿಸಲಾಗಿಲ್ಲ"
+
+msgid "Password unchanged"
+msgstr "ಗುಪ್ತಪದವನ್ನು ಬದಲಾಯಿಸಲಾಗಿಲ್ಲ"
+
+msgid "Can not get username"
+msgstr "ಬಳಕೆದಾರ ಹೆಸರನ್ನು ಪಡೆಯಲಾಗಿಲ್ಲ"
+
+msgid "Retype new UNIX password:"
+msgstr "ಹೊಸ UNIX ಗುಪ್ತಪದವನ್ನು ಇನ್ನೊಮ್ಮೆ ನಮೂದಿಸಿ:"
+
+msgid "Enter new UNIX password:"
+msgstr "ಹೊಸ UNIX ಗುಪ್ತಪದವನ್ನು ನಮೂದಿಸಿ:"
+
+msgid "(current) UNIX password:"
+msgstr "(ಪ್ರಸಕ್ತ) UNIX ಗುಪ್ತಪದ:"
+
+msgid "Error while changing NIS password."
+msgstr "NIS ಗುಪ್ತಪದವನ್ನು ಬದಲಾಯಿಸುವಾಗ ದೋಷ ಉಂಟಾಗಿದೆ."
+
+msgid "You must choose a longer password"
+msgstr "ನೀವು ದೊಡ್ಡದಾದ ಗುಪ್ತಪದವನ್ನು ಬಳಸಬೇಕು"
+
+msgid "Password has been already used. Choose another."
+msgstr "ಗುಪ್ತಪದವು ಈಗಾಗಲೆ ಬಳಸಲಾಗಿದೆ. ಬೇರೊಂದನ್ನು ಆರಿಸಿ."
+
+msgid "You must wait longer to change your password"
+msgstr "ಗುಪ್ತಪದವನ್ನು ಬದಲಾಯಿಸಲು ನೀವು ಇನ್ನಷ್ಟು ಹೊತ್ತು ಕಾಯಬೇಕು"
+
+msgid "Sorry, passwords do not match"
+msgstr "ಕ್ಷಮಿಸಿ, ಗುಪ್ತಪದಗಳು ತಾಳೆಯಾಗುವುದಿಲ್ಲ"
+
+msgid "Checking..."
+msgstr "ಪರಿಶೀಲಿಸಲಾಗುತ್ತಿದೆ..."
+
+msgid "Authentication failed."
+msgstr "ದೃಢಿಕರಣವು ವಿಫಲಗೊಂಡಿದೆ."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "%s ಸೇವೆಯನ್ನು ನೆಲೆಗೊಳಿಸಲು ಶಕ್ತಗೊಳಿಸಲು ಸಾಧ್ಯವಾಗಿಲ್ಲ: %s\n"
+
+msgid "Incorrect password."
+msgstr "ಸರಿಯಲ್ಲದ ಗುಪ್ತಪದ."
+
+msgid "Not permitted to gain access at this time."
+msgstr "ಈ ಸಮಯದಲ್ಲಿ ನಿಲುಕನ್ನು ಪಡೆದುಕೊಳ್ಳಲು ಅನುಮತಿ ಇಲ್ಲ."
+
+msgid "No longer permitted to access the system."
+msgstr "ಗಣಕವನ್ನು ನಿಲುಕಿಸಿಕೊಳ್ಳಲು ಇನ್ನು ಮುಂದೆ ಅನುಮತಿ ಇಲ್ಲ."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "ನಿಮ್ಮ Caps Lock ಕೀಲಿಯು ಆನ್ ಆಗಿದೆ."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U, %h ನಲ್ಲಿ</span>"
+
+msgid "_Switch User"
+msgstr "ಬಳಕೆದಾರನನ್ನು ಬದಲಾಯಿಸು(_S)"
+
+msgid "_Log Out"
+msgstr "ನಿರ್ಗಮಿಸು(_L)"
+
+msgid "_Cancel"
+msgstr "ರದ್ದು ಮಾಡಲಾಗಿದೆ(_C)"
+
+msgid "_Unlock"
+msgstr "ಅನ್‌ಲಾಕ್ ಮಾಡು(_U)"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಅನ್ನು ಆಕರ್ಷಕವಾಗಿ ನಿರ್ಗಮಿಸುವಂತೆ ಮಾಡುತ್ತದೆ"
+
+msgid "Query the state of the screensaver"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರಿನ ಸ್ಥಿತಿಗಾಗಿ ಮನವಿ ಸಲ್ಲಿಸಿ"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಸಕ್ರಿಯವಾಗಿರಬೇಕಿರುವ ಸಮಯಕ್ಕಾಗಿ ಮನವಿಸಲ್ಲಿಸಿ"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"ಚಾಲನೆಯಲ್ಲಿರುವ ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಪ್ರಕ್ರಿಯೆಗೆ ತಕ್ಷಣವೆ ತೆರೆಯನ್ನು ಲಾಕ್ ಮಾಡುವಂತೆ ತಿಳಿಸುತ್ತದೆ"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಸಕ್ರಿಯವಾಗಿದ್ದರೆ ಬೇರೊಂದು ಗ್ರಾಫಿಕ್ಸ್‍ ಡೆಮೋಗೆ ಬದಲಾಯಿಸು"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಅನ್ನು ಆನ್ ಮಾಡು (ತೆರೆಯನ್ನು ಖಾಲಿಯಾಗಿ ಇರಿಸು)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಸಕ್ರಿಯವಾಗಿದ್ದರೆ ಅದನ್ನು ನಿಷ್ಕ್ರಿಯಗೊಳಿಸು (ತೆರೆಯನ್ನು ಖಾಲಿಯಾಗಿ ಇರಿಸಬೇಡ)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"ಚಲಾಯಿತಗೊಳ್ಳುತ್ತಿರುವ ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಅನ್ನು ಬಳಕೆದಾರರ ಕಾರ್ಯದಲ್ಲಿ ಹೊಂದಿಕೊಂಡಿರುವಂತೆ ಮಾಡು"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಅನ್ನು ಸಕ್ರಿಯಗೊಳ್ಳದಂತೆ ತಡೆಹಿಡಿ.  ತಡೆಯೊಡ್ಡುವಿಕೆಯು ಸಕ್ರಿಯಗೊಂಡಿದ್ದಾಗ ಆಜ್ಞೆಯು "
+"ನಿರ್ಬಂಧಿಸುತ್ತದೆ."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಅನ್ನು ತಡೆಯತ್ತಿರುವ ಕರೆ ಮಾಡುವ ಅನ್ವಯ"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಅನ್ನು ತಡೆಯಲು ಕಾರಣ"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ %s ಆಗಿದೆ\n"
+
+msgid "active"
+msgstr "ಸಕ್ರಿಯ"
+
+msgid "inactive"
+msgstr "ನಿಷ್ಕ್ರಿಯ"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಅನ್ನು ತಡೆಯಲಾಗುತ್ತಿಲ್ಲ\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಅನ್ನು ಇದು ತಡೆಯುತ್ತಿದೆ:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ %d ಸೆಕೆಂಡುಗಳ ಕಾಲ ಸಕ್ರಿಯವಾಗಿತ್ತು.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "ಸ್ಕ್ರೀನ್‌ಸೇವರ್ ಪ್ರಸಕ್ತ ಸಕ್ರಿಯವಾಗಿಲ್ಲ.\n"

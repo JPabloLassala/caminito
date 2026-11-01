@@ -1,0 +1,187 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# 6e9a9577074b2341d51f618cde75c068_3d9df7b <40bf3f0bbcec108c555dc79b84e0e20b_1525>, 2018
+# Džiugas Grėbliūnas <dziugas.grebliunas@gmail.com>, 2019
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+# Moo, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Moo, 2021\n"
+"Language-Team: Lithuanian (https://app.transifex.com/mate/teams/13566/lt/)\n"
+"Language: lt\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=4; plural=(n % 10 == 1 && (n % 100 > 19 || n % 100 < "
+"11) ? 0 : (n % 10 >= 2 && n % 10 <=9) && (n % 100 > 19 || n % 100 < 11) ? "
+"1 : n % 1 != 0 ? 2: 3);\n"
+
+msgid "Show debugging output"
+msgstr "Rodyti derinimo išvestį"
+
+msgid "Version of this application"
+msgstr "Šios programos versija"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Naudotojo vardas:"
+
+msgid "Password:"
+msgstr "Slaptažodis:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Turite tuojau pat pasikeisti slaptažodį (slaptažodis paseno)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Turite tuojau pat pasikeisti slaptažodį (root nurodymu)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Jūsų slaptažodis nustojo galiojęs; susisiekite su sistemos administratoriumi"
+
+msgid "No password supplied"
+msgstr "Slaptažodis nenurodytas"
+
+msgid "Password unchanged"
+msgstr "Slaptažodis nepakeistas"
+
+msgid "Can not get username"
+msgstr "Nepavyko gauti naudotojo vardo"
+
+msgid "Retype new UNIX password:"
+msgstr "Pakartokite naują UNIX slaptažodį:"
+
+msgid "Enter new UNIX password:"
+msgstr "Įveskite naują UNIX slaptažodį:"
+
+msgid "(current) UNIX password:"
+msgstr "(esamas) UNIX slaptažodis:"
+
+msgid "Error while changing NIS password."
+msgstr "Klaida keičiant NIS slaptažodį."
+
+msgid "You must choose a longer password"
+msgstr "Turite pasirinkti ilgesnį slaptažodį"
+
+msgid "Password has been already used. Choose another."
+msgstr "Slaptažodis jau buvo naudojamas. Pasirinkite kitą."
+
+msgid "You must wait longer to change your password"
+msgstr "Turite palaukti ilgiau norėdami pakeisti slaptažodį"
+
+msgid "Sorry, passwords do not match"
+msgstr "Slaptažodžiai nevienodi"
+
+msgid "Checking..."
+msgstr "Tikrinama..."
+
+msgid "Authentication failed."
+msgstr "Tapatybė nepatvirtinta."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Nepavyko sukurti paslaugos %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Neteisingas slaptažodis."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Šį kartą neleista gauti priėjimo."
+
+msgid "No longer permitted to access the system."
+msgstr "Daugiau nebeleidžiama prieiti prie šios sistemos."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "Įjungtas jūsų Caps Lock klavišas."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U kompiuteryje %h</span>"
+
+msgid "_Switch User"
+msgstr "_Perjungti naudotoją"
+
+msgid "_Log Out"
+msgstr "At_sijungti"
+
+msgid "_Cancel"
+msgstr "_Atsisakyti"
+
+msgid "_Unlock"
+msgstr "_Atrakinti"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Paprasčiausiai užveria ekrano užsklandą"
+
+msgid "Query the state of the screensaver"
+msgstr "Užklausti ekrano užsklandos būklės"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Užklausti, kiek laiko ekrano užsklanda buvo aktyvi"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Nurodo ekrano užsklandos procesui tuojau pat užrakinti ekraną"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr "Nurodo vykdomam ekrano užsklandos procesui tuojau pat atrakinti ekraną"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Jei ekrano užsklanda aktyvi, perjungti į kitą grafinę demonstraciją"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Įjungti ekrano užsklandą (užtemdyti ekraną)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Jei ekrano užsklanda aktyvi, ją deaktyvuoti (išjungti ekrano užtemdymą)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Simuliuoti naudotojo aktyvumą, kad nebūtų aktyvuota ekrano užsklanda"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Sulaikyti ekrano užskalandą nuo aktyvavimo. Komanda blokuoja, kol kliudymas "
+"aktyvus."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Iškviečianti programa slopinanti ekrano užsklandą"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Ekrano užsklandos iškvietimo priežastis"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Ekrano užsklanda yra %s\n"
+
+msgid "active"
+msgstr "aktyvi"
+
+msgid "inactive"
+msgstr "neaktyvi"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Ekrano užsklanda neblokuojama\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Ekrano užsklanda blokuojama šios programos:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Ekrano užsklanda buvo aktyvi %d sekundžių.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Ekrano užsklanda neaktyvi\n"

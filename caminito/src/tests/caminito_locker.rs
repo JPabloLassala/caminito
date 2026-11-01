@@ -8,8 +8,8 @@
 //! its process and execs the locker on a socket of the test's, whose connections the test
 //! hands to Caminito as that process's. The locker reads none of the user's settings:
 //! GSettings is a keyfile backend in the test's directory, on the test schemas,
-//! mate-screensaver's and MateBG's among them, so a test can set keys and change them. Its
-//! password is checked by a stand-in mate-screensaver service on pam_wrapper's pam_matrix,
+//! org.mate.screensaver's and MateBG's among them, so a test can set keys and change them. Its
+//! password is checked by a stand-in caminito-locker service on pam_wrapper's pam_matrix,
 //! from the modules directory `PAM_WRAPPER_MODULES` names, as in the conversation's own test
 //! (helpers/caminito-locker/test-auth-pam.c). What the dialog shows is the checklist's: here
 //! the locker's debug lines say what it did.
@@ -25,6 +25,7 @@ use std::process::Command;
 use smithay::output::Output;
 
 use super::fixture::{BTN_LEFT, Fixture, KEY_A, KEY_ENTER, KEY_ESC, KEY_LEFTSHIFT, test_schemas};
+use super::locker::fixture_with;
 use crate::output::output_geometry;
 use crate::settings::Value;
 use crate::settings::translate::CAMINITO;
@@ -42,6 +43,8 @@ struct Locker {
     listener: UnixListener,
     /// How long the dialog waits for a key before it hides, if not a minute.
     dialog_timeout_msec: Option<u32>,
+    /// More of the locker's environment.
+    env: Vec<(&'static str, String)>,
 }
 
 impl Locker {
@@ -53,6 +56,7 @@ impl Locker {
             dir,
             listener,
             dialog_timeout_msec: None,
+            env: Vec::new(),
         };
         locker.write_stand_in_service();
         locker
@@ -60,6 +64,11 @@ impl Locker {
 
     fn path(&self, name: &str) -> PathBuf {
         self.dir.path().join(name)
+    }
+
+    /// The stand-in PAM service's file.
+    fn service(&self) -> PathBuf {
+        self.path("pam.d").join("caminito-locker")
     }
 
     /// pam_matrix's password file, with the test's user, and the service on it, with
@@ -74,7 +83,7 @@ impl Locker {
             "no pam_matrix.so in PAM_WRAPPER_MODULES ({modules:?}): is pam_wrapper installed?",
         );
         let passdb = self.path("passdb");
-        let line = format!("{}:{PASSWORD}:mate-screensaver\n", users_name());
+        let line = format!("{}:{PASSWORD}:caminito-locker\n", users_name());
         std::fs::write(&passdb, line).unwrap();
         std::fs::create_dir(self.path("pam.d")).unwrap();
         std::fs::create_dir(self.path("faillock")).unwrap();
@@ -87,7 +96,7 @@ impl Locker {
             passdb = passdb.display(),
             faillock = self.path("faillock").display(),
         );
-        std::fs::write(self.path("pam.d").join("mate-screensaver"), service).unwrap();
+        std::fs::write(self.service(), service).unwrap();
     }
 
     /// The `locker-command`: a shell that notes its process, then execs caminito-locker in
@@ -115,12 +124,13 @@ impl Locker {
         if let Some(msec) = self.dialog_timeout_msec {
             env.push(("CAMINITO_LOCKER_DIALOG_TIMEOUT_MSEC", msec.to_string()));
         }
+        env.extend(self.env.iter().cloned());
         let env: Vec<String> = env
             .iter()
             .map(|(name, value)| format!("{name}={value}"))
             .collect();
         let script = format!(
-            "echo $$ >{pid}; exec env -u DISPLAY -u WAYLAND_SOCKET {env} '{program}' --verbose >>{log} 2>&1",
+            "echo $$ >{pid}; exec env -u DISPLAY -u WAYLAND_SOCKET -u XDG_SEAT_PATH {env} '{program}' --verbose >>{log} 2>&1",
             pid = quoted(&self.path("pid")),
             env = env.join(" "),
             log = quoted(&self.path("log")),
@@ -308,6 +318,161 @@ fn the_password_typed_at_caminito_lockers_dialog_unlocks_after_a_wrong_one() {
         |f| f.lock_state() == "unlocked" && dump(f)["locker"]["state"] == "idle",
         seen,
     );
+}
+
+/// `keyfile`'s locker on one output, with `env`, asked to lock with the locker connected.
+fn locked_with_env(keyfile: &str, env: Vec<(&'static str, String)>) -> (Fixture, Locker) {
+    let mut locker = Locker::new();
+    locker.env = env;
+    locker.set_settings(keyfile);
+    lock_with(locker, &[(1920, 1080)], |_| None)
+}
+
+/// The Spanish catalogue of caminito-locker's domain, built from its `.po` file under `dir`,
+/// as the package's would be under the locale directory.
+fn write_spanish_catalogue(dir: &Path) {
+    let messages = dir.join("es").join("LC_MESSAGES");
+    std::fs::create_dir_all(&messages).unwrap();
+    let po = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../helpers/caminito-locker/po/es.po"
+    );
+    let status = Command::new("msgfmt")
+        .arg("-o")
+        .arg(messages.join("caminito-locker.mo"))
+        .arg(po)
+        .status()
+        .expect("msgfmt runs");
+    assert!(status.success());
+}
+
+/// A UTF-8 locale of this machine's other than C's, under which glibc honours `LANGUAGE`.
+fn a_utf8_locale() -> String {
+    let output = Command::new("locale").arg("-a").output().unwrap();
+    let locales = String::from_utf8(output.stdout).unwrap();
+    locales
+        .lines()
+        .find(|locale| locale.ends_with("utf8") && !locale.starts_with("C."))
+        .expect("the test needs a UTF-8 locale other than C.UTF-8 generated")
+        .to_owned()
+}
+
+/// ADR 0056: nothing of the package is read. The schema is the one Caminito ships, a link in
+/// the test schemas, the service is caminito-locker's, the theme directory is Caminito's, the
+/// strings are the locker's own domain's, and the program names none of the package's files.
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn caminito_locker_locks_and_unlocks_in_spanish_with_nothing_of_mate_screensaver() {
+    let program = std::fs::read(std::env::var("CAMINITO_LOCKER").unwrap()).unwrap();
+    // As a whole string, a service or a domain, or as a directory of a path. The name is also
+    // in the dialog's notice, and can be in the build's directory.
+    for name in [&b"\0mate-screensaver\0"[..], &b"/mate-screensaver"[..]] {
+        assert!(!program.windows(name.len()).any(|bytes| bytes == name));
+    }
+
+    let catalogues = tempfile::tempdir().unwrap();
+    write_spanish_catalogue(catalogues.path());
+    let locale_dir = catalogues.path().display().to_string();
+    let env = vec![
+        ("LC_ALL", a_utf8_locale()),
+        ("LANGUAGE", "es".to_owned()),
+        ("CAMINITO_LOCKER_LOCALE_DIR", format!("'{locale_dir}'")),
+    ];
+    let (mut f, locker) = locked_with_env("", env);
+    let seen = || locker.seen();
+    let prompt = "Setting prompt to: Contraseña:";
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
+    f.dispatch_until_explained(|_| locker.count(prompt) == 1, seen);
+    assert!(
+        seen().contains("/caminito/lock-dialog-default.ui"),
+        "{}",
+        seen()
+    );
+
+    type_and_enter(&mut f, "a");
+    f.dispatch_until_explained(|_| locker.count(prompt) == 2, seen);
+    // Not "Incorrect password.": the locker tells that by the prompt, in the language of
+    // its catalogue, and the stand-in's pam_matrix asks in English.
+    let refused = "Verify user returned error: La autenticación ha fallado.";
+    assert!(seen().contains(refused), "{}", seen());
+
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(
+        |f| f.lock_state() == "unlocked" && dump(f)["locker"]["state"] == "idle",
+        seen,
+    );
+}
+
+const SWITCH_ENABLED: &str = "[org/mate/screensaver]\nuser-switch-enabled=true\n";
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_hides_without_a_display_managers_seat() {
+    let (mut f, locker) = locked_with_env(SWITCH_ENABLED, Vec::new());
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
+    f.dispatch_until_explained(|_| locker.count("Switch User: enabled") >= 1, seen);
+    assert_eq!(locker.count("Switch User button: shown"), 0, "{}", seen());
+    assert!(
+        locker.count("Switch User button: hidden") >= 1,
+        "{}",
+        seen()
+    );
+}
+
+/// A seat path that no display manager answers for, as after a greeter's gone: the system bus
+/// here is one that can't be reached. That a seat which answers shows the button is the
+/// checklist's, with the real greeter.
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn switch_user_hides_with_a_seat_that_no_display_manager_answers_for() {
+    let env = vec![
+        (
+            "XDG_SEAT_PATH",
+            "/org/freedesktop/DisplayManager/Seat0".to_owned(),
+        ),
+        (
+            "DBUS_SYSTEM_BUS_ADDRESS",
+            "unix:path=/nonexistent".to_owned(),
+        ),
+    ];
+    let (mut f, locker) = locked_with_env(SWITCH_ENABLED, env);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
+    f.dispatch_until_explained(|_| locker.count("Switch User: enabled") >= 1, seen);
+    assert_eq!(locker.count("Switch User button: shown"), 0, "{}", seen());
+    assert!(
+        locker.count("Switch User button: hidden") >= 1,
+        "{}",
+        seen()
+    );
+}
+
+/// ADR 0056: a missing service is a failed start, not a prompt that can't succeed. The locker
+/// exits each time, so Caminito gives up, the session stays locked, and the message says how
+/// to end it.
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_missing_pam_service_reaches_the_give_up_state_with_the_session_locked() {
+    let locker = Locker::new();
+    std::fs::remove_file(locker.service()).unwrap();
+    let mut f = fixture_with(locker.command(), Vec::new());
+
+    f.state.request_lock();
+    f.dispatch_until_explained(
+        |f| dump(f)["locker"]["state"] == "gave-up",
+        || locker.seen(),
+    );
+
+    assert_eq!(f.lock_state(), "pending");
+    assert_eq!(
+        locker.count("has no PAM service caminito-locker"),
+        5,
+        "{}",
+        locker.seen()
+    );
+    let message = dump(&f)["locker"]["message"].as_str().unwrap().to_owned();
+    assert!(message.contains("loginctl unlock-session"), "{message}");
 }
 
 /// The failures `pam_faillock` has recorded for the user in the stand-in service's tally.
@@ -503,7 +668,7 @@ fn locker_with_a_service_that_gives_up() -> Locker {
     let locker = Locker::new();
     locker.set_settings(SOLID_BACKGROUND);
     std::fs::write(
-        locker.path("pam.d").join("mate-screensaver"),
+        locker.service(),
         "auth required pam_deny.so\naccount required pam_deny.so\n",
     )
     .unwrap();

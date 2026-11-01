@@ -1,0 +1,186 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# fbc955180bc2b956cb4ef52d00eb80a0_91487f8, 2018
+# Ikuru K <kanumaiku@gmail.com>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2020
+# ABE Tsunehiko, 2020
+# c7a0a66e0476db158663636124cfb54f_370a183, 2021
+# green <usergreen@users.osdn.me>, 2024
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: green <usergreen@users.osdn.me>, 2024\n"
+"Language-Team: Japanese (https://app.transifex.com/mate/teams/13566/ja/)\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Show debugging output"
+msgstr "デバッグ出力を表示する"
+
+msgid "Version of this application"
+msgstr "このアプリケーションのバージョンを表示する"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "ユーザ名:"
+
+msgid "Password:"
+msgstr "パスワード:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "今すぐパスワードの変更が必要です (パスワードは期限切れです)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "今すぐパスワードの変更が必要です (管理者が強制しています)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "お使いのアカウントは期限切れです; システム管理者に問い合わせて下さい"
+
+msgid "No password supplied"
+msgstr "パスワードを指定していません"
+
+msgid "Password unchanged"
+msgstr "パスワードは変更されていません"
+
+msgid "Can not get username"
+msgstr "ユーザ名を取得できません"
+
+msgid "Retype new UNIX password:"
+msgstr "(確認) 新しい UNIX パスワード:"
+
+msgid "Enter new UNIX password:"
+msgstr "新しい UNIX パスワード:"
+
+msgid "(current) UNIX password:"
+msgstr "(現在の) UNIX パスワード:"
+
+msgid "Error while changing NIS password."
+msgstr "NIS パスワードを変更する際にエラー"
+
+msgid "You must choose a longer password"
+msgstr "もっと長いパスワードを選択して下さい"
+
+msgid "Password has been already used. Choose another."
+msgstr "既にパスワードは使用されているので別のものを選択して下さい"
+
+msgid "You must wait longer to change your password"
+msgstr "パスワードを変更するまで待たなければなりません"
+
+msgid "Sorry, passwords do not match"
+msgstr "すみませんが、パスワードが一致しません"
+
+msgid "Checking..."
+msgstr "確認中..."
+
+msgid "Authentication failed."
+msgstr "認証に失敗しました"
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "サービス %s を確立できません: %s\n"
+
+msgid "Incorrect password."
+msgstr "パスワードが間違っています"
+
+msgid "Not permitted to gain access at this time."
+msgstr "この時点ではアクセスが拒否されています"
+
+msgid "No longer permitted to access the system."
+msgstr "システムへのアクセスが許可されていません"
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%B%e日(%a)"
+
+msgid "You have the Caps Lock key on."
+msgstr "[Caps Lock] キーが押されています"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U@%h</span>"
+
+msgid "_Switch User"
+msgstr "ユーザを切り替える(_S)"
+
+msgid "_Log Out"
+msgstr "ログアウト(_L)"
+
+msgid "_Cancel"
+msgstr "キャンセル(_C)"
+
+msgid "_Unlock"
+msgstr "ロックの解除(_U)"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "スクリーンセーバを強制終了する"
+
+msgid "Query the state of the screensaver"
+msgstr "スクリーンセーバの状態を問い合わせる"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "スクリーンセーバが起動するしている時間を問い合わせる"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "起動中のスクリーンセーバに今すぐ画面をロックさせる"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"実行中のスクリーンセーバプロセスに画面ロックをすぐ解除するよう指示します"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "スクリーンセーバが起動されていたら別のグラフィックスデモに切り替える"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "スクリーンセーバを有効にする (ブランクスクリーン)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "有効になっているスクリーンセーバを無効にする (ブランクスクリーン解除)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"ユーザが設定できる機能を模擬するためにスクリーンセーバをランダムに実行する"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"スクリーンセーバの起動を抑制する (これが有効な場合はコマンドが無視される)"
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "スクリーンセーバを抑止するアプリケーションを呼び出す"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "スクリーンセーバを抑止するための理由を指定する"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "スクリーンセーバは%s\n"
+
+msgid "active"
+msgstr "起動されています"
+
+msgid "inactive"
+msgstr "起動されていません"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "スクリーンセーバは無効になっていません\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "次のアプリがスクリーンセーバを無効にしています:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "スクリーンセーバは %d 秒間起動されています\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "スクリーンセーバは現在、有効になっていません。\n"

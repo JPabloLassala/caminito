@@ -1,0 +1,182 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# مهدي السطيفي <chinoune.mehdi@gmail.com>, 2018
+# Mosaab Alzoubi <moceap@hotmail.com>, 2019
+# Tux-Tn <sarhanaissi@gmail.com>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Arabic (https://app.transifex.com/mate/teams/13566/ar/)\n"
+"Language: ar\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=6; plural=n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 "
+"&& n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5;\n"
+
+msgid "Show debugging output"
+msgstr "أظهر مُخرجات التنقيح"
+
+msgid "Version of this application"
+msgstr "إصدار هذا التطبيق"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "اسم المستخدم:"
+
+msgid "Password:"
+msgstr "كلمة المرور:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "يجب أن تغير كلمة مرورك حالًا (كلمة المرور قديمة)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "يجب أن تغير كلمة مرورك حالًا (فرض الجذر ذلك)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "انقضى حسابك، الرجاء الاتصال بمدير النظام"
+
+msgid "No password supplied"
+msgstr "لم تزود كلمة مرور جديدة"
+
+msgid "Password unchanged"
+msgstr "لم تغير كلمة المرور"
+
+msgid "Can not get username"
+msgstr "لا يمكن تلقي اسم المستخدم"
+
+msgid "Retype new UNIX password:"
+msgstr "أعد كتابة كلمة مرور يونكس الجديدة:"
+
+msgid "Enter new UNIX password:"
+msgstr "أدخل كلمة مرور يونكس جديدة:"
+
+msgid "(current) UNIX password:"
+msgstr "كلمة مرور يونكس (الحالية):"
+
+msgid "Error while changing NIS password."
+msgstr "خطأ أثناء تغيير كلمة مرور NIS."
+
+msgid "You must choose a longer password"
+msgstr "يجب أن تختار كلمة مرور أطول"
+
+msgid "Password has been already used. Choose another."
+msgstr "كلمة المرور مستخدمة. الرجاء اختيار كلمة مغايرة."
+
+msgid "You must wait longer to change your password"
+msgstr "يجب أن تنتظر مدة أطول لتتمكن من تغيير كلمة مرورك"
+
+msgid "Sorry, passwords do not match"
+msgstr "عفوًا، كلمتا المرور لا تتطابقان"
+
+msgid "Checking..."
+msgstr "يفحص..."
+
+msgid "Authentication failed."
+msgstr "فشل الاستيثاق."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "تعذّر تنصيب الخدمة %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "كلمة المرور غير صحيحة."
+
+msgid "Not permitted to gain access at this time."
+msgstr "منع المستخدم من النفاذ الآن."
+
+msgid "No longer permitted to access the system."
+msgstr "لم يعد يسمح بالنفاذ إلى النظام."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "مفتاح الحروف الكبيرة مفعل"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U على %h</span>"
+
+msgid "_Switch User"
+msgstr "غيّر المُ_ستخدم"
+
+msgid "_Log Out"
+msgstr "سجّل ال_خروج"
+
+msgid "_Cancel"
+msgstr "أل_غ"
+
+msgid "_Unlock"
+msgstr "ا_فتح القفل"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "يسبب خروج حافظة الشاشة بسلام"
+
+msgid "Query the state of the screensaver"
+msgstr "أظهر حالة حافظة الشاشة"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "استعلم عن مدّة الزمن التي كانت فيها حافظة الشاشة نشطة"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "تخبر عملية حافظة الشاشة التي تعمل بقفل الشاشة مباشرة "
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "انتقل إلى عرض رسومي آخر  إذا كانت حافظة الشاشة  نشِطة"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "شغّل حافظة الشاشة (أفرغ الشاشة)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "أوقف حافظة الشاشة إذا كانت نشِطة (الغي إفراغ الشاشة)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "وكز حافظة الشاشة المشتغل لمحاكاة نشاط من المستخدم"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr "امنع حافظة الشاشة من التفعيل. الأمر يتوقف عندما يكون المنع نشطًا."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "التطبيق المنادي الذي يمنع حافظة الشاشة"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "السبب وراء توقف حافظة الشاشة"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "حافظة الشاشة هي %s\n"
+
+msgid "active"
+msgstr "نشط"
+
+msgid "inactive"
+msgstr "غير نشط"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "حافظة الشاشة غير مُثبطة\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "حافظة الشاشة أثبطها:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "حافظة الشاشة نشِطة منذ %Id ثواني.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "حافظة الشاشة غير غير نشطة حاليًا\n"

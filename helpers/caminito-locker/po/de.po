@@ -1,0 +1,196 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# crazyd <lebendig2002@yahoo.de>, 2018
+# Tobias Bannert <tobannert@gmail.com>, 2019
+# Ettore Atalan <atalanttore@googlemail.com>, 2020
+# Maria Kor <korda.maria@gmail.com>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: German (https://app.transifex.com/mate/teams/13566/de/)\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Fehlerdiagnoseausgaben anzeigen"
+
+msgid "Version of this application"
+msgstr "Version dieser Anwendung"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Benutzername:"
+
+msgid "Password:"
+msgstr "Passwort:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Sie müssen Ihr Passwort sofort ändern (Passwort veraltet)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"Sie müssen Ihr Passwort sofort ändern (durch Systemadministrator erzwungen)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Ihr Benutzerkonto ist abgelaufen. Bitte kontaktieren Sie Ihren "
+"Systemadministrator."
+
+msgid "No password supplied"
+msgstr "Kein Passwort angegeben"
+
+msgid "Password unchanged"
+msgstr "Passwort ist unverändert"
+
+msgid "Can not get username"
+msgstr "Benutzername konnte nicht ermittelt werden"
+
+msgid "Retype new UNIX password:"
+msgstr "Neues UNIX-Passwort wiederholen:"
+
+msgid "Enter new UNIX password:"
+msgstr "Neues UNIX-Passwort:"
+
+msgid "(current) UNIX password:"
+msgstr "Altes UNIX-Passwort:"
+
+msgid "Error while changing NIS password."
+msgstr "Beim Ändern des NIS-Passworts ist ein Fehler aufgetreten."
+
+msgid "You must choose a longer password"
+msgstr "Sie müssen ein längeres Passwort wählen"
+
+msgid "Password has been already used. Choose another."
+msgstr "Dieses Passwort wurde bereits verwendet. Bitte wählen Sie ein anderes."
+
+msgid "You must wait longer to change your password"
+msgstr "Sie müssen länger warten, um Ihr Passwort zu ändern."
+
+msgid "Sorry, passwords do not match"
+msgstr "Entschuldigung, die Passwörter stimmen nicht überein"
+
+msgid "Checking..."
+msgstr "Überprüfung läuft …"
+
+msgid "Authentication failed."
+msgstr "Legitimierung ist gescheitert."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Dienst %s konnte nicht eingerichtet werden: %s\n"
+
+msgid "Incorrect password."
+msgstr "Falsches Passwort."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Ein Zugriff ist derzeit nicht gestattet."
+
+msgid "No longer permitted to access the system."
+msgstr "Es ist nicht länger gestattet, auf das System zuzugreifen."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %e. %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "Die Feststelltaste ist aktiviert."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U auf %h</span>"
+
+msgid "_Switch User"
+msgstr "_Benutzer wechseln"
+
+msgid "_Log Out"
+msgstr "_Abmelden"
+
+msgid "_Cancel"
+msgstr "_Abbrechen"
+
+msgid "_Unlock"
+msgstr "_Entsperren"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Den Bildschirmschoner beenden"
+
+msgid "Query the state of the screensaver"
+msgstr "Den Status des Bildschirmschoners abfragen"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Die Aktivitätsdauer des Bildschirmschoners abfragen"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Teilt dem laufenden Bildschirmschonerprozess mit, den Bildschirm sofort zu "
+"sperren"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"Teilt dem laufenden Bildschirmschonerprozess mit, den Bildschirm sofort zu "
+"entsperren"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Wenn der Bildschirmschoner aktiv ist, zu einer anderen Grafikdemo wechseln"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Den Bildschirmschoner aktivieren (Bildschirm abdunkeln)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Wenn Bildschirmschoners aktiv ist, dann deaktivieren (Bildschirmabdunkelung "
+"aufheben)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Den laufenden Bildschirmschonerprozess anstoßen, um Benutzeraktivität zu "
+"simulieren"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Verhindern, dass der Bildschirmschoner aktiviert wird. Befehl wird bei "
+"aktiver Sperre blockiert."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Die Anwendung, die den Bildschirmschoner unterdrückt"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Der Grund für die Unterdrückung des Bildschirmschoners"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Der Bildschirmschoner ist %s\n"
+
+msgid "active"
+msgstr "aktiv"
+
+msgid "inactive"
+msgstr "inaktiv"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Der Bildschirmschoner wird nicht unterdrückt\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Der Bildschirmschoner wird unterdrückt von:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Der Bildschirmschoner war für %d Sekunden aktiv.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Der Bildschirmschoner ist derzeit nicht aktiv.\n"

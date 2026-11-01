@@ -1,0 +1,186 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Malagasy (https://app.transifex.com/mate/teams/13566/mg/)\n"
+"Language: mg\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "Show debugging output"
+msgstr "Mampiseho ny lazan'ny debugging"
+
+msgid "Version of this application"
+msgstr "Ny kinovan'io rindranasa io"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Anaran'ny mpampiasa:"
+
+msgid "Password:"
+msgstr "Teny fanalahidy:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"Mila manova ny teny fanalahidinao izao dieny izao ianao (tonta ny teny "
+"fanalahidy)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"Mila manova ny teny fanalahidinao izao dieny izao ianao (teren'ny faka)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Tapi-potoana ny kaontinao. "
+
+msgid "No password supplied"
+msgstr "Tsy misy teny fanalahidy nomena"
+
+msgid "Password unchanged"
+msgstr "Tsy niova ilay teny fanalahidy"
+
+msgid "Can not get username"
+msgstr "Tsy mety azo ny anaran'ny mpampiasa"
+
+msgid "Retype new UNIX password:"
+msgstr "Avereno soratana ny teny fanalahidy UNIX vaovao:"
+
+msgid "Enter new UNIX password:"
+msgstr "Soraty ny teny fanalahidy UNIX vaovao:"
+
+msgid "(current) UNIX password:"
+msgstr "Ny teny fanalahidy UNIX (izao):"
+
+msgid "Error while changing NIS password."
+msgstr "Nisy olana teo am-panovana ny teny fanalahidy NIS."
+
+msgid "You must choose a longer password"
+msgstr "Tsy maintsy mitady teny fanalahidy lavalava ianao"
+
+msgid "Password has been already used. Choose another."
+msgstr "Efa nampiasaina io teny fanalahidy io. Manomeza hafa."
+
+msgid "You must wait longer to change your password"
+msgstr ""
+"Tsy maintsy miandry elaela ianao vao afaka manova ny teny fanalahidinao"
+
+msgid "Sorry, passwords do not match"
+msgstr "Miala tsiny. Tsy mitovy ilay teny fanalahidy"
+
+msgid "Checking..."
+msgstr ""
+
+msgid "Authentication failed."
+msgstr "Tsy nety ny fanamarinana."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Tsy afaka nametraka ny sampan'asa %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Teny fanalahidy diso."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Tsy mahazo alalana hihiditra amin'izao fotoana izao."
+
+msgid "No longer permitted to access the system."
+msgstr "Tsy mahazo alalana hampiasa ny rafitra."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "Mandeha ny kitendry Caps Lock."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U amin'ny %h</span>"
+
+msgid "_Switch User"
+msgstr ""
+
+msgid "_Log Out"
+msgstr "_Hivoaka"
+
+msgid "_Cancel"
+msgstr "_Aoka"
+
+msgid "_Unlock"
+msgstr "_Vohay"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Mahatonga ilay sary mitsitsy hijanona moramora fotsiny"
+
+msgid "Query the state of the screensaver"
+msgstr "Manontany ny toetran'ilay sary mitsitsy"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr ""
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Milaza ny asan'ny sary mitsitsy mandeha mba hangeja ny efijery avy hatrany"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Raha mandeha ny sary mitsitsy, dia miovà démon-tsary hafa"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Mandefa ny sary mitsitsy (manafoana ny efijery)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Atsaharo ny sary mitsitsy raha mandeha (mamerina ny efijery)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Manosika ny sary mitsitsy mandeha haka tahaka ny fihetsiketsehan'ny mpampiasa"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Misakana ny sary mitsitsy handeha. Voasakana ny baiko rehefa mandeha ny "
+"fisakanana."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Ny rindranasa mpiantso misakana ilay sary mitsitsy"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Ny antony isakanana ilay sary mihetsika"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "%s ilay sary mitsitsy\n"
+
+msgid "active"
+msgstr "miasa"
+
+msgid "inactive"
+msgstr "tsy miasa"
+
+msgid "The screensaver is not inhibited\n"
+msgstr ""
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr ""
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr ""
+
+msgid "The screensaver is not currently active.\n"
+msgstr ""

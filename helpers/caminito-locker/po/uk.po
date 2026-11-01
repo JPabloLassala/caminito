@@ -1,0 +1,190 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# zubr139, 2018
+# Denis <prohibiti@gmail.com>, 2018
+# Oleksii Khalikov <oleksii.khalikov@gmail.com>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+# Микола Ткач <chistomov@gmail.com>, 2021
+# Serhii <sergiy@gorichenko.com>, 2022
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Serhii <sergiy@gorichenko.com>, 2022\n"
+"Language-Team: Ukrainian (https://app.transifex.com/mate/teams/13566/uk/)\n"
+"Language: uk\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=4; plural=(n % 1 == 0 && n % 10 == 1 && n % 100 != "
+"11 ? 0 : n % 1 == 0 && n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % "
+"100 > 14) ? 1 : n % 1 == 0 && (n % 10 ==0 || (n % 10 >=5 && n % 10 <=9) || "
+"(n % 100 >=11 && n % 100 <=14 )) ? 2: 3);\n"
+
+msgid "Show debugging output"
+msgstr "Показувати вивід налагодження"
+
+msgid "Version of this application"
+msgstr "Версія цієї програми"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Ім’я користувача:"
+
+msgid "Password:"
+msgstr "Пароль:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Вам слід негайно змінити свій пароль (пароль старий)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Вам слід негайно змінити свій пароль (адміністративна вимога)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Ваш обліковий запис застарів; зверніться, будь ласка, до системного "
+"адміністратора"
+
+msgid "No password supplied"
+msgstr "Пароль не заданий"
+
+msgid "Password unchanged"
+msgstr "Пароль не змінений"
+
+msgid "Can not get username"
+msgstr "Не вдається отримати ім'я користувача"
+
+msgid "Retype new UNIX password:"
+msgstr "Повторіть новий пароль UNIX:"
+
+msgid "Enter new UNIX password:"
+msgstr "Задайте новий пароль UNIX:"
+
+msgid "(current) UNIX password:"
+msgstr "(поточний) пароль UNIX:"
+
+msgid "Error while changing NIS password."
+msgstr "Помилка при зміні пароля NIS."
+
+msgid "You must choose a longer password"
+msgstr "Потрібно вибрати довший пароль"
+
+msgid "Password has been already used. Choose another."
+msgstr "Пароль вже використовувався. Виберіть інший пароль."
+
+msgid "You must wait longer to change your password"
+msgstr "Вам слід почекати ще, щоб мати можливість змінити свій пароль"
+
+msgid "Sorry, passwords do not match"
+msgstr "На жаль, паролі не збігаються"
+
+msgid "Checking..."
+msgstr "Перевірка..."
+
+msgid "Authentication failed."
+msgstr "Помилка автентифікації."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Не вдається встановити службу %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Неправильний пароль."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Отримання доступу зараз не дозволено."
+
+msgid "No longer permitted to access the system."
+msgstr "Доступ до системи більше не дозволений."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "Ви увімкнули клавішу Caps Lock."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U на %h</span>"
+
+msgid "_Switch User"
+msgstr "_Змінити користувача"
+
+msgid "_Log Out"
+msgstr "_Завершити сеанс"
+
+msgid "_Cancel"
+msgstr "_Скасувати"
+
+msgid "_Unlock"
+msgstr "_Розблокувати"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Призводить до виходу з екранної заставки"
+
+msgid "Query the state of the screensaver"
+msgstr "Запитати стан екранної заставки"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Запитати інтервал часу, впродовж якого була активна екранна заставка"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Вказує запущеному процесу екранної заставки негайно заблокувати екран"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr "Вказує запущеному процесу екранної заставки негайно розблокувати екран"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Якщо екранна заставка активна, змінити заставку на іншу"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Увімкнути екранну заставку (погасити екран)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Якщо екранна заставка активна, деактивувати її (відновити екран)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Штрикнути запущену екранну заставку для імітації активності"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Затримати активацію екранної заставки. Команда блокується доки затримка "
+"активна."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Виклик програми, яка затримує екранну заставку"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Причина для затримки екранної заставки"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Екранна заставка: %s\n"
+
+msgid "active"
+msgstr "активне"
+
+msgid "inactive"
+msgstr "неактивне"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Екранна заставка не затримується\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Екранна заставка затримується:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Екранна заставка була активною впродовж %d секунд.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Екранна заставка зараз не активна.\n"

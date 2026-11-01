@@ -1,0 +1,192 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Ján Ďanovský <dagsoftware@yahoo.com>, 2018
+# 32442f8bc5cc500b59f161d95078a28a_525ed04, 2018
+# peter, 2018
+# Vendelín Slezák <klaykap@yandex.com>, 2018
+# Tibor Kaputa <tibbbi2@gmail.com>, 2019
+# Dušan Kazik <prescott66@gmail.com>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Slovak (https://app.transifex.com/mate/teams/13566/sk/)\n"
+"Language: sk\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=4; plural=(n % 1 == 0 && n == 1 ? 0 : n % 1 == 0 && n "
+">= 2 && n <= 4 ? 1 : n % 1 != 0 ? 2: 3);\n"
+
+msgid "Show debugging output"
+msgstr "Zobraziť ladiaci výstup"
+
+msgid "Version of this application"
+msgstr "Verzia tohto programu"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Meno používateľa:"
+
+msgid "Password:"
+msgstr "Heslo:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Musíte si ihneď zmeniť heslo (je príliš staré)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Musíte si ihneď zmeniť heslo (zmenu vyžiadal správca)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Platnosť vášho účtu vypršala. Prosím, kontaktujte správcu vášho systému"
+
+msgid "No password supplied"
+msgstr "Nebolo zadané heslo"
+
+msgid "Password unchanged"
+msgstr "Heslo nezmenené"
+
+msgid "Can not get username"
+msgstr "Nie je možné zistiť meno používateľa"
+
+msgid "Retype new UNIX password:"
+msgstr "Znovu zadajte UNIXové heslo:"
+
+msgid "Enter new UNIX password:"
+msgstr "Zadajte nové UNIXové heslo:"
+
+msgid "(current) UNIX password:"
+msgstr "(aktuálne) UNIXové heslo:"
+
+msgid "Error while changing NIS password."
+msgstr "Chyba pri zmene hesla NIS."
+
+msgid "You must choose a longer password"
+msgstr "Musíte vybrať dlhšie heslo"
+
+msgid "Password has been already used. Choose another."
+msgstr "Toto heslo ste už použili. Vyberte iné."
+
+msgid "You must wait longer to change your password"
+msgstr "Pred zmenou hesla musíte počkať dlhšie"
+
+msgid "Sorry, passwords do not match"
+msgstr "Prepáčte, heslá sa nezhodujú"
+
+msgid "Checking..."
+msgstr "Kontrola..."
+
+msgid "Authentication failed."
+msgstr "Overenie totožnosti zlyhalo."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Nepodarilo sa ustanoviť službu %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Nesprávne heslo."
+
+msgid "Not permitted to gain access at this time."
+msgstr "V tomto čase nemáte povolený prístup."
+
+msgid "No longer permitted to access the system."
+msgstr "Už viac nemáte prístup do systému."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "Máte zapnutý Caps Lock."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U on %h</span>"
+
+msgid "_Switch User"
+msgstr "_Prepnúť používateľa"
+
+msgid "_Log Out"
+msgstr "_Odhlásiť sa"
+
+msgid "_Cancel"
+msgstr "_Zrušiť"
+
+msgid "_Unlock"
+msgstr "_Odomknúť"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Spôsobí korektné ukončenie šetriča obrazovky"
+
+msgid "Query the state of the screensaver"
+msgstr "Zistiť stav šetriča obrazovky"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Zistiť dobu aktivity šetriča obrazovky"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Požiada bežiaci šetrič obrazovky, aby okamžite uzamkol obrazovku"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Ak je šetrič obrazovky aktívny, tak prepnúť na inú grafickú ukážku"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Zapnúť šetrič obrazovky (vyprázdniť obrazovku)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Ak je šetrič obrazovky aktívny, tak ho deaktivovať (opustiť režim prázdnej "
+"obrazovky)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Šťuchnúť do bežiaceho šetriča obrazovky tak, aby sa napodobnila aktivita "
+"používateľa"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Potlačiť aktiváciu šetriča obrazovky. Príkaz blokuje, kým je aktívne "
+"potlačenie."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Volajúci program, ktorá potláča šetrič obrazovky"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Dôvod potlačenia šetriča obrazovky"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Šetrič obrazovky je %s\n"
+
+msgid "active"
+msgstr "aktívny"
+
+msgid "inactive"
+msgstr "neaktívny"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Šetrič obrazovky nie je potlačený\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Šetrič obrazovky je potlačovaný:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Doterajšia aktivita šetriča obrazovky trvala %d sekúnd.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Šetrič obrazovky momentálne nie je aktívny.\n"

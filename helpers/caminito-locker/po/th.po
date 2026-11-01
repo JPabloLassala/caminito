@@ -1,0 +1,180 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Rockers <sumorock@hotmail.com>, 2018
+# Aefgh Threenine <aefgh3962@gmail.com>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Thai (https://app.transifex.com/mate/teams/13566/th/)\n"
+"Language: th\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Show debugging output"
+msgstr "แสดงข้อความดีบั๊ก"
+
+msgid "Version of this application"
+msgstr "รุ่นของโปรแกรมนี้"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "ชื่อผู้ใช้:"
+
+msgid "Password:"
+msgstr "รหัสผ่าน:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "คุณต้องเปลี่ยนรหัสผ่านเดี๋ยวนี้ (รหัสผ่านหมดอายุแล้ว)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "คุณต้องเปลี่ยนรหัสผ่านเดี๋ยวนี้ (ผู้ดูแลระบบบังคับให้เปลี่ยน)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "บัญชีของคุณหมดอายุแล้ว กรุณาติดต่อผู้ดูแลระบบ"
+
+msgid "No password supplied"
+msgstr "ไม่ได้ป้อนรหัสผ่าน"
+
+msgid "Password unchanged"
+msgstr "รหัสผ่านไม่เปลี่ยน"
+
+msgid "Can not get username"
+msgstr "หาชื่อผู้ใช้ไม่พบ"
+
+msgid "Retype new UNIX password:"
+msgstr "ป้อนรหัสผ่านยูนิกซ์อีกครั้ง:"
+
+msgid "Enter new UNIX password:"
+msgstr "ตั้งรหัสผ่านยูนิกซ์:"
+
+msgid "(current) UNIX password:"
+msgstr "รหัสผ่านยูนิกซ์ปัจจุบัน:"
+
+msgid "Error while changing NIS password."
+msgstr "เกิดข้อผิดพลาดขณะเปลี่ยนรหัสผ่าน NIS"
+
+msgid "You must choose a longer password"
+msgstr "คุณต้องตั้งรหัสผ่านยาวกว่านี้"
+
+msgid "Password has been already used. Choose another."
+msgstr "รหัสผ่านนี้ถูกใช้อยู่ กรุณาตั้งรหัสผ่านอื่น"
+
+msgid "You must wait longer to change your password"
+msgstr "คุณต้องหยุดคอยก่อนเปลี่ยนรหัสผ่าน"
+
+msgid "Sorry, passwords do not match"
+msgstr "ขออภัย รหัสผ่านไม่ตรงกัน"
+
+msgid "Checking..."
+msgstr "กำลังตรวจสอบ..."
+
+msgid "Authentication failed."
+msgstr "การยืนยันตัวบุคคลไม่ผ่าน"
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "ไม่สามารถเชื่อมต่อบริการ %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "รหัสผ่านไม่ถูกต้อง"
+
+msgid "Not permitted to gain access at this time."
+msgstr "คุณไม่ได้รับอนุญาตให้ใช้ระบบในขณะนี้"
+
+msgid "No longer permitted to access the system."
+msgstr "คุณไม่ได้รับอนุญาตให้ใช้ระบบอีกต่อไป"
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "ปุ่ม Caps Lock ถูกกดอยู่"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U ที่เครื่อง %h</span>"
+
+msgid "_Switch User"
+msgstr "_สลับผู้ใช้"
+
+msgid "_Log Out"
+msgstr "_ออกจากระบบ"
+
+msgid "_Cancel"
+msgstr "_ยกเลิก"
+
+msgid "_Unlock"
+msgstr "_ปลดล็อค"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "ทำให้โปรแกรมรักษาหน้าจอจบอย่างนุ่มนวล"
+
+msgid "Query the state of the screensaver"
+msgstr "สอบถามสถานะของโปรแกรมรักษาหน้าจอ"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "สอบถามระยะเวลาที่โปรแกรมรักษาหน้าจอได้ทำงานมา"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "บอกโพรเซสโปรแกรมรักษาหน้าจอที่กำลังทำงานอยู่ให้ล็อคหน้าจอทันที"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "ถ้าโปรแกรมรักษาหน้าจอกำลังวาดอยู่ ก็ให้สลับไปใช้ชุดโปรแกรมอื่นวาด"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "ให้โปรแกรมรักษาหน้าจอเริ่มทำงาน (ล้างหน้าจอ)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "ถ้าโปรแกรมรักษาหน้าจอกำลังวาดอยู่ ก็ให้หยุดวาด (เลิกล้างหน้าจอ)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "รบเร้าโปรแกรมรักษาหน้าจอที่กำลังทำงานอยู่ เพื่อจำลองการเคลื่อนไหวของผู้ใช้"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr "ระงับไม่ให้เรียกโปรแกรมรักษาหน้าจอ คำสั่งจะหยุดรอในระหว่างที่มีการระงับ"
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "ชื่อโปรแกรมผู้เรียก ซึ่งระงับโปรแกรมรักษาหน้าจอ"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "สาเหตุของการระงับโปรแกรมรักษาหน้าจอ"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "โปรแกรมรักษาหน้าจอกำลัง%s\n"
+
+msgid "active"
+msgstr "ทำงาน"
+
+msgid "inactive"
+msgstr "หลับ"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "โปรแกรมรักษาหน้าจอไม่ได้ถูกระงับ\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "โปรแกรมรักษาหน้าจอกำลังถูกระงับโดย:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "โปรแกรมรักษาหน้าจอทำงานมาแล้ว %d วินาที\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "โปรแกรมรักษาหน้าจอไม่ได้ทำงานอยู่\n"

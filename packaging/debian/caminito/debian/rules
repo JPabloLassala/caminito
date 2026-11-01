@@ -42,6 +42,7 @@ override_dh_auto_install:
 		target/release/caminito-wallpaper target/release/caminito-bluetooth \
 		target/release/caminito-behaviour target/release/caminito-network \
 		-t debian/caminito/usr/bin
+	install -Dm644 helpers/caminito-locker/pam/common debian/caminito/etc/pam.d/caminito-locker
 
 override_dh_auto_clean:
 	dh_auto_clean

@@ -1,0 +1,179 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# ప్రవీణ్ ఇళ్ళ <mail2ipn@gmail.com>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Telugu (https://app.transifex.com/mate/teams/13566/te/)\n"
+"Language: te\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "లోపనిర్మూలన దిగుబడిని చూపించు"
+
+msgid "Version of this application"
+msgstr "ఈ కార్యక్షేత్ర వివరణం"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "వినియోగదారుని పేరు:"
+
+msgid "Password:"
+msgstr "రహస్యపదం:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "మీరు వెంటనే రహస్యపదాన్ని మార్చమని కోరడమైనది (రహస్యపదం పాతదైనది)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "మీ రహస్యపదాన్ని మార్చుకోమని కోరడమైనది (మూలం బలవంతంగా )"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "మీ అకౌంట్ ముగిసినది; దయచేసి మీ వ్యవస్థ నిర్వాహకుడిని సంప్రదించండి"
+
+msgid "No password supplied"
+msgstr "రహస్యపదం ఇవబడలేదు"
+
+msgid "Password unchanged"
+msgstr "రహస్యపదం మార్చబడలేదు"
+
+msgid "Can not get username"
+msgstr "వినియోగదారుని పేరు దొరకలేదు"
+
+msgid "Retype new UNIX password:"
+msgstr "మరల కొత్త యూనిక్స్  రహస్యపదాన్ని వ్రాయండి:"
+
+msgid "Enter new UNIX password:"
+msgstr "కొత్త యూనిక్స్  రహస్యపదాన్ని వ్రాయండి:"
+
+msgid "(current) UNIX password:"
+msgstr "(ప్రస్తుత) యూనిక్స్  రహస్యపదం:"
+
+msgid "Error while changing NIS password."
+msgstr "NIS రహస్యపదాన్ని మార్చేటప్పుడు తప్పు జరిగినది."
+
+msgid "You must choose a longer password"
+msgstr "మీరు పెద్ద రహస్యపదాన్ని ఎంచుకోవాలి"
+
+msgid "Password has been already used. Choose another."
+msgstr "రహస్యపదం మునుపే వాడుకలో ఉంది. వేరేదాన్ని ఎంచుకోండి."
+
+msgid "You must wait longer to change your password"
+msgstr "మీ రహస్యపదాన్ని మార్చుకోవటానికి చాలా సమయం ఆగాల్సివుంటుంది"
+
+msgid "Sorry, passwords do not match"
+msgstr "క్షమించాలి , రహస్యపదాలు జతకూడట్లేదు"
+
+msgid "Checking..."
+msgstr "తనిఖీ చేస్తోంది..."
+
+msgid "Authentication failed."
+msgstr "ప్రామాణీకరణ తప్పినది"
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "%s సేవను స్తాపించుట కుదురలేదు: %s\n"
+
+msgid "Incorrect password."
+msgstr "తప్పు రహస్యపదం."
+
+msgid "Not permitted to gain access at this time."
+msgstr "ఈ సమయంలో సాంగత్యాన్ని పొందుట అనుమతించబడదు"
+
+msgid "No longer permitted to access the system."
+msgstr "ఇక ఏ మాత్రము వ్యవస్థను ప్రవేశించింటానికి అనుమతి  లేదు."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "కాప్స్ లాక్ ఆన్లో ఉంది"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U on %h</span>"
+
+msgid "_Switch User"
+msgstr "వినియోగదారున్ని మార్చు(_S)"
+
+msgid "_Log Out"
+msgstr "నిష్క్రమణ ద్వారం(_L)"
+
+msgid "_Cancel"
+msgstr "రద్దు(_C)"
+
+msgid "_Unlock"
+msgstr "తెరచివేయు(_U)"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "తెరకాపరిని అందంగా వెళ్లిపోయేట్టు చేస్తుంది"
+
+msgid "Query the state of the screensaver"
+msgstr "తెరకాపరి యొక్క స్థితిని ప్రశ్నించు"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "తెరకాపరి ఎంత సమయం వరకు  చురుకుగా ఉందో ప్రశ్నించు"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "నడిచే తెరకాపరి కార్యాన్ని వెంటనే తెరకు తాళం వేయమని చెబుతుంది"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "ఒక వేళ తెరకాపరి చురుకుగా ఉంటే వేరే గ్రాఫిక్స్    డెమోకి మరలు "
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "తెరకాపరిని చురుకుగా చేయు "
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "తెరకాపరి చురుకుగా ఉంటే దానిని "
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "నడుస్తున్న తెరకాపరిని వినియోగదారి క్రియాశీలతను అనుకరించుటకు పెట్టుము"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr "తెరకాపరిని చురుకుగా ఉండకుండా నిషేధించు.ఆటంకము చురుకుగా ఉన్నప్పుడు ఆదేశం నిషేధిస్తుంది."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "తెరకాపరిని ఆపడానికి పిలుస్తున్న కార్యక్షేత్రం"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "తెరకాపరి ఆటంకానికి కారణం"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "తెరకాపరి %s\n"
+
+msgid "active"
+msgstr "చురుకుగా ఉంది"
+
+msgid "inactive"
+msgstr "చురుకుగాలేదు"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "తెరకాపరి ఆక్షేపితమైనది కాదు\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "తెరకాపరి దీనిచేత అక్షేపించబడుచున్నది:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "తెరకాపరి %d క్షణాలు చురుకుగా ఉంది.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "తెరకాపరి ప్రస్తుతం క్రియాశీలముగా లేదు.\n"

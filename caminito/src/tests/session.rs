@@ -487,6 +487,13 @@ fn the_command_starts_once_xwayland_is_ready_with_the_names_owned_and_the_enviro
         data_dirs.starts_with("/usr/share/caminito/xdg:"),
         "{data_dirs}"
     );
+    // Where MATE's components find mate-screensaver-command without its package (CMN-297).
+    let path = &environment["PATH"];
+    assert!(path.starts_with("/usr/lib/caminito/bin:"), "{path}");
+    assert!(
+        path.contains(":/"),
+        "what Caminito has stays after it: {path}"
+    );
 }
 
 #[test]

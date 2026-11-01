@@ -1,0 +1,184 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# monsta <monsta@inbox.ru>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2020
+# shy tzedaka <shaytzedaka123@gmail.com>, 2020
+# 63f334ffc0709ba0fc2361b80bf3c0f0_00ffd1e <ab96c93ca0ac55ba7fa06385427e60dd_878890>, 2021
+# Yaron Shahrabani <sh.yaron@gmail.com>, 2024
+# Avi Markovitz <avi.markovitz@gmail.com>, 2024
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Avi Markovitz <avi.markovitz@gmail.com>, 2024\n"
+"Language-Team: Hebrew (https://app.transifex.com/mate/teams/13566/he/)\n"
+"Language: he\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n == 1 && n % 1 == 0) ? 0 : (n == 2 && n % "
+"1 == 0) ? 1: 2;\n"
+
+msgid "Show debugging output"
+msgstr "Show debugging output"
+
+msgid "Version of this application"
+msgstr "הגרסה של יישום זה"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "שם משתמש:"
+
+msgid "Password:"
+msgstr "סיסמה:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "הינך מחוייב לשנות את סיסמתך מיידית (הסיסמה התיישנה)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "הינך מחוייב לשנות את סיסמתך מיידית (דרישת מנהל המערכת)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "פג תוקף חשבונך; אנא צור קשר עם מנהל המערכת שלך"
+
+msgid "No password supplied"
+msgstr "לא הוזנה סיסמה"
+
+msgid "Password unchanged"
+msgstr "הסיסמה לא שונתה"
+
+msgid "Can not get username"
+msgstr "נכשל בהשגת שם משתמש"
+
+msgid "Retype new UNIX password:"
+msgstr "הקלד מחדש סיסמת UNIX חדשה:"
+
+msgid "Enter new UNIX password:"
+msgstr "הכנס סיסמת UNIX חדשה:"
+
+msgid "(current) UNIX password:"
+msgstr "סיסמת UNIX (נוכחית):"
+
+msgid "Error while changing NIS password."
+msgstr "שגיאה בזמן שינוי סיסמת NIS."
+
+msgid "You must choose a longer password"
+msgstr "יש לבחור סיסמה ארוכה יותר"
+
+msgid "Password has been already used. Choose another."
+msgstr "הסיסמה הייתה כבר בשימוש. בחר אחרת."
+
+msgid "You must wait longer to change your password"
+msgstr "יש להמתין יותר כדי לשנות את סיסמתך"
+
+msgid "Sorry, passwords do not match"
+msgstr "סליחה, הסיסמאות אינן מתאימות"
+
+msgid "Checking..."
+msgstr "בודק..."
+
+msgid "Authentication failed."
+msgstr "האימות נכשל."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Unable to establish service %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "סיסמה שגויה."
+
+msgid "Not permitted to gain access at this time."
+msgstr "לא מורשה לקבל גישה בזמן זה."
+
+msgid "No longer permitted to access the system."
+msgstr "כבר לא מורשה לגשת למערכת"
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "מקש ה־Caps Lock לחוץ."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U ב־%h</span>"
+
+msgid "_Switch User"
+msgstr "_החלף משתמש"
+
+msgid "_Log Out"
+msgstr "_התנתק"
+
+msgid "_Cancel"
+msgstr "_ביטול"
+
+msgid "_Unlock"
+msgstr "_התחבר"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr ""
+
+msgid "Query the state of the screensaver"
+msgstr ""
+
+msgid "Query the length of time the screensaver has been active"
+msgstr ""
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr ""
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr ""
+
+msgid "The reason for inhibiting the screensaver"
+msgstr ""
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "שומר מרקע הוא %s\n"
+
+msgid "active"
+msgstr "פעיל"
+
+msgid "inactive"
+msgstr "לא פעיל"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "שומר המרקע אינו מנוע מלפעול\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "שומר המרקע מנוע מלפעול על ידי:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "שומר המרקע היה פעיל במשך %d שניות.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "שומר המרקע אינו פעיל כעת.\n"

@@ -26,6 +26,7 @@ Build-Depends:
  debhelper-compat (= 13),
  rustup,
  meson,
+ gettext,
  pkgconf,
  libxkbcommon-dev,
  libglib2.0-dev,
@@ -65,8 +66,7 @@ Architecture: amd64
 # ${shlibs:Depends} has what the binaries and helpers link. The rest is what caminito-git's
 # depends names at run time, by Ubuntu's names: librsvg's pixbuf loader for SVG theme
 # images, Menta from mate-themes, the Xwayland it spawns, glvnd's libEGL and mesa's drivers,
-# which it dlopens for GBM, zenity for Marco's two dialogs, mate-screensaver's PAM service and
-# lock dialogs for caminito-locker, the notification daemon and polkit agent mate-session
+# which it dlopens for GBM, zenity for Marco's two dialogs, the notification daemon and polkit agent mate-session
 # autostarts, hicolor's directory for the logo, and mate-desktop's org.mate.background, which
 # caminito-wallpaperd reads on its first run, and glib-networking, GIO's TLS, which it fetches
 # a picture of the day with, and bluez, the daemon caminito-bluetooth and the Bluetooth applet
@@ -88,7 +88,6 @@ Depends:
  libgl1-mesa-dri,
  glib-networking,
  zenity,
- mate-screensaver,
  mate-notification-daemon,
  mate-polkit,
  hicolor-icon-theme,

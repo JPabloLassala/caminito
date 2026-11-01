@@ -9,7 +9,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-or-later
  *
  * Ported to caminito-locker (131, ADR 0007) from mate-screensaver 60b2db3's
- * src/gs-auth-pam.c. The conversation is unchanged. The thread is waited on in a
+ * src/gs-auth-pam.c. The conversation is unchanged, but that PAM_TTY isn't set: it was X11's
+ * $DISPLAY. The thread is waited on in a
  * GMainLoop rather than gtk_main, so this file needs no GTK, and the helpers it took from
  * subprocs.c are inline.
  *
@@ -61,8 +62,7 @@
 # define PAM_REFRESH_CRED PAM_CRED_REFRESH
 #endif
 
-/* Linux-PAM has pam_fail_delay, and its pam_strerror takes two arguments: what
-   mate-screensaver's configure finds there. */
+/* Linux-PAM has pam_fail_delay, and its pam_strerror takes two arguments. */
 /* We handle delays ourself.*/
 /* Don't set this to 0 (Linux bug workaround.) */
 #define PAM_NO_DELAY(pamh) pam_fail_delay ((pamh), 1)
@@ -355,13 +355,11 @@ close_pam_handle (int status)
 
 static gboolean
 create_pam_handle (const char      *username,
-                   const char      *display,
                    struct pam_conv *conv,
                    int             *status_code)
 {
 	int         status;
 	const char *service = PAM_SERVICE_NAME;
-	char       *disp;
 	gboolean    ret;
 
 	if (pam_handle != NULL)
@@ -373,7 +371,6 @@ create_pam_handle (const char      *username,
 	/* init things */
 	pam_handle = NULL;
 	status = -1;
-	disp = NULL;
 	ret = TRUE;
 
 	/* Initialize a PAM session for the user */
@@ -402,25 +399,6 @@ create_pam_handle (const char      *username,
 		           PAM_STRERROR (pam_handle, status));
 	}
 
-	disp = g_strdup (display);
-	if (disp == NULL)
-	{
-		disp = g_strdup (":0.0");
-	}
-
-	if ((status = pam_set_item (pam_handle, PAM_TTY, disp)) != PAM_SUCCESS)
-	{
-		g_warning (_("Can't set PAM_TTY=%s"), display);
-
-		if (status_code != NULL)
-		{
-			*status_code = status;
-		}
-
-		ret = FALSE;
-		goto out;
-	}
-
 	ret = TRUE;
 	g_cond_init (&message_handled_condition);
 	g_mutex_init (&message_handler_mutex);
@@ -430,8 +408,6 @@ out:
 	{
 		*status_code = status;
 	}
-
-	g_free (disp);
 
 	return ret;
 }
@@ -708,7 +684,6 @@ out:
 
 gboolean
 gs_auth_verify_user (const char       *username,
-                     const char       *display,
                      GSAuthMessageFunc func,
                      gpointer          data,
                      GError          **error)
@@ -732,7 +707,7 @@ gs_auth_verify_user (const char       *username,
 	conv.appdata_ptr = (void *) &c;
 
 	/* Initialize PAM. */
-	create_pam_handle (username, display, &conv, &status);
+	create_pam_handle (username, &conv, &status);
 	if (status != PAM_SUCCESS)
 	{
 		goto done;
@@ -765,64 +740,30 @@ gs_auth_init (void)
 	return TRUE;
 }
 
+/* Whether PAM has the service. pam_start doesn't say: without the file it takes the `other`
+   service, which on most systems denies everyone, and the dialog would ask for a password
+   that can't succeed (ADR 0056). The directories are Linux-PAM's, /etc's first, or
+   pam_wrapper's alone under a test. */
 gboolean
-gs_auth_priv_init (void)
+gs_auth_service_exists (void)
 {
-	/* We have nothing to do at init-time.
-	   However, we might as well do some error checking.
-	   If "/etc/pam.d" exists and is a directory, but "/etc/pam.d/xlock"
-	   does not exist, warn that PAM probably isn't going to work.
+	const char *dirs [] = { "/etc/pam.d", "/usr/lib/pam.d", NULL };
+	const char *wrapped = g_getenv ("PAM_WRAPPER_SERVICE_DIR");
+	gboolean    exists = FALSE;
 
-	   This is a priv-init instead of a non-priv init in case the directory
-	   is unreadable or something (don't know if that actually happens.)
-	*/
-	const char   dir [] = "/etc/pam.d";
-	const char  file [] = "/etc/pam.d/" PAM_SERVICE_NAME;
-	const char file2 [] = "/etc/pam.conf";
-	struct stat st;
-
-	if (g_stat (dir, &st) == 0 && st.st_mode & S_IFDIR)
+	if (wrapped != NULL)
 	{
-		if (g_stat (file, &st) != 0)
-		{
-			g_warning ("%s does not exist.\n"
-			           "Authentication via PAM is unlikely to work.",
-			           file);
-		}
-	}
-	else if (g_stat (file2, &st) == 0)
-	{
-		FILE *f = g_fopen (file2, "r");
-		if (f)
-		{
-			gboolean ok = FALSE;
-			char buf[255];
-			while (fgets (buf, sizeof(buf), f))
-			{
-				if (strstr (buf, PAM_SERVICE_NAME))
-				{
-					ok = TRUE;
-					break;
-				}
-			}
-
-			fclose (f);
-			if (!ok)
-			{
-				g_warning ("%s does not list the `%s' service.\n"
-				           "Authentication via PAM is unlikely to work.",
-				           file2, PAM_SERVICE_NAME);
-			}
-		}
-		/* else warn about file2 existing but being unreadable? */
-	}
-	else
-	{
-		g_warning ("Neither %s nor %s exist.\n"
-		           "Authentication via PAM is unlikely to work.",
-		           file2, file);
+		dirs [0] = wrapped;
+		dirs [1] = NULL;
 	}
 
-	/* Return true anyway, just in case. */
-	return TRUE;
+	for (int i = 0; dirs [i] != NULL && ! exists; i++)
+	{
+		char *path = g_build_filename (dirs [i], PAM_SERVICE_NAME, NULL);
+
+		exists = g_file_test (path, G_FILE_TEST_IS_REGULAR);
+		g_free (path);
+	}
+
+	return exists;
 }

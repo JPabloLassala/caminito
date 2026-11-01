@@ -1,0 +1,182 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Dzongkha (https://app.transifex.com/mate/teams/13566/dz/)\n"
+"Language: dz\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Show debugging output"
+msgstr "རྐྱེན་སེལ་གྱི་ཨའུཊི་པུཊི་སྟོན།"
+
+msgid "Version of this application"
+msgstr "གློག་རིམ་འདི་གི་ཐོན་རིམ།"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "ལག་ལེན་པའི་མིང་:"
+
+msgid "Password:"
+msgstr "ཆོག་ཡིག་:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "ཁྱོད་ཀྱི་ཆོག་ཡིག་དེ་ དེ་འཕྲལ་ལས་སོར་དགོ་པས། (ཆོག་ཡིག་རྒས་སོ་ནུག)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "ཁྱོད་ཀྱི་ཆོག་ཡིག་དེ་ དེ་འཕྲལ་ལས་སོར་དགོ་པས། (རྩ་བ་ལག་ལེན་འཐབ་ནུག)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "ཁྱོད་ཀྱི་ཆོག་ཡིག་དེ་དུས་ཡོལ་ཐལ་སོ་ནུག། ཁྱོད་རའི་རིམ་ལུགས་བདག་སྐྱོང་པ་ལུ་ འབྲེལ་བ་འཐབ་གནང་།"
+
+msgid "No password supplied"
+msgstr "ཆོག་ཡིག་མ་བྱིན་པས།"
+
+msgid "Password unchanged"
+msgstr "ཆོག་ཡིག་མ་སོར་བས།"
+
+msgid "Can not get username"
+msgstr "ལག་ལེན་པའི་མིང་ འཐོབ་མི་ཚུགས་པས།"
+
+msgid "Retype new UNIX password:"
+msgstr "ཡུ་ཨེན་ཨའི་ཨེགསི་ ཆོག་ཡིག་གསརཔ་ ལོག་ཡིག་དཔར་རྐྱབས།"
+
+msgid "Enter new UNIX password:"
+msgstr "ཡུ་ཨེན་ཨའི་ཨེགསི་ ཆོག་ཡིག་གསར་བཙུགས།"
+
+msgid "(current) UNIX password:"
+msgstr "(ད་ལྟོའི་)ཡུ་ཨེན་ཨའི་ཨེགསི་ཆོག་ཡིག།"
+
+msgid "Error while changing NIS password."
+msgstr "ཨེན་ཨའི་ཨེསི་ ཆོག་ཡིག་སོར་བའི་སྐབས་ལུ་འཛོལ་བ།"
+
+msgid "You must choose a longer password"
+msgstr "ཁྱོད་ཀྱིས་ཆོག་ཡིག་ དེ་བ་རིང་སུ་ཅིག་ གདམ་ཁ་རྐྱབས།"
+
+msgid "Password has been already used. Choose another."
+msgstr "ཆོག་ཡིག་ཧེ་མ་ལས་རང་ ལག་ལེན་འཐབ་སྟེ་འདུག། གཞན་མི་ཅིག་ གདམ་ཁ་རྐྱབས།"
+
+msgid "You must wait longer to change your password"
+msgstr "ཁྱོད་ཀྱི་ཆོག་ཡིག་དེ་ སོར་ནིའི་དོན་ལུ་ དུས་ཡུན་རིང་སུ་ཅིག་ བསྒུག་སྡོད་དགོ།"
+
+msgid "Sorry, passwords do not match"
+msgstr "དགོངསམ་མ་ཁྲེལ། ཆོག་ཡིག་མཐུན་སྒྲིག་མིན་འདུག།"
+
+msgid "Checking..."
+msgstr "ཞིབ་དཔྱད་འབད་དོ་..."
+
+msgid "Authentication failed."
+msgstr "བདེན་བཤད་འབད་མཚུགས།"
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "ཞབས་ཏོག་%s: %sགཞི་བཙུགས་འབད་མ་ཚུགས།\n"
+
+msgid "Incorrect password."
+msgstr "ཆོག་ཡིག་མ་བདེནམ།"
+
+msgid "Not permitted to gain access at this time."
+msgstr "དུས་ཚོད་འདི་ཁར་ འཛུལ་སྤྱོད་འབད་ནིའི་ གནང་བ་མེད།"
+
+msgid "No longer permitted to access the system."
+msgstr "ད་ལས་ཕར་ རིམ་ལུགས་ལུ་འཛུལ་སྤྱོད་འབད་ནིའི་གནང་བ་མེད།"
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "ཁྱོད་ཀྱིས་ཚུགས་ལྡེ་ཨེབ་བཞག་ནུག"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U། %h གུ་</span>"
+
+msgid "_Switch User"
+msgstr "ལག་ལེན་པའི་སོར་བསྒྱུར(_S)"
+
+msgid "_Log Out"
+msgstr "ཕྱིར་བསྐྱོད་འབད།(_L)"
+
+msgid "_Cancel"
+msgstr "ཆ་མེད།(_C)"
+
+msgid "_Unlock"
+msgstr "ལྡེ་མིག་ཕྱེ།(_U)"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "གསལ་གཞི་ཉེན་སྲུང་དེ་ སྤྲོ་ཉམས་ཐོག་ལས་ ཕྱིར་འཐོན་འབད་བཅུགཔ་ཨིན།"
+
+msgid "Query the state of the screensaver"
+msgstr "གསལ་གཞི་ཉེན་སྲུང་གི་གནས་ལུགས་དྲི་དཔྱད་འབད།"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "གསལ་གཞི་ཉེན་སྲུང་འདི་ ཤུགས་ལྡན་སྦེ་སྡོད་པའི་ ཆུ་ཚོད་ཀྱི་རིང་ཚད་འདི་ འདྲི་དཔྱད་འབད་"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"གསལ་གཞི་དེ་འཕྲལ་ལས་ལྡེ་མིག་བརྐྱབ་ནིའི་དོན་ལུ་ གཡོག་བཀོལ་བཞིན་ཡོད་མི་ གསལ་གཞི་ཉེན་སྲུང་གི་ལས་སྦྱོར་ལུ་"
+"སླབ་ཨིན།"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "གསལ་གཞི་ཉེན་སྲུང་དེ་ ཤུགས་ལྡན་ཨིན་པ་ཅིན་ ཚད་རིས་ཌེ་མོ་གཞན་མི་ལུ་ སོར་བསྒྱུར་འབད།"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "གསལ་གཞི་ཉེན་སྲུང་ཨཱོན་འབད། (གསལ་གཞི་སྟོངམ་བཟོ)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "གསལ་གཞི་ཉེན་སྲུང་དེ་ ཤུགས་ལྡན་ཨིན་པ་ཅིན་ ཤུགས་མེད་བཟོ།(གསལ་གཞི་སྟོངམ་བཟོ་ནི་བཤོལ)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "ལག་ལེན་པའི་བྱ་བ་ མཚུངས་བཟོ་འབད་ནི་ལུ་ གཡོག་བཀོལ་བཞིན་ཡོད་མི་གསལ་གཞི་ཉེན་སྲུང་དེ་ལུ་གསོབ།"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"གསལ་གཞི་ཉེན་སྲུང་ཤུགས་ལྡན་བཟོ་ནི་ལུ་ བར་ཆད་རྐྱབས། བར་ཆད་ཤུགས་ལྡན་ཨིན་པའི་སྐབས་ བརྡ་བཀོད་བཀག་ཆ་"
+"འབདཝ་ཨིན།"
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "གསལ་གཞི་ཉེན་སྲུང་ལུ་ བར་ཆན་རྐྱབ་མི་ གློག་རིམ་དེ།"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "གསལ་གཞི་ཉེན་སྲུང་ལུ་ བར་ཆད་རྐྱབ་དགོ་པའི་རྒྱུ་མཚན།"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "གསལ་གཞི་ཉེན་སྲུང་དེ་%sཨིན།\n"
+
+msgid "active"
+msgstr "ཤུགས་ལྡན།"
+
+msgid "inactive"
+msgstr "ཤུགས་མེད།"
+
+msgid "The screensaver is not inhibited\n"
+msgstr ""
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr ""
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "གཞི་གཞི་ཉེན་སྲུང་འདི་  %d སྐར་ཆ་ཚུ་གི་དོན་ལུ་ ཤུགས་ལྡན་བཟོ་ཡོད།\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr ""

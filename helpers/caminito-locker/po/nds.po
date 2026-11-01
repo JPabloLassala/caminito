@@ -1,0 +1,190 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+# Benedikt Straub <benedikt-straub@web.de>, 2025
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Benedikt Straub <benedikt-straub@web.de>, 2025\n"
+"Language-Team: Low German (https://app.transifex.com/mate/teams/13566/nds/)\n"
+"Language: nds\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Debugging-Utgav opwiesen"
+
+msgid "Version of this application"
+msgstr "Versioon vun deesem Programm"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Brukernaam:"
+
+msgid "Password:"
+msgstr "Passwoord:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Bidde Passwoord ännern! (to ol)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Bidde Passwoord ännern (root nödig)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Deeses Brukerkonto is avloopen; bidde mit de Systeemoppasser Kontakt opnehmen"
+
+msgid "No password supplied"
+msgstr "Keen Passwoord angeven"
+
+msgid "Password unchanged"
+msgstr "Passwoord nich ännert"
+
+msgid "Can not get username"
+msgstr "Kunn de Brukernaam nich utfinnen"
+
+msgid "Retype new UNIX password:"
+msgstr "Nejes UNIX-Passwoord noch eenmaal ingeven:"
+
+msgid "Enter new UNIX password:"
+msgstr "Nejes UNIX Passwoord ingeven:"
+
+msgid "(current) UNIX password:"
+msgstr "(Aktuelles) UNIX Passwoord:"
+
+msgid "Error while changing NIS password."
+msgstr "Fehler bi'm Ännern vu'm NIS Passwoord."
+
+msgid "You must choose a longer password"
+msgstr "Dat Passwoord is to kort"
+
+msgid "Password has been already used. Choose another."
+msgstr "Deeses Passwoord gifft dat schon. Bidde anneres utsöken."
+
+msgid "You must wait longer to change your password"
+msgstr "Dat düert noch'n beten, bit dat Passwoord ännert weern kunn"
+
+msgid "Sorry, passwords do not match"
+msgstr "Dat Passwoord passt nich."
+
+msgid "Checking..."
+msgstr "Döörkieken …"
+
+msgid "Authentication failed."
+msgstr "Utwiesen fehlslagen."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr ""
+"Nich möglich, de Deenst %s: %s\n"
+" optoboon\n"
+
+msgid "Incorrect password."
+msgstr "Passwoord is nich akkeraat."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Togang is jüüst nich togelaten."
+
+msgid "No longer permitted to access the system."
+msgstr "Systeemtogang is nich mehr togelaten."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %e. %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "De CapsLock-Knopp is an."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U on %h</span>"
+
+msgid "_Switch User"
+msgstr "_Bruker ännern"
+
+msgid "_Log Out"
+msgstr "_Avmellen"
+
+msgid "_Cancel"
+msgstr "_Avbreken"
+
+msgid "_Unlock"
+msgstr "_Opmaken"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Billschirmschoner scheun sluten"
+
+msgid "Query the state of the screensaver"
+msgstr "Op'n Tostand vun Billschirmschoner oppassen"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "De Tiet rutfinnen, de de Billschirmschoner nu schon an is"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Vertellt de lööpenden Billschirmschoner, dat de Billschirm avslut worden sall"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"Wiest de lööpend Billschirmschoner an, de Billschirm stracks oftosluten"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Wenn de Billschirmschoner an is, sall to eene annere Grafik-Vörföhren "
+"wesselt worden"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Billschirmschoner anmaken (Blanker Billschirm)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Wenn de Billschirmschoner an is, denn sall dat utmakt worden. (Denn is de "
+"Billschirm nich blank)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"De Räkner sall so doon, as ob he aktiv is, dormit de Billschirmschoner nich "
+"angeiht."
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr "De Billschirmschoner stoppen, ehe de losgeiht. "
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Dat Programm, dat bi'n Utföhren vun Billschirmschoner datwüschen funkt"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "De Grund, warum de Billschirmschoner stoppt worden kunn"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "De Billschirmschoner is %s\n"
+
+msgid "active"
+msgstr "Aktiv"
+
+msgid "inactive"
+msgstr "Nich aktiv"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "De Billschirmschoner is nich stoppt worrn\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "De Billschirmschoner is stoppt worrn bi:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "De Billschirmschoner is nu aktiv siet %d Sekünnen.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "De Billschirmschoner is grade nich aktiv.\n"

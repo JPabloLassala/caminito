@@ -25,7 +25,7 @@
  * caminito-locker: the lock screen's locker (12, 131, ADR 0007). It takes the session lock
  * over ext-session-lock through gtk-session-lock, and puts a lock window on every monitor,
  * with its wallpaper and a clock: the Idle view. A key or a click shows the Unlock dialog,
- * mate-screensaver's, on the monitor under the pointer (CMN-298, ADR 0056). The right
+ * derived from MATE's, on the monitor under the pointer (CMN-298, ADR 0056). The right
  * password unlocks and the locker exits; nothing else ends the lock.
  *
  * Ported from mate-screensaver 60b2db3's src/mate-screensaver-dialog.c, which mate-screensaver
@@ -283,7 +283,7 @@ static gboolean do_auth_check(GSLockPlug* plug)
 
 	gs_lock_plug_disable_prompt(plug);
 	gs_lock_plug_set_busy(plug);
-	res = gs_auth_verify_user(g_get_user_name(), g_getenv("DISPLAY"), auth_message_handler, plug, &error);
+	res = gs_auth_verify_user(g_get_user_name(), auth_message_handler, plug, &error);
 
 	gs_debug("Verify user returned: %s", res ? "TRUE" : "FALSE");
 
@@ -1002,9 +1002,18 @@ int main(int argc, char** argv)
 	GdkDisplay* display;
 
 	setlocale(LC_ALL, "");
-	bindtextdomain(GETTEXT_PACKAGE, MATELOCALEDIR);
+	/* For the tests, which have no installed catalogue. */
+	bindtextdomain(GETTEXT_PACKAGE, g_getenv("CAMINITO_LOCKER_LOCALE_DIR") ?: MATELOCALEDIR);
 	bind_textdomain_codeset(GETTEXT_PACKAGE, "UTF-8");
 	textdomain(GETTEXT_PACKAGE);
+
+	/* Before GTK and the lock: a failed start, which Caminito counts towards its give-up
+	 * message, and never a fall-back to another service (ADR 0056). */
+	if (!gs_auth_service_exists())
+	{
+		g_printerr("caminito-locker: this system has no PAM service %s\n", PAM_SERVICE_NAME);
+		exit(1);
+	}
 
 	if (!gtk_init_with_args(&argc, &argv, NULL, entries, NULL, &error))
 	{
@@ -1034,8 +1043,6 @@ int main(int argc, char** argv)
 		g_printerr("caminito-locker: the compositor has no ext-session-lock\n");
 		exit(1);
 	}
-
-	gs_auth_priv_init();
 
 	lock = gtk_session_lock_prepare_lock();
 	g_signal_connect(lock, "locked", G_CALLBACK(locked_cb), NULL);

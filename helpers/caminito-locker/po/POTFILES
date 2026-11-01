@@ -1,0 +1,5 @@
+helpers/caminito-locker/caminito-locker.c
+helpers/caminito-locker/gs-auth-pam.c
+helpers/caminito-locker/gs-lock-plug.c
+helpers/caminito-locker/lock-dialog-default.ui
+helpers/caminito-locker/mate-screensaver-command.c

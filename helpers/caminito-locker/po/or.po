@@ -1,0 +1,180 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Odia (https://app.transifex.com/mate/teams/13566/or/)\n"
+"Language: or\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "ଡିବଗ୍ କରିବା ଆଉଟପୁଟ ଦେଖାଅ"
+
+msgid "Version of this application"
+msgstr "ଏହି ପ୍ରୟୋଗର ସଂସ୍କରଣ"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "ଚାଳକ ନାମ:"
+
+msgid "Password:"
+msgstr "ପ୍ରବେଶ ସଙ୍କେତ:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"ଆପଣ ଆପଣଙ୍କର ପ୍ରବେଶ ସଙ୍କେତକୁ ଯଥାଶୀଘ୍ର ବଦଳାଇବା ଆବଶ୍ଯକ (ପ୍ରବେଶ ସଙ୍କେତ କାଲବାଧିତ ହୋଇସାରିଛି)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "ଆପଣ ଆପଣଙ୍କର ପ୍ରବେଶ ସଙ୍କେତକୁ ଯଥାଶୀଘ୍ର ବଦଳାଇବା ଆବଶ୍ଯକ (ରୁଟ ଦ୍ବାରା ବାଧ୍ଯ)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"ଆପଣଙ୍କର ଖାତାଟି ଅଚଳ ବନ୍ଦ ହୋଇଯାଇଛି; ଦୟାକରି ଆପଣଙ୍କ ତନ୍ତ୍ର ପ୍ରଶାସକଙ୍କ ସହିତ ଯୋଗାଯୋଗ କରନ୍ତୁ"
+
+msgid "No password supplied"
+msgstr "କୌଣସି ପ୍ରବେଶ ସଙ୍କେତ ଦିଆଯାଇ ନାହିଁ"
+
+msgid "Password unchanged"
+msgstr "ପ୍ରବେଶ ସଙ୍କେତ ଟି ଅପରିବର୍ତ୍ତିତ ଅଛି"
+
+msgid "Can not get username"
+msgstr "ଚାଳକ ନାମକୁ ପାଇ ପାରିବ ନାହିଁ"
+
+msgid "Retype new UNIX password:"
+msgstr "ନୂତନ UNIX ପ୍ରବେଶ ସଙ୍କେତକୁ ପୁନର୍ବାର ଟାଇପ କରନ୍ତୁ:"
+
+msgid "Enter new UNIX password:"
+msgstr "ନୂତନ UNIX ପ୍ରବେଶ ସଙ୍କେତକୁ ଭରଣ କରନ୍ତୁ:"
+
+msgid "(current) UNIX password:"
+msgstr "(ପ୍ରଚଳିତ) UNIX ପ୍ରବେଶ ସଙ୍କେତ:"
+
+msgid "Error while changing NIS password."
+msgstr "NIS ପ୍ରବେଶ ସଙ୍କେତକୁ ବଦଳାଇବା ସମୟରେ ତ୍ରୁଟି।"
+
+msgid "You must choose a longer password"
+msgstr "ଆପଣ ଗୋଟିଏ ଲମ୍ବା ପ୍ରବେଶ ସଙ୍କେତ ଚୟନ କରିବା ଉଚିତ"
+
+msgid "Password has been already used. Choose another."
+msgstr "ପ୍ରବେଶ ସଙ୍କେତକୁ ପୂର୍ବରୁ ବଦଳା ଯାଇଛି। ଆଉ ଗୋଟିଏ ପ୍ରବେଶ ସଙ୍କେତ ଚୟନ କରନ୍ତୁ।"
+
+msgid "You must wait longer to change your password"
+msgstr "ପ୍ରବେଶ ସଙ୍କେତକୁ ବଦଳାଇବା ପାଇଁ ଆପଣଙ୍କୁ ଅଧିକ ଅପେକ୍ଷା କରିବା ପାଇଁ ପଡିବ"
+
+msgid "Sorry, passwords do not match"
+msgstr "କ୍ଷମା କରିବେ, ପ୍ରବେଶ ସଙ୍କେତଟି ମିଶୁ ହେଉନାହିଁ"
+
+msgid "Checking..."
+msgstr "ଯାଞ୍ଚ କରୁଅଛି..."
+
+msgid "Authentication failed."
+msgstr "ବୈଧିକରଣ ବିଫଳ।"
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "%s ସେବାକୁ ପ୍ରତିଷ୍ଠାପିତ କରିବାରେ ଅସମର୍ଥ: %s\n"
+
+msgid "Incorrect password."
+msgstr "ଭୂଲ ପ୍ରବେଶ ସଙ୍କେତ"
+
+msgid "Not permitted to gain access at this time."
+msgstr "ଏହି ସମଯରେ ପ୍ରବେଶ ଲାଭ କରିବା ପାଇଁ ଅନୁମତି ଦିଆୟିବ ନାହିଁ"
+
+msgid "No longer permitted to access the system."
+msgstr "ସିଷ୍ଟମକୁ ପ୍ରବେଶ କରିବା ପାଇଁ ଆଉ ଅନୁମତି ଦିଆୟିବନାହିଁ"
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "ଆପଣଙ୍କର କ୍ଯାପସ୍ ଲକ କି ଅନ୍ ଅଛି।"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U on %h</span>"
+
+msgid "_Switch User"
+msgstr "ବ୍ଯବହାରକାରୀ ବଦଳାନ୍ତୁ (_S)"
+
+msgid "_Log Out"
+msgstr "ଲଗ ଆଉଟ (_L)"
+
+msgid "_Cancel"
+msgstr "ବାତିଲ କରନ୍ତୁ (_C)"
+
+msgid "_Unlock"
+msgstr "ତାଲାଖୋଲନ୍ତୁ (_U)"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "ମର୍ୟ୍ଯାଦାର ସହିତ ପରଦା ସଂରକ୍ଷକକୁ ପ୍ରାସ୍ଥାନ କରିବାର କାରଣଉତ୍ପନ୍ନ କରେ।"
+
+msgid "Query the state of the screensaver"
+msgstr "ପରଦା ସଂରକ୍ଷକର ସ୍ଥିତିର ପ୍ରଶ୍ନ କରେ"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "ପରଦା ସଂରକ୍ଷକ ସକ୍ରିଯ ରହିଥିବା ସମଯର ଦୀର୍ଘତା ପ୍ରଶ୍ନ କର"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "ଚାଲୁଥିବା ପରଦା ସଂରକ୍ଷକ ପ୍ରକ୍ରିଯାକୁ ଅତିଶୀଘ୍ର ସ୍କ୍ରିନକୁ ତାଲାବନ୍ଦ କରିବା ପାଇଁ କହେ"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "ୟଦି ପରଦା ସଂରକ୍ଷକ ସକ୍ରିଯ ଅଟେ, ତେବେ ଅନ୍ଯ ଗୋଟିଏ ଗ୍ରାଫିକ୍ସ ଡେମୋକୁ ବଦଳାଅ"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "ପରଦା ସଂରକ୍ଷକକୁ ଆରମ୍ଭ କର(ଖାଲି ସ୍କ୍ରିନ)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "ୟଦି ପରଦା ସଂରକ୍ଷକ ସକ୍ରିଯ ଅଟେ ଏହାକୁ ନିଷ୍କ୍ରିଯ କର( ସ୍କ୍ରିନକୁ ପୁରଣ କର)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "ଚାଲୁଥିବା ସ୍କ୍ରିନସ୍ଭରକୁ ଉପୟୋଗକର୍ତ୍ତା କାର୍ୟ୍ଯକଳାପକୁ ବାହାନା କରିବା ପାଇଁ ଆଲୋଡିତ କର"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr "ସକ୍ରିଯ ହେବାରୁ ସ୍କ୍ରିନ ସେଭରକୁ ନିଷେଧ କର। ନିଷେଧ ସକ୍ରିଯ ଥିବା ବେଳେ ଆଦେଶ ଅବରୋଧିତ ହୁଏ"
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "ଡାକୁଥିବା ପ୍ରଯୋଗ ୟାହାକି ପରଦା ସଂରକ୍ଷକକୁ ନିଷେଧ କରୁଛି"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "ପରଦା ସଂରକ୍ଷକକୁ ନିଷେଧ କରିବା ନିମନ୍ତେ କାରଣ"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "ପରଦା ସଂରକ୍ଷକ ହେଉଛି %s\n"
+
+msgid "active"
+msgstr "ସକ୍ରିୟ"
+
+msgid "inactive"
+msgstr "ନିଷ୍କ୍ରିୟ"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "ପରଦା ସଂରକ୍ଷକକୁ ବାରଣ କରାଯାଇନାହିଁ\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "ଦ୍ୱାରା ପରଦା ସଂରକ୍ଷକଟି ବାରଣ କରାଯାଇଥାଏ:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "ପରଦା ସଂରକ୍ଷକ %d ସେକେଣ୍ଡ ପାଇଁ ସକ୍ରିଯ ହୋଇଛି।\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "ପରଦା ସଂରକ୍ଷକଟି ବର୍ତ୍ତମାନ ସକ୍ରିୟ ନାହିଁ।\n"

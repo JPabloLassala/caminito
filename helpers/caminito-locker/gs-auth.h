@@ -57,10 +57,9 @@ GQuark   gs_auth_error_quark (void);
 void     gs_auth_set_verbose (gboolean verbose);
 gboolean gs_auth_get_verbose (void);
 
-gboolean gs_auth_priv_init   (void);
+gboolean gs_auth_service_exists (void);
 gboolean gs_auth_init        (void);
 gboolean gs_auth_verify_user (const char       *username,
-                              const char       *display,
                               GSAuthMessageFunc func,
                               gpointer          data,
                               GError          **error);

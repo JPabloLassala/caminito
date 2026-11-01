@@ -1,0 +1,181 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Michael Findlay <translate@cobber-linux.org>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Michael Findlay <translate@cobber-linux.org>, 2021\n"
+"Language-Team: English (Australia) (https://app.transifex.com/mate/teams/"
+"13566/en_AU/)\n"
+"Language: en_AU\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Show debugging output"
+
+msgid "Version of this application"
+msgstr "Version of this application"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Username:"
+
+msgid "Password:"
+msgstr "Password:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "You are required to change your password immediately (password aged)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "You are required to change your password immediately (root enforced)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Your account has expired; please contact your system administrator"
+
+msgid "No password supplied"
+msgstr "No password supplied"
+
+msgid "Password unchanged"
+msgstr "Password unchanged"
+
+msgid "Can not get username"
+msgstr "Cannot get username"
+
+msgid "Retype new UNIX password:"
+msgstr "Retype new UNIX password:"
+
+msgid "Enter new UNIX password:"
+msgstr "Enter new UNIX password:"
+
+msgid "(current) UNIX password:"
+msgstr "(current) UNIX password:"
+
+msgid "Error while changing NIS password."
+msgstr "Error while changing NIS password."
+
+msgid "You must choose a longer password"
+msgstr "You must choose a longer password"
+
+msgid "Password has been already used. Choose another."
+msgstr "Password has been already used. Choose another."
+
+msgid "You must wait longer to change your password"
+msgstr "You must wait longer to change your password"
+
+msgid "Sorry, passwords do not match"
+msgstr "Sorry, passwords do not match"
+
+msgid "Checking..."
+msgstr "Checking..."
+
+msgid "Authentication failed."
+msgstr "Authentication failed."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Unable to establish service %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Incorrect password."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Not permitted to gain access at this time."
+
+msgid "No longer permitted to access the system."
+msgstr "No longer permitted to access the system."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "You have the Caps Lock key on."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U on %h</span>"
+
+msgid "_Switch User"
+msgstr "_Switch User"
+
+msgid "_Log Out"
+msgstr "_Log Out"
+
+msgid "_Cancel"
+msgstr "_Cancel"
+
+msgid "_Unlock"
+msgstr "_Unlock"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Causes the screensaver to exit gracefully"
+
+msgid "Query the state of the screensaver"
+msgstr "Query the state of the screensaver"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Query the length of time the screensaver has been active"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Tells the running screensaver process to lock the screen immediately"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "If the screensaver is active then switch to another graphics demo"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Turn the screensaver on (blank the screen)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "If the screensaver is active then deactivate it (un-blank the screen)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Poke the running screensaver to simulate user activity"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "The calling application that is inhibiting the screensaver"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "The reason for inhibiting the screensaver"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "The screensaver is %s\n"
+
+msgid "active"
+msgstr "active"
+
+msgid "inactive"
+msgstr "inactive"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "The screensaver is not inhibited\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "The screensaver is being inhibited by:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "The screensaver has been active for %d seconds.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "The screensaver is not currently active.\n"

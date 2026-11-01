@@ -97,6 +97,24 @@ pub(crate) fn data_dirs(has: Option<&OsStr>) -> OsString {
     dirs
 }
 
+/// Where `mate-screensaver-command` is, which Meson installs (CMN-297).
+const BIN_DIR: &str = "/usr/lib/caminito/bin";
+
+/// The `PATH` of a program that wasn't given one.
+const DEFAULT_PATH: &str = "/usr/local/bin:/usr/bin";
+
+/// The session command's `PATH`: Caminito's directory, then what Caminito `has`. mate-panel,
+/// mate-session and mate-settings-daemon's media keys run `mate-screensaver-command` by name,
+/// and find Caminito's whether or not the mate-screensaver package is installed. As with
+/// `data_dirs`, the bus and systemd aren't given it.
+fn session_path(has: Option<&OsStr>) -> OsString {
+    let has = has.filter(|path| !path.is_empty());
+    let mut path = OsString::from(BIN_DIR);
+    path.push(":");
+    path.push(has.unwrap_or(OsStr::new(DEFAULT_PATH)));
+    path
+}
+
 /// The GTK module that exports a classic `GtkMenuBar`, as most of MATE's apps have theirs,
 /// for the global menu (111, ADR 0017): the name GTK 3 finds it by in its modules
 /// directory.
@@ -459,7 +477,8 @@ impl Caminito {
     /// Spawns the command with `Caminito::environment`, and `GDK_BACKEND=x11` for itself
     /// alone: mate-session isn't Wayland-safe, and its carried patch unsets the variable
     /// for what it starts (08). Caminito's data directory is first in its `XDG_DATA_DIRS`,
-    /// and so in those of what it starts (84), and the menu module is in its `GTK_MODULES`
+    /// and so in those of what it starts (84), its own directory of programs is first in its
+    /// `PATH`, and the menu module is in its `GTK_MODULES`
     /// if it's installed (111).
     fn spawn_session_command(&mut self) {
         let sigchld = match self.watch_session_command() {
@@ -482,6 +501,7 @@ impl Caminito {
                 "XDG_DATA_DIRS",
                 data_dirs(std::env::var_os("XDG_DATA_DIRS").as_deref()),
             )
+            .env("PATH", session_path(std::env::var_os("PATH").as_deref()))
             .stdin(Stdio::null());
         let has = std::env::var_os("GTK_MODULES");
         if let Some(modules) = gtk_modules(

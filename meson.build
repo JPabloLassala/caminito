@@ -54,6 +54,16 @@ install_data(
   install_dir: get_option('datadir') / 'glib-2.0' / 'schemas',
 )
 
+# mate-screensaver's settings, which caminito-locker, Caminito and MATE's components read. The
+# same id as the package's, as the mate-screensaver package can still be installed for an X11
+# session (ADR 0056): under this filename the files don't conflict, and glib-compile-schemas
+# says it ignores the second and goes on, unless it's run with --strict.
+install_data(
+  'data/org.mate.screensaver.gschema.xml',
+  rename: 'org.mate.screensaver.caminito.gschema.xml',
+  install_dir: get_option('datadir') / 'glib-2.0' / 'schemas',
+)
+
 # caminito-displays's entry, in the Display capplet's place (84). It has the capplet's id,
 # mate-display-properties.desktop, in a directory that only a Session's programs look in,
 # before the stock packages': Caminito puts it first in its session command's XDG_DATA_DIRS.

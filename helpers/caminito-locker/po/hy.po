@@ -1,0 +1,185 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# monsta <monsta@inbox.ru>, 2018
+# Siranush <ss.m.95@mail.ru>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Siranush <ss.m.95@mail.ru>, 2021\n"
+"Language-Team: Armenian (https://app.transifex.com/mate/teams/13566/hy/)\n"
+"Language: hy\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Ցույց տալ ելքը վրիպազերծելով"
+
+msgid "Version of this application"
+msgstr "Այս դիմումի տարբերակը"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Օգտանուն։"
+
+msgid "Password:"
+msgstr "Գաղտնաբառ։"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"Ձեզնից պահանջվում է անմիջապես փոխել Ձեր գաղտնաբառը (գաղտնաբառը հնացած է)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"Ձեզնից պահանջվում է անմիջապես փոխել Ձեր գաղտնաբառը  (արմատը չիրագործվեց)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Ձեր հաշիվը լրացել է. խնդրում ենք դիմել ձեր համակարգի ադմինիստրատորին"
+
+msgid "No password supplied"
+msgstr "Ոչ ապահովված գաղտնաբառ"
+
+msgid "Password unchanged"
+msgstr "Գաղտնաբառ անփոփոխ է"
+
+msgid "Can not get username"
+msgstr "Հնարավոր չէ ստանալ օգտանունը"
+
+msgid "Retype new UNIX password:"
+msgstr "Հաստատեք նոր UNIX գաղտնաբառը։"
+
+msgid "Enter new UNIX password:"
+msgstr "Մուտքագրեք Նոր UNIX գաղտնաբառը։"
+
+msgid "(current) UNIX password:"
+msgstr "(ընթացիկ) UNIX գաղտնաբառը:"
+
+msgid "Error while changing NIS password."
+msgstr "Սխալ մինչ NIS գաղտնաբառի փոխարկումը։"
+
+msgid "You must choose a longer password"
+msgstr "Դուք պետք է ընտրեք ավելի երկար գաղտնաբառ"
+
+msgid "Password has been already used. Choose another."
+msgstr "Գաղտնաբառ արդեն օգտագործված է։ Ընտրեք մեկ ուրիշը։"
+
+msgid "You must wait longer to change your password"
+msgstr "Դուք պետք է ավելի երկար սպասեք Ձեր գաղտնաբառը փոխելու համար"
+
+msgid "Sorry, passwords do not match"
+msgstr "Ներեցեք, գաղտնաբառերը չեն համընկնում"
+
+msgid "Checking..."
+msgstr "Ստուգում..."
+
+msgid "Authentication failed."
+msgstr "Նույնականացումը ձախողվեց."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Անհնար է հաստատել ծառայությունը %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Սխալ գաղտնաբառ."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Չի թույլատրվում մուտք գործել այս պահին։"
+
+msgid "No longer permitted to access the system."
+msgstr "Այլևս չի թույլատրվում է մուտք գործել համակարգ:"
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "Դուք ունեք Caps Lock ստեղնը."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U on %h</span>"
+
+msgid "_Switch User"
+msgstr "_Փոխել Օգտագործողին"
+
+msgid "_Log Out"
+msgstr "_Դուրս գալ"
+
+msgid "_Cancel"
+msgstr "_Չեղարկել "
+
+msgid "_Unlock"
+msgstr "_Բացել "
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Հանգեցնում է Էկրանապահի նրբագեղորեն դուրս գալուն"
+
+msgid "Query the state of the screensaver"
+msgstr "Էկրանապահի վիճակի հարցում"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Էկրանապահի  ակտիվ եղած ժամանակի երկարության հարցում"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Հրամայում է գործարկել էկրանապահի գործընթացը անմիջապես արգելափակել էկրանը"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Եթե էկրանապահը ակտիվ է, ապա անցնել այլ գրաֆիկական ցուցադրության"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Միացնել էկրանապահը (էկրանը դատարկ է)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Եթե էկրանապահը ակտիվ է, ապա ապաակտիվացնել այն (ոչ դատարկ էկրան)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Խառնել ընթացող էկրանապահը օգտագործողի գործունեության մոդելավորման համար"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Արգելակել Էկրանապահը ակտիվացնելու հետո։ Հրամանը փակվում է մինչ արգելակումը "
+"ակտիվ է։"
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Ծրագրի կանչ, որը արգելակում է էկրանապահը"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "էկրանապահի արգելափակման համար պատճառը"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr " Էկրանապահը %s է\n"
+
+msgid "active"
+msgstr "Ակտիվ"
+
+msgid "inactive"
+msgstr "Պասիվ"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Էկրանապահը չի խոչընդոտում\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Էկրանապահը խոչընդոտվում է։\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Էկրանապահը ակտիվ կլինի %d վարկյանից։\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Էկրանապահը ներկայումս ակտիվ չէ։\n"

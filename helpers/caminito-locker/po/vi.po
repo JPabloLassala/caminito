@@ -1,0 +1,186 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Duy Truong Nguyen <truongap.ars@gmail.com>, 2018
+# Horazone Detex <thmmt2017d@gmail.com>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Vietnamese (https://app.transifex.com/mate/teams/13566/vi/)\n"
+"Language: vi\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Show debugging output"
+msgstr "Hiện dữ liệu xuất gỡ lỗi"
+
+msgid "Version of this application"
+msgstr "Phiên bản ứng dụng này"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Tên người dùng:"
+
+msgid "Password:"
+msgstr "Mật khẩu :"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Bạn phải thay đổi ngay mật khẩu (mật khẩu quá cũ)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Bạn phải thay đổi ngay mật khẩu (người chủ ép buộc)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Tài khoản của bạn đã hết hạn dùng: hãy liên lạc với nhà quản trị hệ thống"
+
+msgid "No password supplied"
+msgstr "Chưa cung cấp mật khẩu"
+
+msgid "Password unchanged"
+msgstr "Chưa thay đổi mật khẩu"
+
+msgid "Can not get username"
+msgstr "Không thể lấy tên người dùng"
+
+msgid "Retype new UNIX password:"
+msgstr "Gõ lại mật khẩu UNIX mới:"
+
+msgid "Enter new UNIX password:"
+msgstr "Nhập mật khẩu UNIX mới:"
+
+msgid "(current) UNIX password:"
+msgstr "Mật khẩu UNIX (hiện có):"
+
+msgid "Error while changing NIS password."
+msgstr "Gặp lỗi khi thay đổi mật khẩu NIS."
+
+msgid "You must choose a longer password"
+msgstr "Bạn phải chọn mật khẩu dài hơn"
+
+msgid "Password has been already used. Choose another."
+msgstr "Mật khẩu đã được dùng. Hãy chọn mật khẩu khác."
+
+msgid "You must wait longer to change your password"
+msgstr "Bạn phải đợi thêm nữa, để thay đổi mật khẩu"
+
+msgid "Sorry, passwords do not match"
+msgstr "Tiếc là hai mật khẩu không trùng"
+
+msgid "Checking..."
+msgstr "Đang kiểm tra..."
+
+msgid "Authentication failed."
+msgstr "Lỗi xác thực."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Không thể thiết lập dịch vụ %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Mật khẩu không đúng."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Không cho phép truy cập vào lúc này."
+
+msgid "No longer permitted to access the system."
+msgstr "Không còn có quyền truy cập lại hệ thống."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "Bạn đã bật phím Khoá Chữ Hoa (CapsLock)."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U trên %h</span>"
+
+msgid "_Switch User"
+msgstr "_Chuyển đổi người dùng"
+
+msgid "_Log Out"
+msgstr "Đăng _xuất"
+
+msgid "_Cancel"
+msgstr "Th_ôi"
+
+msgid "_Unlock"
+msgstr "_Bỏ khoá"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Làm cho bộ bảo vệ màn hình thoát cho đúng"
+
+msgid "Query the state of the screensaver"
+msgstr "Truy vấn tính trạng của bộ bảo vệ màn hình"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Truy vấn khoảng thời gian hoạt động của bộ bảo vệ màn hình"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Báo tiến trình bảo vệ màn hình đang chạy phải khoá ngay màn hình"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Nếu bộ bảo vệ màn hình có hoạt động thì chuyển đổi sang một chứng minh đồ "
+"họa khác"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Khởi chạy bộ bảo vệ màn hình (làm trắng màn hình)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Nếu bộ bảo vệ màn hình có hoạt động thì tắt nó (bỏ trắng màn hình)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Thức bộ bảo vệ màn hình đang chạy, để mô phỏng hoạt động của người dùng"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Ngăn chặn bộ bảo vệ màn hình kích hoạt. Lệnh chặn trong khi khả năng ngăn "
+"chặn còn hoạt động."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Ứng dụng gọi mà ngăn chặn bộ bảo vệ màn hình"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Lý do ngăn chặn bộ bảo vệ màn hình"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Bộ bảo vệ màn hình là %s\n"
+
+msgid "active"
+msgstr "hoạt động"
+
+msgid "inactive"
+msgstr "không hoạt động"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Bộ bảo vệ màn hình không phải bị thu hồi\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Bộ bảo vệ màn hình đang bị thu hồi bởi:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Bộ bảo vệ màn hình đã hoạt động trong vòng %d giây.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Bộ bảo vệ màn hình hiện tại không hoạt động.\n"

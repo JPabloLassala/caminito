@@ -1,0 +1,180 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# mauron, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: mauron, 2021\n"
+"Language-Team: Urdu (https://app.transifex.com/mate/teams/13566/ur/)\n"
+"Language: ur\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr ""
+
+msgid "Version of this application"
+msgstr "اس اطلاقیے کا نسخہ"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "اسمِ صارف:"
+
+msgid "Password:"
+msgstr "پاس ورڈ:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"آپ کو اپنا پاس ورڈ فوری طور پر بدلنے کی ضرورت ہے (پاس ورڈ پرانا ہوگیا ہے)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"آپ کو اپنا پاس ورڈ فوری طور پر بدلنے کی ضرورت ہے (روٹ کی طرف سے نافذ کردہ)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "آپ کا کھاتہ ایکسپائر ہوگیا ہے; اپنے نظام کے مدیر سے رابطہ کریں"
+
+msgid "No password supplied"
+msgstr "کوئی پاس ورڈ فراہم نہیں کیا گیا"
+
+msgid "Password unchanged"
+msgstr "پاس ورڈ غیر تبدیل شُدہ"
+
+msgid "Can not get username"
+msgstr "اسم صارف حاصل نہیں کیا جاسکتا"
+
+msgid "Retype new UNIX password:"
+msgstr "نیا یونکس پاس ورڈ دوبارہ لکھیں:"
+
+msgid "Enter new UNIX password:"
+msgstr "نیا یونکس پاس ورڈ درج کریں:"
+
+msgid "(current) UNIX password:"
+msgstr "(حالیہ) یونکس پاس ورڈ:"
+
+msgid "Error while changing NIS password."
+msgstr "نس NIS پاس ورڈ بدلتے ہوئے غلطی."
+
+msgid "You must choose a longer password"
+msgstr "پاس ورڈ کا طویل ہونا لازمی ہے"
+
+msgid "Password has been already used. Choose another."
+msgstr "پاس ورڈ پہلے ہی استعمال میں ہے. دوسرا منتخب کریں."
+
+msgid "You must wait longer to change your password"
+msgstr "اپنا پاس ورڈ بدلنے کے لیے آپ کو طویل انتظار کرنا ہوگا"
+
+msgid "Sorry, passwords do not match"
+msgstr "معذرت، پاس ورڈ مطابقت نہیں رکھتے"
+
+msgid "Checking..."
+msgstr "پڑتال کی جارہی ہے..."
+
+msgid "Authentication failed."
+msgstr "توثیق ناکام ہوئی."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "سروس قائم کرنے سے قاصر %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "غلط پاس ورڈ."
+
+msgid "Not permitted to gain access at this time."
+msgstr "اس وقت رسائی کی اجازت نہیں ہے."
+
+msgid "No longer permitted to access the system."
+msgstr ""
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "آپ کا کیپس لاک Caps Lock بٹن فعال ہے."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U بر %h</span>"
+
+msgid "_Switch User"
+msgstr "صارف _بدلیں"
+
+msgid "_Log Out"
+msgstr "_لاگ آؤٹ کریں"
+
+msgid "_Cancel"
+msgstr "_ملتوی"
+
+msgid "_Unlock"
+msgstr "_غیر مقفل کریں"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "سلیقے سے سکرین سیور کو برخاست کرنے کا موجب بنتا ہے"
+
+msgid "Query the state of the screensaver"
+msgstr ""
+
+msgid "Query the length of time the screensaver has been active"
+msgstr ""
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "سکرین سیور کو چلائیں (سکرین خالی کریں)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr ""
+
+msgid "The reason for inhibiting the screensaver"
+msgstr ""
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "سکرین سیور ہے %s\n"
+
+msgid "active"
+msgstr "فعال"
+
+msgid "inactive"
+msgstr "غیر فعال"
+
+msgid "The screensaver is not inhibited\n"
+msgstr ""
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr ""
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "سکرین سیور %d سیکنڈوں سے فعال ہے.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "سکرین سیور اس وقت فعال نہیں ہے.\n"

@@ -35,10 +35,9 @@ license=(GPL-3.0-or-later GPL-3.0-only)
 # links none of them. mate-session-manager-caminito 1.28.0.r23.g57a9178-7 skips
 # mate-notification-daemon's autostart, which caminito-notifications takes the place of.
 #
-# caminito-locker (131, ADR 0007) links gtk3, gtk-session-lock, mate-desktop and pam. It
-# shows mate-screensaver's lock-dialog-*.ui themes and authenticates through its
-# mate-screensaver PAM service, so it needs mate-screensaver's data though it links none of
-# it; mate-screensaver's daemon exits under Caminito, which owns its name.
+# caminito-locker (131, ADR 0056) links gtk3, gtk-session-lock, mate-desktop and pam. It needs
+# nothing of mate-screensaver: this package has its PAM service, its dialog, its translations,
+# the org.mate.screensaver schema and the mate-screensaver-command MATE's components run.
 #
 # caminito-displays (84) links gtk4, and through it cairo, pango and glib2. Its own Wayland
 # connection needs nothing gtk4 doesn't bring. Its entry shadows the Display capplet's, from
@@ -90,7 +89,7 @@ license=(GPL-3.0-or-later GPL-3.0-only)
 # trash:///, which gvfs serves, as it does Caja (CMN-220).
 depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gtk4 marco mate-themes
   xorg-xwayland seatd systemd-libs mesa libdisplay-info libglvnd libinput libcanberra zenity
-  gtk-session-lock mate-desktop pam mate-screensaver glib-networking
+  gtk-session-lock mate-desktop pam glib-networking
   'mate-session-manager-caminito>=1.28.0.r23.g57a9178-7' mate-panel-caminito
   'mate-settings-daemon-caminito>=1.29.1-8' caja-caminito
   mate-control-center-caminito mate-utils-caminito mate-power-manager-caminito
@@ -98,7 +97,9 @@ depends=(glibc libgcc libxkbcommon glib2 cairo pango gdk-pixbuf2 librsvg gtk3 gt
   nm-connection-editor libxfce4windowing gvfs gtk4-layer-shell)
 # wayland's wayland-scanner makes the xdg-activation client the Dock applet asks for a launch's
 # token with (CMN-221), from the XML it vendors.
-makedepends=(cargo git meson wayland)
+makedepends=(cargo gettext git meson wayland)
+# caminito-locker's service, which a customised copy of must survive an upgrade.
+backup=(etc/pam.d/caminito-locker)
 # The session puts the module in its command's GTK_MODULES when this package is installed,
 # which it finds by the empty file the package installs, /usr/share/caminito/appmenu-gtk-module
 # (111, 192). It's named by its real name, as the patched packages above are: the stock one
@@ -175,4 +176,5 @@ package() {
     target/release/caminito-wallpaper target/release/caminito-bluetooth \
     target/release/caminito-behaviour target/release/caminito-network \
     target/release/caminito-notifications -t "$pkgdir/usr/bin"
+  install -Dm644 helpers/caminito-locker/pam/system-auth "$pkgdir/etc/pam.d/caminito-locker"
 }

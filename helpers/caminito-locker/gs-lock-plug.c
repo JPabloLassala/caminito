@@ -30,7 +30,9 @@
  *    of lock-dialog-default.ui stands in for it;
  *  - tooltips and the entry's menu, as a lock surface can't show a popup;
  *  - the keyboard layout indicator, which is libmatekbd's on X11;
- *  - the note, which needs libnotify, as a mate-screensaver built without it has none.
+ *  - the note, which needs libnotify, and its tab and button;
+ *  - Switch User's MDM and GDM commands and its looking for their processes: it asks a display
+ *    manager over D-Bus, or hides (ADR 0056).
  * The status message's label is no-show-all, as the Switch User and Log Out buttons are,
  * since a lock window's show_all would show it without a message (132). The plug draws
  * what it drew as a window, with a window's CSS node and its background class, so the
@@ -57,9 +59,6 @@
 #include <gtk/gtk.h>
 #include <gio/gio.h>
 
-#define MATE_DESKTOP_USE_UNSTABLE_API
-#include <libmate-desktop/mate-desktop-utils.h>
-
 #include "gs-lock-plug.h"
 
 #define gs_debug g_debug
@@ -67,12 +66,6 @@
 #define GSETTINGS_SCHEMA "org.mate.screensaver"
 
 #define KEY_LOCK_DIALOG_THEME "lock-dialog-theme"
-
-#define MDM_FLEXISERVER_COMMAND "mdmflexiserver"
-#define MDM_FLEXISERVER_ARGS    "--startnew Standard"
-
-#define GDM_FLEXISERVER_COMMAND "gdmflexiserver"
-#define GDM_FLEXISERVER_ARGS    "--startnew Standard"
 
 /* caminito-locker's lock-dialog-default.ui, for a theme whose .ui isn't installed. */
 #define DEFAULT_THEME_RESOURCE "/org/mate/caminito/locker/lock-dialog-default.ui"
@@ -100,7 +93,6 @@ struct GSLockPlugPrivate
 	GtkWidget   *auth_switch_button;
 	GtkWidget   *auth_cancel_button;
 	GtkWidget   *auth_logout_button;
-	GtkWidget   *auth_note_button;
 
 	GtkWidget   *auth_prompt_kbd_layout_indicator;
 
@@ -156,103 +148,76 @@ static guint lock_plug_signals [LAST_SIGNAL] = { 0 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (GSLockPlug, gs_lock_plug, GTK_TYPE_BIN)
 
+/* Whether a display manager answers for the session's seat, and says it can switch: without
+ * one, the proxy has no properties. */
 static gboolean
-process_is_running (const char * name)
+seat_can_switch (void)
 {
-        int num_processes;
-        gchar *command = g_strdup_printf ("pidof %s | wc -l", name);
-        FILE *fp = popen(command, "r");
+	const char *seat = g_getenv ("XDG_SEAT_PATH");
+	GDBusProxy *proxy;
+	GVariant   *can_switch;
+	gboolean    res = FALSE;
 
-        if (fscanf(fp, "%d", &num_processes) != 1)
-                num_processes = 0;
+	if (seat == NULL)
+	{
+		return FALSE;
+	}
 
-        pclose(fp);
-        g_free (command);
+	proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+	                                       G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
+	                                       NULL,
+	                                       "org.freedesktop.DisplayManager",
+	                                       seat,
+	                                       "org.freedesktop.DisplayManager.Seat",
+	                                       NULL,
+	                                       NULL);
+	if (proxy == NULL)
+	{
+		return FALSE;
+	}
 
-        if (num_processes > 0) {
-                return TRUE;
-        } else {
-                return FALSE;
-        }
+	can_switch = g_dbus_proxy_get_cached_property (proxy, "CanSwitch");
+	if (can_switch != NULL)
+	{
+		res = g_variant_is_of_type (can_switch, G_VARIANT_TYPE_BOOLEAN)
+		      && g_variant_get_boolean (can_switch);
+		g_variant_unref (can_switch);
+	}
+	g_object_unref (proxy);
+
+	return res;
 }
 
+/* LightDM's request, on the seat the display manager names. */
 static void
 do_user_switch (GSLockPlug *plug G_GNUC_UNUSED)
 {
-	GError  *error;
-	gboolean res;
-	char    *command;
+	GError     *error = NULL;
+	GDBusProxy *proxy;
 
-	if (process_is_running ("mdm"))
+	proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+	                                       G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
+	                                       NULL,
+	                                       "org.freedesktop.DisplayManager",
+	                                       g_getenv ("XDG_SEAT_PATH"),
+	                                       "org.freedesktop.DisplayManager.Seat",
+	                                       NULL,
+	                                       &error);
+	if (proxy == NULL)
 	{
-		/* MDM */
-		command = g_strdup_printf ("%s %s",
-								   MDM_FLEXISERVER_COMMAND,
-								   MDM_FLEXISERVER_ARGS);
-
-		error = NULL;
-		res = mate_gdk_spawn_command_line_on_screen (gdk_screen_get_default (),
-												command,
-												&error);
-
-		g_free (command);
-
-		if (! res)
-		{
-			gs_debug ("Unable to start MDM greeter: %s", error->message);
-			g_error_free (error);
-		}
-	}
-	else if (process_is_running ("gdm") || process_is_running("gdm3") || process_is_running("gdm-binary"))
-	{
-		/* GDM */
-		command = g_strdup_printf ("%s %s",
-								   GDM_FLEXISERVER_COMMAND,
-								   GDM_FLEXISERVER_ARGS);
-
-		error = NULL;
-		res = mate_gdk_spawn_command_line_on_screen (gdk_screen_get_default (),
-												command,
-												&error);
-
-		g_free (command);
-
-		if (! res) {
-			gs_debug ("Unable to start GDM greeter: %s", error->message);
-			g_error_free (error);
-		}
-	}
-	else if (g_getenv ("XDG_SEAT_PATH") != NULL)
-	{
-		/* LightDM */
-		GDBusProxyFlags flags = G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START;
-		GDBusProxy *proxy = NULL;
-
-		error = NULL;
-		proxy = g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SYSTEM,
-											  flags,
-											  NULL,
-											  "org.freedesktop.DisplayManager",
-											  g_getenv ("XDG_SEAT_PATH"),
-											  "org.freedesktop.DisplayManager.Seat",
-											  NULL,
-											  &error);
-		if (proxy != NULL) {
-			g_dbus_proxy_call_sync (proxy,
-									"SwitchToGreeter",
-									g_variant_new ("()"),
-									G_DBUS_CALL_FLAGS_NONE,
-									-1,
-									NULL,
-									NULL);
-			g_object_unref (proxy);
-		}
-		else {
-			gs_debug ("Unable to start LightDM greeter: %s", error->message);
-			g_error_free (error);
-		}
+		gs_debug ("Unable to start the greeter: %s", error->message);
+		g_error_free (error);
+		return;
 	}
 
+	g_dbus_proxy_call_sync (proxy,
+	                        "SwitchToGreeter",
+	                        g_variant_new ("()"),
+	                        G_DBUS_CALL_FLAGS_NONE,
+	                        -1,
+	                        NULL,
+	                        NULL);
+	g_object_unref (proxy);
 }
 
 static void
@@ -1044,31 +1009,14 @@ gs_lock_plug_set_switch_enabled (GSLockPlug *plug,
 		return;
 	}
 
-	if (switch_enabled)
+	if (switch_enabled && seat_can_switch ())
 	{
-		if (process_is_running ("mdm"))
-		{
-			/* MDM  */
-			gtk_widget_show (plug->priv->auth_switch_button);
-		}
-		else if (process_is_running ("gdm") || process_is_running("gdm3") || process_is_running("gdm-binary"))
-		{
-			/* GDM */
-			gtk_widget_show (plug->priv->auth_switch_button);
-		}
-		else if (g_getenv ("XDG_SEAT_PATH") != NULL)
-		{
-			/* LightDM */
-			gtk_widget_show (plug->priv->auth_switch_button);
-		}
-		else
-		{
-			gs_debug ("Warning: Unknown DM for switch button");
-			gtk_widget_hide (plug->priv->auth_switch_button);
-		}
+		gs_debug ("Switch User button: shown");
+		gtk_widget_show (plug->priv->auth_switch_button);
 	}
 	else
 	{
+		gs_debug ("Switch User button: hidden");
 		gtk_widget_hide (plug->priv->auth_switch_button);
 	}
 }
@@ -1744,9 +1692,8 @@ remove_tooltips (GtkWidget *widget,
 	}
 }
 
-/* mate-screensaver's theme, lock-dialog-<lock-dialog-theme>.ui and .css from its data
- * directory. Where the .ui isn't there, caminito-locker's own lock-dialog-default.ui
- * stands in for the dialog mate-screensaver builds in code. */
+/* The theme, lock-dialog-<lock-dialog-theme>.ui and .css from Caminito's data directory.
+ * Where the .ui isn't there, caminito-locker's own lock-dialog-default.ui is the dialog. */
 static void
 load_theme (GSLockPlug *plug)
 {
@@ -1830,7 +1777,6 @@ load_theme (GSLockPlug *plug)
 	plug->priv->auth_cancel_button = GTK_WIDGET (gtk_builder_get_object(builder, "auth-cancel-button"));
 	plug->priv->auth_logout_button = GTK_WIDGET (gtk_builder_get_object(builder, "auth-logout-button"));
 	plug->priv->auth_switch_button = GTK_WIDGET (gtk_builder_get_object(builder, "auth-switch-button"));
-	plug->priv->auth_note_button = GTK_WIDGET (gtk_builder_get_object(builder, "auth-note-button"));
 
 	/* Placeholder for the keyboard indicator */
 	plug->priv->auth_prompt_kbd_layout_indicator = GTK_WIDGET (gtk_builder_get_object(builder, "auth-prompt-kbd-layout-indicator"));
@@ -1841,10 +1787,6 @@ load_theme (GSLockPlug *plug)
 	if (plug->priv->auth_switch_button != NULL)
 	{
 		gtk_widget_set_no_show_all (plug->priv->auth_switch_button, TRUE);
-	}
-	if (plug->priv->auth_note_button != NULL)
-	{
-		gtk_widget_set_no_show_all (plug->priv->auth_note_button, TRUE);
 	}
 
 	remove_tooltips (lock_dialog, NULL);
@@ -1924,10 +1866,6 @@ gs_lock_plug_init (GSLockPlug *plug)
 		gtk_widget_hide (plug->priv->auth_prompt_kbd_layout_indicator);
 	}
 
-	if (plug->priv->auth_note_button != NULL)
-	{
-		gtk_widget_hide (plug->priv->auth_note_button);
-	}
 	if (plug->priv->auth_switch_button != NULL)
 	{
 		if (plug->priv->switch_enabled)

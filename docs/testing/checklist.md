@@ -1539,15 +1539,14 @@ session_env() {
      that isn't installed:
 
      ```sh
-     cd /usr/share/mate-screensaver
-     sudo cp lock-dialog-default.ui lock-dialog-red.ui
-     echo 'label { color: #c00; }' | sudo tee lock-dialog-red.css
+     sudo cp helpers/caminito-locker/lock-dialog-default.ui /usr/share/caminito/lock-dialog-red.ui
+     echo 'label { color: #c00; }' | sudo tee /usr/share/caminito/lock-dialog-red.css
      gsettings set org.mate.screensaver lock-dialog-theme red
      ```
 
      Run `caminito-locker` and unlock. Then `gsettings set org.mate.screensaver
      lock-dialog-theme nonexistent`, run `caminito-locker` and unlock. Then `gsettings reset
-     org.mate.screensaver lock-dialog-theme` and `sudo rm lock-dialog-red.*`.
+     org.mate.screensaver lock-dialog-theme` and `sudo rm /usr/share/caminito/lock-dialog-red.*`.
   4. Log into *MATE on Caminito* with both monitors connected, and lock with *System* ▸
      *Lock Screen*: Caminito spawns `caminito-locker`, its default `locker-command` (126).
   5. Move the pointer from one monitor to the other and back, and type a letter on each.
@@ -1555,7 +1554,7 @@ session_env() {
   6. In *Appearance*, pick another GTK theme, such as *TraditionalOk*, and lock again. Unlock,
      and set the theme back.
 - **Expected:** in step 1 the session is behind the lock, in the Idle view, and the first key
-  of step 2 shows the dialog, which is mate-screensaver's as X11 MATE shows it, without the
+  of step 2 shows the dialog, which is as X11 MATE shows mate-screensaver's, without the
   clock and date: the user's face (`~/.face`, if there is one) and
   real name, *user on host*, the *Password:* prompt, and *Cancel* and *Unlock*, in the GTK
   theme's colours, on the desktop's background (132). No tooltip shows over the
@@ -1601,6 +1600,29 @@ session_env() {
 - **Debug tool:** `caminito-locker --verbose`: `The Unlock dialog shows`, `The Unlock dialog
   hides`, `Moving the dialog` and `The clock is smaller, to clear the dialog`.
 
+### caminito-locker locks and unlocks without mate-screensaver on each distribution
+
+- **Milestone:** M7
+- **Steps:** on Arch, on Debian or Ubuntu, and on Fedora:
+  1. Build and install the `caminito` package from this tree, by `tools/bootstrap`,
+     `tools/debian-build` and `tools/bootstrap-fedora`. Remove the `mate-screensaver` package if
+     nothing else needs it, and check it's gone.
+  2. Check `/etc/pam.d/caminito-locker` is there, and that `command -v
+     mate-screensaver-command` in a Session's terminal says `/usr/lib/caminito/bin/`.
+  3. Log into *MATE on Caminito*, lock with *System* ▸ *Lock Screen*, type a wrong password,
+     then the right one. Lock again with the lock key, and with
+     `mate-screensaver-command --lock`, and unlock.
+  4. With `LANGUAGE=es` set for a login, lock again and read the dialog.
+  5. Run `sudo mv /etc/pam.d/caminito-locker{,.off}`, and lock. Then from a text console run
+     the `loginctl unlock-session` the message names, and
+     `sudo mv /etc/pam.d/caminito-locker{.off,}`.
+- **Expected:** in step 3 each lock shows the dialog and only the right password unlocks; no
+  account lockout comes of the wrong one. In step 4 the dialog's buttons and prompt are in
+  Spanish. In step 5 there's no dialog: within a minute the screen says how to unlock with
+  `loginctl`, and the desktop never shows until that's run.
+- **Debug tool:** `caminito-locker: this system has no PAM service caminito-locker` in the
+  journal for step 5, and `DumpState`'s `locker`, whose `state` is `gave-up`.
+
 ### caminito-locker's background, status message, Switch User and Log Out
 
 - **Milestone:** M7
@@ -1635,13 +1657,12 @@ session_env() {
   pointer. In step 2 both show the other image, then the desktop background again. In step 3
   the dialog shows *Back at three* above its buttons, then *Back at four*, and no message
   with the key off. In step 4 the display manager's greeter shows, and the session is still
-  locked when it's back. With sddm, mate-screensaver's LightDM path reaches it: sddm sets
+  locked when it's back. With sddm, the LightDM request reaches it: sddm sets
   `XDG_SEAT_PATH` and has `SwitchToGreeter` on its seat. In step 5 there's no *Switch User*.
   In step 6 *Log Out* appears a minute after the lock, and the session logs out.
 - **Debug tool:** the journal's `caminito-locker` lines: where each monitor's wallpaper came
   from (218, below), then `Creating background w:… h:…` for it, `Status message: …`, `Switch
-  User: enabled` or `disabled` (and `Warning: Unknown DM for switch button` where no display
-  manager's path applies), and `Log Out: after its delay` then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
+  User: enabled` or `disabled`, `Switch User button: shown` or `hidden`, and `Log Out: after its delay` then `Log Out: shown`. `busctl --system get-property org.freedesktop.DisplayManager
   "$XDG_SEAT_PATH" org.freedesktop.DisplayManager.Seat CanSwitch` says whether the greeter can
   be reached that way.
 

@@ -1,0 +1,189 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Asier Iturralde Sarasola <asier.iturralde@gmail.com>, 2020
+# David García-Abad <dgarciabad@gmail.com>, 2020
+# Porrumentzio <porrumentzio@riseup.net>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Basque (https://app.transifex.com/mate/teams/13566/eu/)\n"
+"Language: eu\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Erakutsi arazteko irteera"
+
+msgid "Version of this application"
+msgstr "Aplikazio honen bertsioa"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Erabiltzaile-izena:"
+
+msgid "Password:"
+msgstr "Pasahitza:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Pasahitza berehala aldatu behar duzu (pasahitza zaharkituta)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Pasahitza berehala aldatu behar duzu (erroak behartuta)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Zure kontua iraungitu da; jarri harremanetan sistemako administratzailearekin"
+
+msgid "No password supplied"
+msgstr "Ez da pasahitzik eman"
+
+msgid "Password unchanged"
+msgstr "Pasahitza ez da aldatu"
+
+msgid "Can not get username"
+msgstr "Ezin da erabiltzaile-izena lortu"
+
+msgid "Retype new UNIX password:"
+msgstr "Idatzi berriro UNIXeko pasahitz berria:"
+
+msgid "Enter new UNIX password:"
+msgstr "Idatzi UNIXeko pasahitz berria:"
+
+msgid "(current) UNIX password:"
+msgstr "(uneko) UNIXeko pasahitza:"
+
+msgid "Error while changing NIS password."
+msgstr "Errorea gertatu da NIS pasahitza aldatzean."
+
+msgid "You must choose a longer password"
+msgstr "Pasahitz luzeagoa aukeratu behar duzu"
+
+msgid "Password has been already used. Choose another."
+msgstr "Pasahitz hori erabilita dago. Aukeratu beste bat."
+
+msgid "You must wait longer to change your password"
+msgstr "Gehiago itxaron behar duzu pasahitza aldatzeko"
+
+msgid "Sorry, passwords do not match"
+msgstr "Pasahitzak ez datoz bat"
+
+msgid "Checking..."
+msgstr "Egiaztatzen..."
+
+msgid "Authentication failed."
+msgstr "Autentifikazioak huts egin du."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Ezin izan da %s zerbitzua ezarri: %s\n"
+
+msgid "Incorrect password."
+msgstr "Okerreko pasahitza."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Ez duzu sartzeko baimenik une honetan."
+
+msgid "No longer permitted to access the system."
+msgstr "Ez duzu baimenik aurrerantzean sistemara sartzeko."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "Blok.maius. aktibatuta dago"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U :: %h</span>"
+
+msgid "_Switch User"
+msgstr "_Aldatu erabiltzailez"
+
+msgid "_Log Out"
+msgstr "_Irten saiotik"
+
+msgid "_Cancel"
+msgstr "_Utzi"
+
+msgid "_Unlock"
+msgstr "_Desblokeatu"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Pantaila-babeslea ongi amaitzea eragiten du"
+
+msgid "Query the state of the screensaver"
+msgstr "Pantaila-babeslearen egoeraren kontsulta"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Kontsultatu zenbat denbora egon den pantaila-babeslea aktibo"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Exekutatzen ari den pantaila-babeslearen prozesuari pantaila berehala "
+"blokeatzeko esaten dio."
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"Pantaila-babeslearen prozesuari pantaila berehala desblokeatzeko eskatzen "
+"dio."
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Pantaila-babeslea aktibo egonez gero, aldatu beste demo grafikora"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Aktibatu pantaila-babeslea (belztu pantaila)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Pantaila-babeslea aktibo egonez gero, desaktibatu (kendu pantaila beltza)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Eskatu pantaila-babesleari erabiltzailearen aktibitatea simulatzeko"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Geldiarazi pantaila-babeslea aktibatzea. Komandoa blokeatu egiten da "
+"geldiaraztea aktibo dagoen heinean."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Pantaila-babeslea geldiarazten duen aplikazioaren deia"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Pantaila-babeslea geldiarazteko arrazoia"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Pantaila-babeslea %s da\n"
+
+msgid "active"
+msgstr "aktibo"
+
+msgid "inactive"
+msgstr "inaktibo"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Pantaila-babeslea ez dago geldituta\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Pantaila-babeslea honek gelditu du:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Pantaila-babeslea %d segundo egon da aktibo.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Pantaila-babeslea ez dago unean aktibo.\n"

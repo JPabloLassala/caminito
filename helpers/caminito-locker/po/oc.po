@@ -1,0 +1,186 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Cédric Valmary <cvalmary@yahoo.fr>, 2018
+# 48c2de07903ce5a77a8e90265f95c4c2_8909374 <837c8d0ab97b27e737893c19f79bd4de_348476>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+# Quentin PAGÈS, 2024
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Quentin PAGÈS, 2024\n"
+"Language-Team: Occitan (post 1500) (https://app.transifex.com/mate/teams/"
+"13566/oc/)\n"
+"Language: oc\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "Show debugging output"
+msgstr "Afichar las informacions de desbugatge"
+
+msgid "Version of this application"
+msgstr "Version d'aquesta aplicacion"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Nom d'utilizaire :"
+
+msgid "Password:"
+msgstr "Senhal :"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Vos cal cambiar lo senhal ara meteissa (senhal expirat)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Devètz cambiar vòstre senhal immediatament (exigéncia de root)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Vòstre senhal a expirat, mercés de contactar l'administrator sistèma"
+
+msgid "No password supplied"
+msgstr "Cap de senhal pas provesit"
+
+msgid "Password unchanged"
+msgstr "Senhal pas modificat"
+
+msgid "Can not get username"
+msgstr "Impossible d'obténer un nom d'utilizaire"
+
+msgid "Retype new UNIX password:"
+msgstr "Tornatz picar lo novèl senhal UNIX :"
+
+msgid "Enter new UNIX password:"
+msgstr "Picatz lo novèl senhal UNIX :"
+
+msgid "(current) UNIX password:"
+msgstr "Senhal UNIX (actual) :"
+
+msgid "Error while changing NIS password."
+msgstr "Error en modificant lo senhal NIS."
+
+msgid "You must choose a longer password"
+msgstr "Devètz causir un senhal mai long"
+
+msgid "Password has been already used. Choose another."
+msgstr "Lo senhal foguèt ja utilizat. Causissètz-ne un autre."
+
+msgid "You must wait longer to change your password"
+msgstr "Devètz esperar mai per modificar vòstre senhal"
+
+msgid "Sorry, passwords do not match"
+msgstr "Los senhals son pas los meteisses"
+
+msgid "Checking..."
+msgstr "Verificacion en cors..."
+
+msgid "Authentication failed."
+msgstr "L'autentificacion a fracassat."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Establiment impossible del servici %s : %s\n"
+
+msgid "Incorrect password."
+msgstr "Senhal invalid."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Accès pas permés pel moment."
+
+msgid "No longer permitted to access the system."
+msgstr "Pas mai autorizat a se connectar al sistèma."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A %e %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "Las majusculas son activadas."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U sus %h</span>"
+
+msgid "_Switch User"
+msgstr "Cambiar d'utili_zaire"
+
+msgid "_Log Out"
+msgstr "_Tampar la session"
+
+msgid "_Cancel"
+msgstr "_Anullar"
+
+msgid "_Unlock"
+msgstr "_Desverrolhar"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Permet a l’estalviador d’ecran de se tampar d’un biais elegant"
+
+msgid "Query the state of the screensaver"
+msgstr "Interrogar l’estat de l’estalviador d’ecran"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Demandar lo durada d’activitat de l’estalviador d’ecran"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Indica al procèssus d’estalviador d’ecran en cors de se verrolhar sul pic"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"Indica al procèssus d’estalviador d’ecran en cors de se desverrolhar sul pic"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Bascula de demostracion grafica quand l’estalviador d’ecran es activat"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Activar l’estalviador d’ecran (ennegrir l’ecran)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Se l’estalviador es activat alara lo desactiva (l’ecran tòrna)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Ponchar l’estalviador d’ecran per simular l’activitat de l’utilizaire"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Empacha l’estalviador d’ecran de s’activar. La comanda se bloca pendent "
+"l’inibicion."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "L’aplicacion que demanda la suspension de l’estalviador d’ecran"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "La rason de l'inibicion de l’estalviador d’ecran"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "L’estalviadors d'ecran es %s\n"
+
+msgid "active"
+msgstr "actiu"
+
+msgid "inactive"
+msgstr "inactiu"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "L’estalviador d’ecran es pas inibit\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "L’estalviador d’ecran es inibit per :\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "L’estalviador d’ecran es actiu dempuèi %d segondas.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "L’estalviador d’ecran es pas actiu actualament.\n"
