@@ -7,7 +7,9 @@
 //! under the pointer has a fullscreen window or a screencast is running, each behind its
 //! setting, the [`Triggers`]. [`Sources`] holds them all, and says whether it's on and the
 //! first [`Reason`] it's on for. Turning it off by hand holds each automatic reason that's on
-//! off: the schedule until its next start, a trigger until Caminito says it ended.
+//! off: the schedule until its next start, a trigger until Caminito says it ended. The
+//! schedule's hold is kept in a file beside the user's (CMN-288); a trigger's needn't be, since
+//! a restart reads Caminito's properties again.
 
 use std::path::Path;
 
@@ -105,13 +107,8 @@ impl DoNotDisturb {
 
     /// What `path` holds at `now`: off if it's missing, can't be read, or has ended.
     pub(crate) fn load(path: &Path, now: u64) -> DoNotDisturb {
-        let text = match std::fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return DoNotDisturb::Off,
-            Err(err) => {
-                glib::g_warning!(DOMAIN, "can't read {}: {err}", path.display());
-                return DoNotDisturb::Off;
-            }
+        let Some(text) = read(path) else {
+            return DoNotDisturb::Off;
         };
         let Some(read) = decode(&text) else {
             glib::g_warning!(DOMAIN, "can't read {}", path.display());
@@ -126,16 +123,11 @@ impl DoNotDisturb {
 
     /// Keeps it in `path`, which "off" is the absence of.
     pub(crate) fn save(self, path: &Path) {
-        let written = match self {
-            DoNotDisturb::Off => match std::fs::remove_file(path) {
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                removed => removed,
-            },
-            DoNotDisturb::On { end } => write(path, encode(end).as_bytes()),
+        let text = match self {
+            DoNotDisturb::Off => None,
+            DoNotDisturb::On { end } => Some(encode(end)),
         };
-        if let Err(err) = written {
-            glib::g_warning!(DOMAIN, "can't write {}: {err}", path.display());
-        }
+        keep(path, text);
     }
 
     /// Whether it's on with an end that `now` has reached.
@@ -190,6 +182,32 @@ impl Schedule {
         } else {
             minute >= self.from || minute < self.to
         }
+    }
+}
+
+/// The schedule the user turned off, held off until its next start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ScheduleHold {
+    schedule: Schedule,
+    /// The schedule's next start, in seconds since the epoch.
+    until: u64,
+}
+
+impl ScheduleHold {
+    /// What `path` holds: none if it's missing or can't be read. [`Sources::settle`] forgets
+    /// one that ended while no daemon ran.
+    pub(crate) fn load(path: &Path) -> Option<ScheduleHold> {
+        let text = read(path)?;
+        let hold = decode_hold(&text);
+        if hold.is_none() {
+            glib::g_warning!(DOMAIN, "can't read {}", path.display());
+        }
+        hold
+    }
+
+    /// Keeps `hold` in `path`, which no hold is the absence of.
+    pub(crate) fn save(hold: Option<ScheduleHold>, path: &Path) {
+        keep(path, hold.map(encode_hold));
     }
 }
 
@@ -264,16 +282,17 @@ pub(crate) struct Sources {
     fullscreen: Trigger,
     /// Whether a screencast is running.
     screencast: Trigger,
-    /// The schedule the user turned off, and its next start, until which it's held off. A
-    /// change of the schedule ends the hold.
-    schedule_held: Option<(Schedule, u64)>,
+    /// The schedule the user turned off, if it's held off. A change of the schedule ends the
+    /// hold.
+    pub(crate) schedule_held: Option<ScheduleHold>,
 }
 
 impl Sources {
-    /// The user's Do Not Disturb, and nothing else yet.
-    pub(crate) fn new(manual: DoNotDisturb) -> Sources {
+    /// The user's Do Not Disturb and the schedule's hold, and nothing else yet.
+    pub(crate) fn new(manual: DoNotDisturb, schedule_held: Option<ScheduleHold>) -> Sources {
         Sources {
             manual,
+            schedule_held,
             ..Sources::default()
         }
     }
@@ -330,18 +349,25 @@ impl Sources {
     pub(crate) fn turn_off(&mut self, triggers: &Triggers, now: u64, zone: &glib::TimeZone) {
         self.manual = DoNotDisturb::Off;
         if let Some(schedule) = self.schedule_on(triggers, now, zone) {
-            self.schedule_held = Some((schedule, next_at(now, schedule.from, zone)));
+            self.schedule_held = Some(ScheduleHold {
+                schedule,
+                until: next_at(now, schedule.from, zone),
+            });
         }
         self.fullscreen.hold(triggers.while_fullscreen);
         self.screencast.hold(triggers.while_screencasting);
     }
 
-    /// Forgets what `now` has ended: the user's Do Not Disturb, and the schedule's hold.
-    pub(crate) fn settle(&mut self, now: u64) {
+    /// Forgets what `now` has ended, the user's Do Not Disturb and the schedule's hold, and
+    /// the hold of a schedule that isn't `triggers`' any more.
+    pub(crate) fn settle(&mut self, triggers: &Triggers, now: u64) {
         if self.manual.ended(now) {
             self.manual = DoNotDisturb::Off;
         }
-        if self.schedule_held.is_some_and(|(_, until)| now >= until) {
+        if self
+            .schedule_held
+            .is_some_and(|hold| now >= hold.until || triggers.schedule != Some(hold.schedule))
+        {
             self.schedule_held = None;
         }
     }
@@ -367,7 +393,7 @@ impl Sources {
         manual
             .into_iter()
             .chain(schedule)
-            .chain(self.schedule_held.map(|(_, until)| until))
+            .chain(self.schedule_held.map(|hold| hold.until))
             .min()
     }
 
@@ -381,7 +407,7 @@ impl Sources {
         triggers.schedule.filter(|&schedule| {
             let held = self
                 .schedule_held
-                .is_some_and(|(held, until)| held == schedule && now < until);
+                .is_some_and(|hold| hold.schedule == schedule && now < hold.until);
             !held && schedule.contains(now, zone)
         })
     }
@@ -416,6 +442,49 @@ fn next_at(now: u64, minute: u32, zone: &glib::TimeZone) -> u64 {
     })();
     // A time GLib can't place is a day away.
     next.unwrap_or(now + 24 * 60 * 60)
+}
+
+/// What the file at `path` says: nothing if it's missing or can't be read.
+fn read(path: &Path) -> Option<String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Some(text),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => {
+            glib::g_warning!(DOMAIN, "can't read {}: {err}", path.display());
+            None
+        }
+    }
+}
+
+/// Keeps `text` in the file at `path`, which nothing is the absence of.
+fn keep(path: &Path, text: Option<String>) {
+    let written = match text {
+        None => match std::fs::remove_file(path) {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            removed => removed,
+        },
+        Some(text) => write(path, text.as_bytes()),
+    };
+    if let Err(err) = written {
+        glib::g_warning!(DOMAIN, "can't write {}: {err}", path.display());
+    }
+}
+
+/// The hold's file's text: the schedule's start and end, then the hold's end.
+fn encode_hold(hold: ScheduleHold) -> String {
+    let ScheduleHold { schedule, until } = hold;
+    format!("{} {} {until}\n", schedule.from, schedule.to)
+}
+
+fn decode_hold(text: &str) -> Option<ScheduleHold> {
+    let mut words = text.split_whitespace();
+    let from = words.next()?.parse().ok()?;
+    let to = words.next()?.parse().ok()?;
+    let until = words.next()?.parse().ok()?;
+    words.next().is_none().then_some(ScheduleHold {
+        schedule: Schedule { from, to },
+        until,
+    })
 }
 
 /// The file's text: `on`, then a space and the end for one that has one.
@@ -654,6 +723,46 @@ mod tests {
         });
         assert_eq!(
             sources.effective(&earlier, utc_time(12, 23, 0), &utc),
+            on(Reason::Schedule, Some(utc_time(13, 7, 0)))
+        );
+    }
+
+    #[test]
+    fn the_holds_file_holds_its_schedule_and_its_end() {
+        let hold = ScheduleHold {
+            schedule: Schedule {
+                from: 22 * 60,
+                to: 7 * 60,
+            },
+            until: 42,
+        };
+        assert_eq!(decode_hold(&encode_hold(hold)), Some(hold));
+        assert_eq!(decode_hold(""), None);
+        assert_eq!(decode_hold("1320 420"), None);
+        assert_eq!(decode_hold("1320 420 soon"), None);
+        assert_eq!(decode_hold("1320 420 42 1"), None);
+    }
+
+    #[test]
+    fn settling_forgets_a_hold_that_ended_or_whose_schedule_changed() {
+        let utc = glib::TimeZone::utc();
+        let night = utc_time(12, 23, 0);
+        let mut sources = Sources::default();
+        sources.turn_off(&nightly(), night, &utc);
+
+        sources.settle(&nightly(), utc_time(13, 21, 59));
+        assert!(sources.schedule_held.is_some());
+        sources.settle(&nightly(), utc_time(13, 22, 0));
+        assert_eq!(sources.schedule_held, None);
+
+        sources.turn_off(&nightly(), night, &utc);
+        let mut none = nightly();
+        none.schedule = None;
+        sources.settle(&none, night);
+        assert_eq!(sources.schedule_held, None);
+        // Back to the schedule it held, it's on.
+        assert_eq!(
+            sources.effective(&nightly(), night, &utc),
             on(Reason::Schedule, Some(utc_time(13, 7, 0)))
         );
     }

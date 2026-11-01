@@ -15,7 +15,7 @@ use gio::prelude::*;
 
 use super::{CAMINITO, CAMINITO_PATH, State, emit_on};
 use crate::DOMAIN;
-use crate::do_not_disturb::{DoNotDisturb, Schedule, Sources, Triggers};
+use crate::do_not_disturb::{DoNotDisturb, Schedule, ScheduleHold, Sources, Triggers};
 use crate::private_api::{INTERFACE_NAME as PRIVATE_INTERFACE, PATH as PRIVATE_PATH};
 use crate::settings::{
     DO_NOT_DISTURB_FROM, DO_NOT_DISTURB_SCHEDULE, DO_NOT_DISTURB_TO,
@@ -176,8 +176,8 @@ impl State {
     }
 
     /// Applies `change` to the sources, up to date with Caminito and with what the clock
-    /// ended. If the user's changed, its file is written, and if what the clients see
-    /// changed, they hear of it. The timer is set again either way.
+    /// ended. If the user's or the schedule's hold changed, its file is written, and if what
+    /// the clients see changed, they hear of it. The timer is set again either way.
     fn change_do_not_disturb(
         &mut self,
         change: impl FnOnce(&mut Sources, &Triggers, u64, &glib::TimeZone),
@@ -188,13 +188,16 @@ impl State {
             self.caminito_says(SCREENCASTING),
         );
         let sources = &mut self.do_not_disturb;
-        let manual = sources.manual;
+        let (manual, schedule_held) = (sources.manual, sources.schedule_held);
         sources.set_fullscreen(fullscreen);
         sources.set_screencasting(screencasting);
-        sources.settle(now);
+        sources.settle(&triggers, now);
         change(sources, &triggers, now, &zone);
         if sources.manual != manual {
             sources.manual.save(&self.do_not_disturb_file);
+        }
+        if sources.schedule_held != schedule_held {
+            ScheduleHold::save(sources.schedule_held, &self.schedule_hold_file);
         }
         let effective = sources.effective(&triggers, now, &zone);
         let next = sources.next_change(&triggers, now, &zone);

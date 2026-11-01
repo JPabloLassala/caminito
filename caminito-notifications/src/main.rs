@@ -91,6 +91,7 @@ fn main() -> glib::ExitCode {
         let history = Config {
             history_file: state.join("notification-history"),
             do_not_disturb_file: state.join("do-not-disturb"),
+            schedule_hold_file: state.join("do-not-disturb-schedule-hold"),
             clock: Rc::new(SystemClock),
         };
         let server = match Server::new(&connection, bubbles, sounds, settings.clone(), history) {

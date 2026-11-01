@@ -35,7 +35,7 @@ use gio::glib::{self, Variant, VariantDict};
 use gio::prelude::*;
 
 use crate::DOMAIN;
-use crate::do_not_disturb::{DoNotDisturb, Effective, Sources};
+use crate::do_not_disturb::{DoNotDisturb, Effective, ScheduleHold, Sources};
 use crate::history::{History, HistoryEntry, MAX_AGE};
 use crate::notification::{Arguments, DEFAULT_ACTION, Notification};
 use crate::private_api::{INTERFACE_NAME as PRIVATE_INTERFACE, PATH as PRIVATE_PATH};
@@ -387,6 +387,8 @@ pub struct Config {
     pub history_file: PathBuf,
     /// The file Do Not Disturb is kept in, beside the history's.
     pub do_not_disturb_file: PathBuf,
+    /// The file the schedule's hold is kept in, beside that one.
+    pub schedule_hold_file: PathBuf,
     /// The time the history's limits and Do Not Disturb's end are kept by.
     pub clock: Rc<dyn Clock>,
 }
@@ -443,9 +445,11 @@ struct State {
     history: History,
     /// Waits for the end of the oldest entry's week.
     expiry: Option<glib::JoinHandle<()>>,
-    /// What turns Do Not Disturb on, the user's kept in `do_not_disturb_file`.
+    /// What turns Do Not Disturb on, the user's kept in `do_not_disturb_file` and the
+    /// schedule's hold in `schedule_hold_file`.
     do_not_disturb: Sources,
     do_not_disturb_file: PathBuf,
+    schedule_hold_file: PathBuf,
     /// Do Not Disturb as the clients last heard it.
     do_not_disturb_now: Effective,
     /// What follows the settings and Caminito for it, and its timer.
@@ -541,6 +545,7 @@ impl Server {
         let now = config.clock.now();
         let history = History::load(config.history_file, now);
         let do_not_disturb = DoNotDisturb::load(&config.do_not_disturb_file, now);
+        let schedule_held = ScheduleHold::load(&config.schedule_hold_file);
         let state = Rc::new_cyclic(|this| {
             RefCell::new(State {
                 connection: connection.clone(),
@@ -552,8 +557,9 @@ impl Server {
                 last_id: history.max_id(),
                 history,
                 expiry: None,
-                do_not_disturb: Sources::new(do_not_disturb),
+                do_not_disturb: Sources::new(do_not_disturb, schedule_held),
                 do_not_disturb_file: config.do_not_disturb_file,
+                schedule_hold_file: config.schedule_hold_file,
                 do_not_disturb_now: Effective::Off,
                 following: do_not_disturb::Following::default(),
                 notifications: HashMap::new(),

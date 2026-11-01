@@ -304,8 +304,24 @@ fn start(bus: &Bus) -> Daemon<'_> {
 
 /// A daemon that keeps its history in `home`, as one after a restart does.
 fn start_in(bus: &Bus, home: Rc<Home>) -> Daemon<'_> {
+    start_with(bus, home, |_| {})
+}
+
+/// A daemon that starts up with Do Not Disturb's daily schedule `from` and `to`, as one after
+/// a restart does, whose settings were there before it.
+fn start_scheduled_in(bus: &Bus, home: Rc<Home>, from: u32, to: u32) -> Daemon<'_> {
+    start_with(bus, home, |global| {
+        global.set_uint("do-not-disturb-from", from).unwrap();
+        global.set_uint("do-not-disturb-to", to).unwrap();
+        global.set_boolean("do-not-disturb-schedule", true).unwrap();
+    })
+}
+
+/// A daemon in `home`, its settings as `configure` leaves them before it starts.
+fn start_with(bus: &Bus, home: Rc<Home>, configure: impl FnOnce(&gio::Settings)) -> Daemon<'_> {
     let schemas = tempfile::tempdir().unwrap();
     let apps = settings::compiled(schemas.path());
+    configure(apps.global());
     let connection = bus.connect();
     let bubbles = Rc::new(FakeBubbles::default());
     let sounds = Rc::new(FakeSounds::default());
@@ -321,6 +337,11 @@ fn start_in(bus: &Bus, home: Rc<Home>) -> Daemon<'_> {
                 .path()
                 .join("caminito")
                 .join("do-not-disturb"),
+            schedule_hold_file: home
+                .directory
+                .path()
+                .join("caminito")
+                .join("do-not-disturb-schedule-hold"),
             clock: home.clock.clone(),
         },
     )
@@ -2826,6 +2847,57 @@ fn turning_it_off_during_the_schedule_holds_it_off_until_the_schedules_next_star
             daemon.do_not_disturb(),
             (true, january(14, 7, 0), "schedule".to_owned())
         );
+    });
+}
+
+#[test]
+fn the_schedules_hold_survives_a_restart_of_the_daemon_until_the_schedules_next_start() {
+    bus::run(|bus| {
+        let home = Home::new();
+        home.clock.0.set(january(12, 23, 0));
+        let daemon = start_scheduled_in(bus, home.clone(), 22 * 60, 7 * 60);
+        assert!(daemon.do_not_disturb().0);
+        daemon.set_do_not_disturb("off");
+        drop(daemon);
+
+        let daemon = start_scheduled_in(bus, home.clone(), 22 * 60, 7 * 60);
+        assert_eq!(daemon.do_not_disturb(), (false, 0, String::new()));
+        daemon.notify(notify("Not quiet"));
+        assert_eq!(daemon.bubbles.ids().len(), 1);
+        drop(daemon);
+
+        // The next night it's on again, and a restart then has no hold left to find.
+        home.clock.0.set(january(13, 22, 0));
+        let daemon = start_scheduled_in(bus, home.clone(), 22 * 60, 7 * 60);
+        assert_eq!(
+            daemon.do_not_disturb(),
+            (true, january(14, 7, 0), "schedule".to_owned())
+        );
+        drop(daemon);
+        let daemon = start_scheduled_in(bus, home, 22 * 60, 7 * 60);
+        assert!(daemon.do_not_disturb().0);
+    });
+}
+
+#[test]
+fn a_change_of_the_schedule_while_no_daemon_runs_ends_its_hold() {
+    bus::run(|bus| {
+        let home = Home::new();
+        home.clock.0.set(january(12, 23, 0));
+        let daemon = start_scheduled_in(bus, home.clone(), 22 * 60, 7 * 60);
+        daemon.set_do_not_disturb("off");
+        drop(daemon);
+
+        let daemon = start_scheduled_in(bus, home.clone(), 21 * 60, 7 * 60);
+        assert_eq!(
+            daemon.do_not_disturb(),
+            (true, january(13, 7, 0), "schedule".to_owned())
+        );
+        drop(daemon);
+
+        // Changed back, it isn't held any more.
+        let daemon = start_scheduled_in(bus, home, 22 * 60, 7 * 60);
+        assert!(daemon.do_not_disturb().0);
     });
 }
 
