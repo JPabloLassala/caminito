@@ -2,7 +2,7 @@
 
 pkgname=caminito-desktop
 pkgver=1
-pkgrel=2
+pkgrel=3
 pkgdesc='The whole MATE desktop on Caminito: the compositor, its patched MATE packages and the rest of MATE'
 arch=(any)
 url='https://github.com/JPabloLassala/caminito'
