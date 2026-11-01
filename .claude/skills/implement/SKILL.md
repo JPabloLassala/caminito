@@ -18,7 +18,17 @@ Create a branch named after the work, in a worktree that is a sibling of the rep
 
     git worktree add -b <branch> ../<repo>-<branch> master
 
+Skip this if the worktree already exists. Then seed its `target/`, so the dependencies are not built again. Copy after the worktree exists, not before, and with `-a`: Cargo sees that the checkout is newer than the copied artifacts and rebuilds the workspace's crates, so a seed can't leak another branch's code.
+
+    [ -d ~/.cache/camino-target-seed ] && cp -a ~/.cache/camino-target-seed ../<repo>-<branch>/target
+
+Never point two worktrees at one target directory with `CARGO_TARGET_DIR`: Cargo takes one worktree's build as fresh for the other, and its tests run the other's code.
+
 Setup is done when `cargo check --workspace --all-targets` passes in the worktree. Do all of the work below there, with absolute paths into the worktree.
+
+After the first test build, refresh the seed if it is missing or older than a week. Run this in the worktree:
+
+    S=~/.cache/camino-target-seed; [ -n "$(find "$S" -maxdepth 0 -mtime -7 2>/dev/null)" ] || { cp -a target "$S.tmp.$$" && rm -rf "$S" && mv "$S.tmp.$$" "$S" && touch "$S"; }
 
 ## Batch the lookups
 
@@ -34,9 +44,9 @@ This holds for the whole run, not only the start. A turn with one read is the ex
 
 ## Build
 
-Call the Skill tool with "tdd" where possible, at pre-agreed seams. Run `cargo check` regularly.
+Call the Skill tool with "tdd" where possible, at pre-agreed seams.
 
-Do not run the full test suite, run only the relevant tests.
+Do not run the full test suite, run only the relevant tests. Do not run `cargo check` before a test run: the test build compiles the same code and reports the same errors. Use `cargo check` only where you run no test, and once before you commit, always as `cargo check --workspace --all-targets`: `-p` makes Cargo check many of the dependencies again.
 
 A green that fails: read the whole failure output before the next edit. After two failed greens on the same test, stop the edits. Re-read the test and the code path it exercises, name the cause, then edit.
 

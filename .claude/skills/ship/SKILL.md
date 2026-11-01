@@ -14,6 +14,7 @@ Fetch the ticket with `get_issue`, assign it to `me` and set it In Progress. The
 
 ```sh
 git worktree add ../camino-<id> -b <id> master
+[ -d ~/.cache/camino-target-seed ] && cp -a ~/.cache/camino-target-seed ../camino-<id>/target
 ```
 
 Every later step but the Linear calls runs inside `../camino-<id>` until step 3. Done when `git -C ../camino-<id> status` shows branch `<id>`, clean.
