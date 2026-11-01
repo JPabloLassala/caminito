@@ -172,16 +172,21 @@ pub(crate) struct Schedule {
 }
 
 impl Schedule {
-    /// Whether `now` is in it, in `zone`.
+    /// Whether `now` is in it, in `zone`: in the window that starts on the day `now` is in, or
+    /// the day before. Each start and end is one instant, so an hour the clocks repeat doesn't
+    /// bring back a window that has ended.
     fn contains(self, now: u64, zone: &glib::TimeZone) -> bool {
-        let Some(minute) = minute_of_day(now, zone) else {
+        let Some(today) = local_time(now, zone) else {
             return false;
         };
-        if self.from <= self.to {
-            (self.from..self.to).contains(&minute)
-        } else {
-            minute >= self.from || minute < self.to
-        }
+        let ends_after = i32::from(self.to < self.from);
+        [-1, 0].into_iter().any(|days| {
+            let start = time_on(&today, days, self.from, zone);
+            let end = time_on(&today, days + ends_after, self.to, zone);
+            start
+                .zip(end)
+                .is_some_and(|(start, end)| (start..end).contains(&now))
+        })
     }
 }
 
@@ -421,24 +426,20 @@ fn local_time(now: u64, zone: &glib::TimeZone) -> Option<glib::DateTime> {
         .ok()
 }
 
-/// The minute of the day `now` is in, in `zone`.
-fn minute_of_day(now: u64, zone: &glib::TimeZone) -> Option<u32> {
-    let local = local_time(now, zone)?;
-    u32::try_from(local.hour() * 60 + local.minute()).ok()
+/// When the time of day `minute` is in `zone`, `days` after `today`. GLib places a time the
+/// clocks repeat at its second occurrence, and one they skip at or after the change.
+fn time_on(today: &glib::DateTime, days: i32, minute: u32, zone: &glib::TimeZone) -> Option<u64> {
+    let minute = i32::try_from(minute).ok()?;
+    let (year, month, day) = today.add_days(days).ok()?.ymd();
+    let at = glib::DateTime::new(zone, year, month, day, minute / 60, minute % 60, 0.0).ok()?;
+    u64::try_from(at.to_unix()).ok()
 }
 
 /// The first time after `now` whose time of day is `minute` in `zone`.
 fn next_at(now: u64, minute: u32, zone: &glib::TimeZone) -> u64 {
     let next = (|| {
         let today = local_time(now, zone)?;
-        let minute = i32::try_from(minute).ok()?;
-        (0..=2).find_map(|days| {
-            let day = today.add_days(days).ok()?;
-            let (year, month, day) = day.ymd();
-            let at =
-                glib::DateTime::new(zone, year, month, day, minute / 60, minute % 60, 0.0).ok()?;
-            u64::try_from(at.to_unix()).ok().filter(|&at| at > now)
-        })
+        (0..=2).find_map(|days| time_on(&today, days, minute, zone).filter(|&at| at > now))
     })();
     // A time GLib can't place is a day away.
     next.unwrap_or(now + 24 * 60 * 60)
@@ -639,6 +640,101 @@ mod tests {
             sources.effective(&nightly(), utc_time(13, 1, 0), &three_hours_west),
             on(Reason::Schedule, Some(utc_time(13, 10, 0)))
         );
+    }
+
+    /// Central Europe's rule, needing no tzdata: in 1970 the clocks go back at 03:00 on 25
+    /// October, which is 01:00 in UTC, and forward at 02:00 on 29 March, also 01:00 in UTC.
+    fn zone_with_clock_changes() -> glib::TimeZone {
+        glib::TimeZone::from_identifier(Some("CET-1CEST,M3.5.0,M10.5.0/3")).unwrap()
+    }
+
+    /// The time in UTC on the night the clocks go back: 00:00 to 01:00 is the first 02:00 to
+    /// 03:00 there, and 01:00 to 02:00 the second.
+    fn clocks_back(hour: i32, minute: i32) -> u64 {
+        let time = glib::DateTime::from_utc(1970, 10, 25, hour, minute, 0.0).unwrap();
+        u64::try_from(time.to_unix()).unwrap()
+    }
+
+    /// The time in UTC on the night the clocks go forward: 01:00 is 03:00 there.
+    fn clocks_forward(hour: i32, minute: i32) -> u64 {
+        let time = glib::DateTime::from_utc(1970, 3, 29, hour, minute, 0.0).unwrap();
+        u64::try_from(time.to_unix()).unwrap()
+    }
+
+    fn scheduled(from: u32, to: u32) -> Triggers {
+        Triggers {
+            schedule: Some(Schedule { from, to }),
+            ..nightly()
+        }
+    }
+
+    #[test]
+    fn a_schedule_ending_in_the_repeated_hour_ends_once_at_the_second_time() {
+        let zone = zone_with_clock_changes();
+        let sources = Sources::default();
+        let triggers = scheduled(22 * 60, 2 * 60 + 30);
+        for (hour, minute) in [(0, 29), (0, 30), (1, 0), (1, 29)] {
+            assert_eq!(
+                sources.effective(&triggers, clocks_back(hour, minute), &zone),
+                on(Reason::Schedule, Some(clocks_back(1, 30))),
+                "{hour}:{minute} in UTC"
+            );
+        }
+        for (hour, minute) in [(1, 30), (2, 0), (12, 0)] {
+            assert_eq!(
+                sources.effective(&triggers, clocks_back(hour, minute), &zone),
+                Effective::Off,
+                "{hour}:{minute} in UTC"
+            );
+        }
+    }
+
+    #[test]
+    fn a_schedule_inside_the_repeated_hour_is_on_the_second_time_only() {
+        let zone = zone_with_clock_changes();
+        let sources = Sources::default();
+        let triggers = scheduled(2 * 60 + 10, 2 * 60 + 20);
+        assert_eq!(
+            sources.effective(&triggers, clocks_back(0, 15), &zone),
+            Effective::Off
+        );
+        assert_eq!(
+            sources.effective(&triggers, clocks_back(1, 15), &zone),
+            on(Reason::Schedule, Some(clocks_back(1, 20)))
+        );
+    }
+
+    #[test]
+    fn a_schedule_across_the_repeated_hour_stays_on_through_both_times() {
+        let zone = zone_with_clock_changes();
+        let sources = Sources::default();
+        let triggers = scheduled(22 * 60, 7 * 60);
+        // 07:00 there is 06:00 in UTC, with the clocks back.
+        for (hour, minute) in [(0, 30), (1, 0), (1, 30), (5, 59)] {
+            assert_eq!(
+                sources.effective(&triggers, clocks_back(hour, minute), &zone),
+                on(Reason::Schedule, Some(clocks_back(6, 0))),
+                "{hour}:{minute} in UTC"
+            );
+        }
+        assert_eq!(
+            sources.effective(&triggers, clocks_back(6, 0), &zone),
+            Effective::Off
+        );
+    }
+
+    #[test]
+    fn a_schedule_in_the_skipped_hour_is_not_on_that_night() {
+        let zone = zone_with_clock_changes();
+        let sources = Sources::default();
+        let triggers = scheduled(2 * 60 + 10, 2 * 60 + 20);
+        for (hour, minute) in [(0, 59), (1, 0), (1, 15), (12, 0)] {
+            assert_eq!(
+                sources.effective(&triggers, clocks_forward(hour, minute), &zone),
+                Effective::Off,
+                "{hour}:{minute} in UTC"
+            );
+        }
     }
 
     #[test]
