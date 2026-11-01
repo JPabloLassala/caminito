@@ -7,7 +7,8 @@
 //! under the pointer has a fullscreen window or a screencast is running, each behind its
 //! setting, the [`Triggers`]. [`Sources`] holds them all, and says whether it's on and the
 //! first [`Reason`] it's on for. Turning it off by hand holds each automatic reason that's on
-//! off: the schedule until its next start, a trigger until Caminito says it ended. The
+//! off: the schedule until its next start, a trigger until Caminito says it ended, and the
+//! fullscreen one until its window is no longer fullscreen on any output (CMN-290). The
 //! schedule's hold is kept in a file beside the user's (CMN-288); a trigger's needn't be, since
 //! a restart reads Caminito's properties again.
 
@@ -273,13 +274,50 @@ impl Trigger {
     }
 }
 
+/// The fullscreen trigger: the fullscreen window the output under the pointer has, if any,
+/// which is on when there is one. The user's turning Do Not Disturb off holds it off for that window, which lasts
+/// while the window stays fullscreen, wherever the pointer goes in between (CMN-290).
+#[derive(Debug, Default)]
+struct FullscreenTrigger {
+    /// The window under the pointer, as Caminito names it, empty for none.
+    window: String,
+    /// The window the user turned Do Not Disturb off for.
+    held: Option<String>,
+}
+
+impl FullscreenTrigger {
+    /// Caminito says which fullscreen `window` the pointer's output has, and which windows
+    /// are fullscreen on any output. A hold ends with its window's fullscreen.
+    fn set(&mut self, window: &str, windows: &[&str]) {
+        window.clone_into(&mut self.window);
+        if let Some(held) = &self.held
+            && !windows.contains(&held.as_str())
+        {
+            self.held = None;
+        }
+    }
+
+    /// Whether it has Do Not Disturb on, with its setting `allowed`.
+    fn has_it_on(&self, allowed: bool) -> bool {
+        !self.window.is_empty() && allowed && self.held.as_deref() != Some(self.window.as_str())
+    }
+
+    /// The user turns Do Not Disturb off: the window under the pointer is held if it had it
+    /// on.
+    fn hold(&mut self, allowed: bool) {
+        if self.has_it_on(allowed) {
+            self.held = Some(self.window.clone());
+        }
+    }
+}
+
 /// Everything that turns Do Not Disturb on, and what the user's turning it off holds off.
 #[derive(Debug, Default)]
 pub(crate) struct Sources {
     /// The user's.
     pub(crate) manual: DoNotDisturb,
     /// Whether the output under the pointer has a fullscreen window.
-    fullscreen: Trigger,
+    fullscreen: FullscreenTrigger,
     /// Whether a screencast is running.
     screencast: Trigger,
     /// The schedule the user turned off, if it's held off. A change of the schedule ends the
@@ -297,10 +335,11 @@ impl Sources {
         }
     }
 
-    /// Caminito says whether the output under the pointer has a fullscreen window. One
-    /// that ends ends its hold.
-    pub(crate) fn set_fullscreen(&mut self, fullscreen: bool) {
-        self.fullscreen.set(fullscreen);
+    /// Caminito says which fullscreen window the output under the pointer has (empty for
+    /// none), and which windows are fullscreen on any output. A hold ends once its window
+    /// isn't one of them.
+    pub(crate) fn set_fullscreen(&mut self, window: &str, windows: &[&str]) {
+        self.fullscreen.set(window, windows);
     }
 
     /// Caminito says whether a screencast is running. One that ends ends its hold.
@@ -345,7 +384,8 @@ impl Sources {
     }
 
     /// The user turns it off at `now`: their own is, and each automatic reason that's on is
-    /// held off, the schedule until its next start and a trigger until it ends.
+    /// held off, the schedule until its next start and a trigger until it ends (the
+    /// fullscreen one, until its window does).
     pub(crate) fn turn_off(&mut self, triggers: &Triggers, now: u64, zone: &glib::TimeZone) {
         self.manual = DoNotDisturb::Off;
         if let Some(schedule) = self.schedule_on(triggers, now, zone) {
@@ -647,7 +687,7 @@ mod tests {
         let noon = utc_time(12, 12, 0);
         let mut sources = Sources::default();
         let mut triggers = nightly();
-        sources.set_fullscreen(true);
+        sources.set_fullscreen("a", &["a"]);
         assert_eq!(
             sources.effective(&triggers, noon, &utc),
             on(Reason::Fullscreen, None)
@@ -668,7 +708,7 @@ mod tests {
         let utc = glib::TimeZone::utc();
         let night = utc_time(12, 23, 0);
         let mut sources = Sources::default();
-        sources.set_fullscreen(true);
+        sources.set_fullscreen("a", &["a"]);
         sources.set_screencasting(true);
         assert_eq!(
             sources.effective(&nightly(), utc_time(12, 12, 0), &utc),
@@ -685,7 +725,7 @@ mod tests {
             sources.effective(&nightly(), night, &utc),
             on(Reason::Manual, Some(night + 60))
         );
-        sources.set_fullscreen(false);
+        sources.set_fullscreen("", &[]);
         sources.manual = DoNotDisturb::Off;
         assert_eq!(
             sources.effective(&nightly(), utc_time(12, 12, 0), &utc),
@@ -772,7 +812,7 @@ mod tests {
         let utc = glib::TimeZone::utc();
         let noon = utc_time(12, 12, 0);
         let mut sources = Sources::default();
-        sources.set_fullscreen(true);
+        sources.set_fullscreen("a", &["a"]);
         sources.manual = DoNotDisturb::On { end: None };
         sources.turn_off(&nightly(), noon, &utc);
         assert_eq!(sources.manual, DoNotDisturb::Off);
@@ -784,12 +824,68 @@ mod tests {
             on(Reason::Screencast, None)
         );
         sources.set_screencasting(false);
-        sources.set_fullscreen(false);
-        sources.set_fullscreen(true);
+        sources.set_fullscreen("", &[]);
+        sources.set_fullscreen("a", &["a"]);
         assert_eq!(
             sources.effective(&nightly(), noon, &utc),
             on(Reason::Fullscreen, None)
         );
+    }
+
+    #[test]
+    fn a_fullscreen_hold_lasts_while_its_window_stays_fullscreen_wherever_the_pointer_goes() {
+        let utc = glib::TimeZone::utc();
+        let noon = utc_time(12, 12, 0);
+        let mut sources = Sources::default();
+        sources.set_fullscreen("a", &["a"]);
+        sources.turn_off(&nightly(), noon, &utc);
+
+        // The pointer is on the other output, which has none, and comes back.
+        sources.set_fullscreen("", &["a"]);
+        assert_eq!(sources.effective(&nightly(), noon, &utc), Effective::Off);
+        sources.set_fullscreen("a", &["a"]);
+        assert_eq!(sources.effective(&nightly(), noon, &utc), Effective::Off);
+    }
+
+    #[test]
+    fn a_fullscreen_hold_ends_once_its_window_is_not_fullscreen_anywhere() {
+        let utc = glib::TimeZone::utc();
+        let noon = utc_time(12, 12, 0);
+        let mut sources = Sources::default();
+        sources.set_fullscreen("a", &["a"]);
+        sources.turn_off(&nightly(), noon, &utc);
+
+        // The window left fullscreen while the pointer was elsewhere.
+        sources.set_fullscreen("", &[]);
+        sources.set_fullscreen("b", &["b"]);
+        assert_eq!(
+            sources.effective(&nightly(), noon, &utc),
+            on(Reason::Fullscreen, None)
+        );
+        // It isn't held again if it comes back.
+        sources.set_fullscreen("a", &["a", "b"]);
+        assert_eq!(
+            sources.effective(&nightly(), noon, &utc),
+            on(Reason::Fullscreen, None)
+        );
+    }
+
+    #[test]
+    fn a_fullscreen_hold_is_of_its_window_not_of_another_one() {
+        let utc = glib::TimeZone::utc();
+        let noon = utc_time(12, 12, 0);
+        let mut sources = Sources::default();
+        sources.set_fullscreen("a", &["a", "b"]);
+        sources.turn_off(&nightly(), noon, &utc);
+
+        // The pointer goes to an output whose fullscreen window is another.
+        sources.set_fullscreen("b", &["a", "b"]);
+        assert_eq!(
+            sources.effective(&nightly(), noon, &utc),
+            on(Reason::Fullscreen, None)
+        );
+        sources.set_fullscreen("a", &["a", "b"]);
+        assert_eq!(sources.effective(&nightly(), noon, &utc), Effective::Off);
     }
 
     #[test]

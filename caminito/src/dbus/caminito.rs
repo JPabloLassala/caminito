@@ -78,6 +78,10 @@ pub(crate) enum Request {
     Sun(oneshot::Sender<night_light::PublishedSun>),
     /// Reads `PointerOutputFullscreen`.
     PointerOutputFullscreen(oneshot::Sender<bool>),
+    /// Reads `PointerOutputFullscreenWindow`.
+    PointerOutputFullscreenWindow(oneshot::Sender<String>),
+    /// Reads `FullscreenWindows`.
+    FullscreenWindows(oneshot::Sender<Vec<String>>),
     /// Reads `Screencasting`.
     Screencasting(oneshot::Sender<bool>),
 }
@@ -104,13 +108,19 @@ enum Property {
     /// The pointer moved to another output, or a window there became or left fullscreen,
     /// showed or hid (CMN-264).
     PointerOutputFullscreen,
+    /// The pointer's output has another fullscreen window, or none (CMN-290). Before
+    /// `FullscreenWindows`, so that a caller never hears a window that left fullscreen
+    /// still named as the pointer's.
+    PointerOutputFullscreenWindow,
+    /// A window became or left fullscreen, showed or hid, on any output (CMN-290).
+    FullscreenWindows,
     /// A capture session opened, or the last one closed (CMN-264).
     Screencasting,
 }
 
 impl Property {
     /// Each property, in the enum's order, which `Heard` indexes by.
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 10] = [
         Self::PrimaryOutput,
         Self::ShowingDesktop,
         Self::NightLight,
@@ -118,6 +128,8 @@ impl Property {
         Self::GlobalMenuOffered,
         Self::GlobalMenu,
         Self::PointerOutputFullscreen,
+        Self::PointerOutputFullscreenWindow,
+        Self::FullscreenWindows,
         Self::Screencasting,
     ];
     /// That `ALL` is in the enum's order, checked as `Heard` is first made, so that each
@@ -143,6 +155,10 @@ impl Property {
             Self::PointerOutputFullscreen => {
                 Value::PointerOutputFullscreen(caminito.pointer_output_fullscreen())
             }
+            Self::PointerOutputFullscreenWindow => {
+                Value::PointerOutputFullscreenWindow(caminito.pointer_output_fullscreen_window())
+            }
+            Self::FullscreenWindows => Value::FullscreenWindows(caminito.fullscreen_windows()),
             Self::Screencasting => Value::Screencasting(caminito.is_screencasting()),
         }
     }
@@ -158,6 +174,8 @@ enum Value {
     GlobalMenuOffered(bool),
     GlobalMenu(GlobalMenu),
     PointerOutputFullscreen(bool),
+    PointerOutputFullscreenWindow(String),
+    FullscreenWindows(Vec<String>),
     Screencasting(bool),
 }
 
@@ -441,6 +459,24 @@ impl CaminitoInterface {
         super::ask(&self.requests, Request::PointerOutputFullscreen).await
     }
 
+    /// The ext-foreign-toplevel identifier of the fullscreen window the output under the
+    /// pointer has: the topmost one that shows there, on its active workspace, or the empty
+    /// string for none (CMN-290). caminito-notifications holds Do Not Disturb off for the
+    /// window the user turned it off over, which a boolean can't name, and Caminito decides
+    /// nothing about it (ADR 0051).
+    #[zbus(property)]
+    async fn pointer_output_fullscreen_window(&self) -> zbus::fdo::Result<String> {
+        super::ask(&self.requests, Request::PointerOutputFullscreenWindow).await
+    }
+
+    /// The identifiers of the fullscreen windows that show on any output, sorted (CMN-290).
+    /// The window a hold is of is fullscreen still while it is in this list, wherever the
+    /// pointer is.
+    #[zbus(property)]
+    async fn fullscreen_windows(&self) -> zbus::fdo::Result<Vec<String>> {
+        super::ask(&self.requests, Request::FullscreenWindows).await
+    }
+
     /// Whether a screencast is running: while any ext-image-copy-capture session is open,
     /// a screenshot's included, which isn't told from a screencast's (CMN-264, ADR 0051).
     /// caminito-notifications turns Do Not Disturb on while it's true.
@@ -595,6 +631,12 @@ impl Caminito {
             Request::PointerOutputFullscreen(reply) => {
                 let _ = reply.send(self.pointer_output_fullscreen());
             }
+            Request::PointerOutputFullscreenWindow(reply) => {
+                let _ = reply.send(self.pointer_output_fullscreen_window());
+            }
+            Request::FullscreenWindows(reply) => {
+                let _ = reply.send(self.fullscreen_windows());
+            }
             Request::Screencasting(reply) => {
                 let _ = reply.send(self.is_screencasting());
             }
@@ -655,15 +697,38 @@ impl Caminito {
 
     /// Whether a fullscreen window shows on the output under the pointer.
     fn pointer_output_fullscreen(&self) -> bool {
-        let Some(output) = self.pointer_output() else {
-            return false;
-        };
+        self.pointer_output_fullscreen_id().is_some()
+    }
+
+    /// The topmost fullscreen window that shows on the output under the pointer.
+    fn pointer_output_fullscreen_id(&self) -> Option<WindowId> {
+        let output = self.pointer_output()?;
         let policy = &self.policy;
-        policy.active_stacking().into_iter().any(|id| {
+        policy.active_stacking().into_iter().rev().find(|&id| {
             policy.is_showing(id)
                 && policy.is_fullscreen(id)
                 && policy.output_showing(id) == Some(output)
         })
+    }
+
+    /// The identifier of [`Self::pointer_output_fullscreen_id`], the empty string for none.
+    fn pointer_output_fullscreen_window(&self) -> String {
+        self.pointer_output_fullscreen_id()
+            .and_then(|id| self.toplevel_identifier(id))
+            .unwrap_or_default()
+    }
+
+    /// The identifiers of the fullscreen windows that show on any output, sorted.
+    fn fullscreen_windows(&self) -> Vec<String> {
+        let policy = &self.policy;
+        let mut windows: Vec<String> = policy
+            .active_stacking()
+            .into_iter()
+            .filter(|&id| policy.is_showing(id) && policy.is_fullscreen(id))
+            .filter_map(|id| self.toplevel_identifier(id))
+            .collect();
+        windows.sort();
+        windows
     }
 
     /// Whether any capture session is open.
@@ -730,6 +795,14 @@ impl Caminito {
                     Property::Sun => interface.sun_changed(emitter).await,
                     Property::PointerOutputFullscreen => {
                         interface.pointer_output_fullscreen_changed(emitter).await
+                    }
+                    Property::PointerOutputFullscreenWindow => {
+                        interface
+                            .pointer_output_fullscreen_window_changed(emitter)
+                            .await
+                    }
+                    Property::FullscreenWindows => {
+                        interface.fullscreen_windows_changed(emitter).await
                     }
                     Property::Screencasting => interface.screencasting_changed(emitter).await,
                 }

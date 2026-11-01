@@ -54,6 +54,15 @@ pub trait Caminito {
     #[zbus(property)]
     fn pointer_output_fullscreen(&self) -> zbus::Result<bool>;
 
+    /// The ext-foreign-toplevel identifier of the fullscreen window the output under the
+    /// pointer has, empty for none (CMN-290).
+    #[zbus(property)]
+    fn pointer_output_fullscreen_window(&self) -> zbus::Result<String>;
+
+    /// The identifiers of the fullscreen windows on every output (CMN-290).
+    #[zbus(property)]
+    fn fullscreen_windows(&self) -> zbus::Result<Vec<String>>;
+
     /// Whether a screencast is running: an ext-image-copy-capture session is open (CMN-264).
     #[zbus(property)]
     fn screencasting(&self) -> zbus::Result<bool>;

@@ -1337,11 +1337,12 @@ impl Caminito {
         self.refresh_layers();
         self.refresh_output_management();
         self.refresh_global_menu();
+        // Before the properties, which name the fullscreen windows by their identifiers.
+        self.refresh_foreign_toplevel_list();
         // After the global menu's refresh, so that a caller that hears the menu offered
         // finds the appmenu global and the registrar's name asked for.
         self.refresh_properties();
         self.refresh_foreign_toplevels();
-        self.refresh_foreign_toplevel_list();
         // On both sides of ext-workspace's refresh: a window leaves a workspace that's
         // going while a client still has that workspace's handle, and enters a new one
         // once the client has that one's.

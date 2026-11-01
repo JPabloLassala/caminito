@@ -41,7 +41,8 @@ const CAMINITO_INTERFACE: &str = r#"
     <method name="ActivateApplication">
       <arg type="s" name="app" direction="in"/>
     </method>
-    <property name="PointerOutputFullscreen" type="b" access="read"/>
+    <property name="PointerOutputFullscreenWindow" type="s" access="read"/>
+    <property name="FullscreenWindows" type="as" access="read"/>
     <property name="Screencasting" type="b" access="read"/>
   </interface>
 </node>
@@ -171,7 +172,7 @@ impl Clock for FakeClock {
 /// forward, in order, and its properties, by name, which are false until they're set.
 struct FakeCaminito {
     activated: Rc<RefCell<Vec<String>>>,
-    properties: Rc<RefCell<HashMap<String, bool>>>,
+    properties: Rc<RefCell<HashMap<String, Variant>>>,
     connection: gio::DBusConnection,
     registration: Option<gio::RegistrationId>,
 }
@@ -182,7 +183,7 @@ impl FakeCaminito {
         let node = gio::DBusNodeInfo::for_xml(CAMINITO_INTERFACE).unwrap();
         let interface = node.lookup_interface(CAMINITO).unwrap();
         let activated: Rc<RefCell<Vec<String>>> = Rc::default();
-        let properties: Rc<RefCell<HashMap<String, bool>>> = Rc::default();
+        let properties: Rc<RefCell<HashMap<String, Variant>>> = Rc::default();
         let registration = connection
             .register_object(CAMINITO_PATH, &interface)
             .method_call({
@@ -196,8 +197,8 @@ impl FakeCaminito {
             .property({
                 let properties = properties.clone();
                 move |_, _, _, _, name| {
-                    let value = properties.borrow().get(name).copied();
-                    value.unwrap_or(false).to_variant()
+                    let value = properties.borrow().get(name).cloned();
+                    value.unwrap_or_else(|| default_of(name))
                 }
             })
             .build()
@@ -228,9 +229,25 @@ impl FakeCaminito {
 
     /// Sets the property `name` to `value`, and signals it.
     fn set(&self, name: &str, value: bool) {
-        self.properties.borrow_mut().insert(name.to_owned(), value);
+        self.set_variant(name, value.to_variant());
+    }
+
+    /// The pointer's output has the fullscreen window `window` (none if it's `None`), of the
+    /// fullscreen `windows` on every output, as one change.
+    fn set_fullscreen(&self, window: Option<&str>, windows: &[&str]) {
+        self.set_variant(
+            "PointerOutputFullscreenWindow",
+            window.unwrap_or("").to_variant(),
+        );
+        self.set_variant("FullscreenWindows", windows.to_variant());
+    }
+
+    fn set_variant(&self, name: &str, value: Variant) {
+        self.properties
+            .borrow_mut()
+            .insert(name.to_owned(), value.clone());
         let changed = VariantDict::new(None);
-        changed.insert_value(name, &value.to_variant());
+        changed.insert_value(name, &value);
         let invalidated: Vec<String> = Vec::new();
         // Built of its parts, as a tuple's would box the dictionary in a variant.
         let arguments = Variant::tuple_from_iter([
@@ -247,6 +264,15 @@ impl FakeCaminito {
                 Some(&arguments),
             )
             .expect("the fake signals its property");
+    }
+}
+
+/// What a property of the fake reads before it's set: false, an empty string or no strings.
+fn default_of(name: &str) -> Variant {
+    match name {
+        "PointerOutputFullscreenWindow" => "".to_variant(),
+        "FullscreenWindows" => Vec::<String>::new().to_variant(),
+        _ => false.to_variant(),
     }
 }
 
@@ -3164,7 +3190,7 @@ fn a_fullscreen_window_turns_do_not_disturb_on_while_its_setting_is_on() {
         let daemon = start(bus);
         let caminito = FakeCaminito::start(bus);
 
-        caminito.set("PointerOutputFullscreen", true);
+        caminito.set_fullscreen(Some("window"), &["window"]);
         daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
         daemon.notify(notify("Quiet"));
         assert!(daemon.bubbles.ids().is_empty());
@@ -3179,7 +3205,7 @@ fn a_fullscreen_window_turns_do_not_disturb_on_while_its_setting_is_on() {
             .set_boolean("do-not-disturb-while-fullscreen", true)
             .unwrap();
         daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
-        caminito.set("PointerOutputFullscreen", false);
+        caminito.set_fullscreen(None, &[]);
         daemon.wait_for_do_not_disturb((false, 0, ""));
     });
 }
@@ -3213,7 +3239,7 @@ fn a_screencast_turns_do_not_disturb_on_while_its_setting_is_on() {
 fn a_caminito_already_fullscreen_as_the_daemon_starts_turns_it_on() {
     bus::run(|bus| {
         let caminito = FakeCaminito::start(bus);
-        caminito.set("PointerOutputFullscreen", true);
+        caminito.set_fullscreen(Some("window"), &["window"]);
 
         let daemon = start(bus);
 
@@ -3226,7 +3252,7 @@ fn turning_it_off_during_a_fullscreen_window_holds_it_off_until_the_window_leave
     bus::run(|bus| {
         let daemon = start(bus);
         let caminito = FakeCaminito::start(bus);
-        caminito.set("PointerOutputFullscreen", true);
+        caminito.set_fullscreen(Some("window-a"), &["window-a"]);
         daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
 
         daemon.api("ToggleDoNotDisturb", ().to_variant());
@@ -3235,9 +3261,34 @@ fn turning_it_off_during_a_fullscreen_window_holds_it_off_until_the_window_leave
         caminito.set("Screencasting", true);
         daemon.wait_for_do_not_disturb((true, 0, "screencast"));
         caminito.set("Screencasting", false);
-        caminito.set("PointerOutputFullscreen", false);
+        caminito.set_fullscreen(None, &[]);
         daemon.wait_for_do_not_disturb((false, 0, ""));
-        caminito.set("PointerOutputFullscreen", true);
+        caminito.set_fullscreen(Some("window-a"), &["window-a"]);
+        daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
+    });
+}
+
+#[test]
+fn turning_it_off_during_a_fullscreen_window_holds_it_off_while_the_pointer_visits_another_output()
+{
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let caminito = FakeCaminito::start(bus);
+        caminito.set_fullscreen(Some("window-a"), &["window-a"]);
+        daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
+        daemon.api("ToggleDoNotDisturb", ().to_variant());
+        assert!(!daemon.do_not_disturb().0);
+
+        // The pointer goes to the other output, which has no fullscreen window, and back.
+        caminito.set_fullscreen(None, &["window-a"]);
+        caminito.set_fullscreen(Some("window-a"), &["window-a"]);
+
+        daemon.bus.run_for(QUIET);
+        assert!(!daemon.do_not_disturb().0);
+        // The window leaves fullscreen while the pointer is away, and another one is
+        // fullscreen when it comes back.
+        caminito.set_fullscreen(None, &[]);
+        caminito.set_fullscreen(Some("window-b"), &["window-b"]);
         daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
     });
 }

@@ -30,7 +30,7 @@ ADR 0035 split a feature into a thin C and GTK3 in-process applet and a Rust pro
 
   Each comes with change signals. Its clients are the Notifications applet and the Dock applet, and Caminito, which calls it for `Super+N` and Do Not Disturb's System shortcut. It's unversioned, because all of them ship in the `caminito` package.
 - **Settings are GSettings:** `org.mate.Caminito.notifications`, plus the relocatable `org.mate.Caminito.notifications.app`, one path per Notifying app. The C applets can read them, and `dconf` can edit them. The history is a file under `$XDG_STATE_HOME/caminito/`.
-- **Caminito decides nothing about Do Not Disturb.** It publishes, on `org.mate.Caminito`, whether the output under the pointer has a fullscreen window and whether a screencast is running, and the daemon watches them.
+- **Caminito decides nothing about Do Not Disturb.** It publishes, on `org.mate.Caminito`, whether the output under the pointer has a fullscreen window and which it is, by its ext-foreign-toplevel identifier, which windows are fullscreen on any output, and whether a screencast is running, and the daemon watches them. Turning Do Not Disturb off over a fullscreen window is held by the daemon for that window, while it stays fullscreen wherever the pointer goes (CMN-290).
 
 ## Consequences
 
