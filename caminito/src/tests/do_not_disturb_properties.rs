@@ -48,7 +48,7 @@ fn fullscreen_windows(f: &mut Fixture, bus: &str) -> Vec<String> {
 /// Listens on another thread for `org.mate.Caminito` at `bus` to signal the boolean
 /// `property` `count` times, and returns a handle to what each signal said, in order. It
 /// returns once the thread listens.
-fn listen(
+pub(super) fn listen(
     f: &mut Fixture,
     bus: &str,
     property: &'static str,
@@ -94,7 +94,10 @@ fn listen_as<T: Send + 'static>(
 }
 
 /// What a listener from `listen` or `listen_as` heard.
-fn heard<T: Send + 'static>(f: &mut Fixture, listener: thread::JoinHandle<Vec<T>>) -> Vec<T> {
+pub(super) fn heard<T: Send + 'static>(
+    f: &mut Fixture,
+    listener: thread::JoinHandle<Vec<T>>,
+) -> Vec<T> {
     f.dispatch_until(|_| listener.is_finished());
     listener.join().unwrap()
 }

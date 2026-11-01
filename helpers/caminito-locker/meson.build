@@ -45,6 +45,7 @@ executable(
   'caminito-locker',
   'caminito-locker.c',
   'gs-lock-plug.c',
+  'gs-notifications.c',
   'gs-prefs.c',
   gnome.compile_resources('caminito-locker-resources', 'caminito-locker.gresource.xml'),
   link_with: [auth, watcher],

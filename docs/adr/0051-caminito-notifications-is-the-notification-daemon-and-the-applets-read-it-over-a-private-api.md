@@ -26,11 +26,12 @@ ADR 0035 split a feature into a thin C and GTK3 in-process applet and a Rust pro
   - Do Not Disturb: its state, when it ends, why it's on, and setting it;
   - each Notifying app's count for the Badge;
   - opening the settings window, at an app's page;
-  - the Notification center: the daemon asks the applet to open it, and the applet says while it's open, as there are no bubbles then (CMN-285).
+  - the Notification center: the daemon asks the applet to open it, and the applet says while it's open, as there are no bubbles then (CMN-285);
+  - the Lock screen's list (CMN-300): the notifications that arrived since the session was locked and would have had a bubble, as plain text only, by the `lock-screen` key's mode and each app's Previews, limited in number and length. The daemon applies the whole rule beside Previews', and the client draws what it gets.
 
-  Each comes with change signals. Its clients are the Notifications applet and the Dock applet, and Caminito, which calls it for `Super+N` and Do Not Disturb's System shortcut. It's unversioned, because all of them ship in the `caminito` package.
+  Each comes with change signals. Its clients are the Notifications applet and the Dock applet, the Locker, which asks only for the Lock screen's list and never waits for the answer, and Caminito, which calls it for `Super+N` and Do Not Disturb's System shortcut. It's unversioned, because all of them ship in the `caminito` package.
 - **Settings are GSettings:** `org.mate.Caminito.notifications`, plus the relocatable `org.mate.Caminito.notifications.app`, one path per Notifying app. The C applets can read them, and `dconf` can edit them. The history is a file under `$XDG_STATE_HOME/caminito/`.
-- **Caminito decides nothing about Do Not Disturb.** It publishes, on `org.mate.Caminito`, whether the output under the pointer has a fullscreen window and which it is, by its ext-foreign-toplevel identifier, which windows are fullscreen, and whether a screencast is running, and the daemon watches them. Turning Do Not Disturb off over a fullscreen window is held by the daemon for that window, while it stays fullscreen wherever the pointer goes (CMN-290).
+- **Caminito decides nothing about Do Not Disturb.** It publishes, on `org.mate.Caminito`, whether the output under the pointer has a fullscreen window and which it is, by its ext-foreign-toplevel identifier, which windows are fullscreen, whether a screencast is running, and whether the session is locked, and the daemon watches them. Turning Do Not Disturb off over a fullscreen window is held by the daemon for that window, while it stays fullscreen wherever the pointer goes (CMN-290).
 
 ## Consequences
 

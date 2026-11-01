@@ -54,6 +54,10 @@ pub(super) fn handle(
             let list = Variant::array_from_iter_with_type(entry_type, entries);
             invocation.return_value(Some(&Variant::tuple_from_iter([list])));
         }
+        "LockScreenList" => {
+            let list = state.borrow().lock_screen_list();
+            invocation.return_value(Some(&(list,).to_variant()));
+        }
         "Ungrouped" => {
             let apps = state.borrow().ungrouped.apps.clone();
             invocation.return_value(Some(&(apps,).to_variant()));

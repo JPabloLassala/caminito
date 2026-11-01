@@ -50,6 +50,8 @@ pub const APP_KEYS: [&str; 7] = [
 ];
 /// The bubbles' corner, a [`Corner`]'s nick.
 pub const CORNER: &str = "corner";
+/// What the Lock screen shows of the notifications, a [`LockScreen`]'s nick (CMN-300).
+pub const LOCK_SCREEN: &str = "lock-screen";
 /// How long a bubble stays when its app leaves that to the daemon, in seconds.
 pub const TIMEOUT: &str = "timeout";
 /// Whether critical notifications break through Do Not Disturb (CMN-263).
@@ -387,6 +389,49 @@ impl Corner {
     /// Whether it's at the right of the output.
     pub fn is_right(self) -> bool {
         matches!(self, Corner::TopRight | Corner::BottomRight)
+    }
+}
+
+/// What the Lock screen shows of the notifications that arrived since the lock began.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockScreen {
+    /// Nothing at all, the default.
+    None,
+    /// The app and the summary.
+    Title,
+    /// The app, the summary and the body.
+    Full,
+}
+
+impl LockScreen {
+    /// The three, in the settings window's order.
+    pub const ALL: [LockScreen; 3] = [LockScreen::None, LockScreen::Title, LockScreen::Full];
+
+    /// What the user reads for it.
+    pub fn label(self) -> &'static str {
+        match self {
+            LockScreen::None => "Show nothing",
+            LockScreen::Title => "App and title",
+            LockScreen::Full => "App, title and text",
+        }
+    }
+
+    /// Its nick in `org.mate.Caminito.NotificationLockScreen`.
+    pub fn nick(self) -> &'static str {
+        match self {
+            LockScreen::None => "none",
+            LockScreen::Title => "title",
+            LockScreen::Full => "full",
+        }
+    }
+
+    /// The mode `settings` name, or none for a nick that isn't one.
+    pub fn of(settings: &gio::Settings) -> LockScreen {
+        let nick = settings.string(LOCK_SCREEN);
+        LockScreen::ALL
+            .into_iter()
+            .find(|mode| mode.nick() == nick)
+            .unwrap_or(LockScreen::None)
     }
 }
 

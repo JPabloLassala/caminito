@@ -5,7 +5,8 @@
 //! menu claim (115), Night Light (137) and its pause (140), the sun's position (215),
 //! bringing an app forward for caminito-notifications (ADR 0054), and what that daemon turns
 //! Do Not Disturb on for, a fullscreen window under the pointer and a screencast (CMN-264),
-//! and the keyboard layout the Unlock dialog shows (CMN-299).
+//! the keyboard layout the Unlock dialog shows (CMN-299), and whether the session is locked,
+//! which the Lock screen's notifications start from (CMN-300).
 
 use std::collections::HashMap;
 
@@ -88,6 +89,8 @@ pub(crate) enum Request {
     Screencasting(oneshot::Sender<bool>),
     /// Reads `KeyboardLayout`.
     KeyboardLayout(oneshot::Sender<KeyboardLayout>),
+    /// Reads `Locked`.
+    Locked(oneshot::Sender<bool>),
 }
 
 /// A property Caminito signals itself, when it changes without a caller writing it, in the
@@ -122,11 +125,13 @@ enum Property {
     Screencasting,
     /// The keyboard's layout was switched, or the keymap changed (CMN-299).
     KeyboardLayout,
+    /// The session was locked, or unlocked (CMN-300).
+    Locked,
 }
 
 impl Property {
     /// Each property, in the enum's order, which `Heard` indexes by.
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::PrimaryOutput,
         Self::ShowingDesktop,
         Self::NightLight,
@@ -138,6 +143,7 @@ impl Property {
         Self::FullscreenWindows,
         Self::Screencasting,
         Self::KeyboardLayout,
+        Self::Locked,
     ];
     /// That `ALL` is in the enum's order, checked as `Heard` is first made, so that each
     /// property's value is at its own index.
@@ -168,6 +174,7 @@ impl Property {
             Self::FullscreenWindows => Value::FullscreenWindows(caminito.fullscreen_windows()),
             Self::Screencasting => Value::Screencasting(caminito.is_screencasting()),
             Self::KeyboardLayout => Value::KeyboardLayout(caminito.keyboard_layout.clone()),
+            Self::Locked => Value::Locked(caminito.lock.is_locked()),
         }
     }
 }
@@ -186,6 +193,7 @@ enum Value {
     FullscreenWindows(Vec<String>),
     Screencasting(bool),
     KeyboardLayout(KeyboardLayout),
+    Locked(bool),
 }
 
 /// The properties as `org.mate.Caminito`'s callers last heard them: a value for each, by
@@ -512,6 +520,14 @@ impl CaminitoInterface {
         ]))
     }
 
+    /// Whether the session is locked: from the lock's request until the unlock, while the
+    /// Locker is starting and after it was lost too (CMN-300). caminito-notifications lists the
+    /// notifications that arrive meanwhile on the Lock screen, and decides that itself.
+    #[zbus(property)]
+    async fn locked(&self) -> zbus::fdo::Result<bool> {
+        super::ask(&self.requests, Request::Locked).await
+    }
+
     /// Turns Night Light on if it's off, and off if it's on, by writing
     /// `night-light-enabled`. It's what a shortcut the user binds to
     /// `caminito-displays --toggle-night-light` calls.
@@ -669,6 +685,9 @@ impl Caminito {
             }
             Request::KeyboardLayout(reply) => {
                 let _ = reply.send(self.keyboard_layout.clone());
+            }
+            Request::Locked(reply) => {
+                let _ = reply.send(self.lock.is_locked());
             }
         }
     }
@@ -837,6 +856,7 @@ impl Caminito {
                     }
                     Property::Screencasting => interface.screencasting_changed(emitter).await,
                     Property::KeyboardLayout => interface.keyboard_layout_changed(emitter).await,
+                    Property::Locked => interface.locked_changed(emitter).await,
                 }
             };
             if let Err(err) = signalled.await {

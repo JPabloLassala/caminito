@@ -70,6 +70,12 @@
     <value nick="bottom-left" value="3"/>
   </enum>
 
+  <enum id="org.mate.Caminito.NotificationLockScreen">
+    <value nick="none" value="0"/>
+    <value nick="title" value="1"/>
+    <value nick="full" value="2"/>
+  </enum>
+
   <schema id="org.mate.Caminito" path="/org/mate/caminito/">
     <!--
       The workspace grid, as _NET_DESKTOP_LAYOUT has it on X11, where the pager sets it and
@@ -406,6 +412,11 @@
       <default>'top-right'</default>
       <summary>The corner of the bubbles</summary>
       <description>The corner of the output under the pointer where the Notification bubbles show, the newest nearest it, under the panel.</description>
+    </key>
+    <key name="lock-screen" enum="org.mate.Caminito.NotificationLockScreen">
+      <default>'none'</default>
+      <summary>What the Lock screen shows of the notifications</summary>
+      <description>The notifications that arrived since the session was locked, and would have had a bubble, which the Lock screen lists under the pointer, read-only: "full" shows the app, the summary and the body, "title" the app and the summary, and "none" nothing at all. An app whose previews are off shows its name and "Notification" in "full" and "title".</description>
     </key>
     <key name="timeout" type="u">
       <default>7</default>

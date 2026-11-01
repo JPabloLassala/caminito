@@ -1,8 +1,8 @@
 //! The daemon's private API (ADR 0051), `org.mate.Caminito.Notifications` at
 //! `/org/mate/Caminito/Notifications`, on the name the program owns as a single-instance
-//! application. Its clients are the Notifications applet and the Dock applet, and Caminito
-//! for Super+N and Do Not Disturb's shortcut, which all ship in the same package, so it's
-//! unversioned. It opens the settings window (CMN-261), and serves the Notification history
+//! application. Its clients are the Notifications applet and the Dock applet, the Locker for
+//! the Lock screen's list (CMN-300), and Caminito for Super+N and Do Not Disturb's shortcut,
+//! which all ship in the same package, so it's unversioned. It opens the settings window (CMN-261), and serves the Notification history
 //! (CMN-259), the Notification center's calls (CMN-285) and Do Not Disturb (CMN-263), which
 //! the server answers.
 
@@ -94,6 +94,18 @@ const INTERFACE: &str = r#"
       <arg type="t" name="end"/>
       <arg type="s" name="reason"/>
     </signal>
+    <!-- What the Lock screen shows (CMN-300): the notifications that arrived since the lock
+         began and would have had a bubble, newest first, as the Locker draws them, each the
+         app's name, the summary and the body, as plain single lines. The key lock-screen
+         decides what they hold: the body is empty in "title", the list is empty in "none" and
+         while the session isn't locked, and an app whose previews are off has "Notification"
+         for its summary. At most 8 entries, the app's name at most 60 characters, the
+         summary 120 and the body 300. -->
+    <method name="LockScreenList">
+      <arg type="a(sss)" name="entries" direction="out"/>
+    </method>
+    <!-- The Lock screen's list changed: ask again. -->
+    <signal name="LockScreenChanged"/>
     <!-- The history changed: list it again. -->
     <signal name="HistoryChanged"/>
     <signal name="CountsChanged">

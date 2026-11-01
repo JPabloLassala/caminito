@@ -43,6 +43,7 @@ use crate::settings::{Delivery, NO_PREVIEW, Settings};
 
 mod api;
 mod do_not_disturb;
+mod lock_screen;
 mod ungrouped;
 
 /// The name the server owns.
@@ -486,6 +487,8 @@ struct State {
     center: Option<Box<dyn FnOnce()>>,
     /// The Notifying apps with grouping off, for the Notification center.
     ungrouped: ungrouped::Ungrouped,
+    /// The Lock screen's list (CMN-300).
+    lock_screen: lock_screen::Lock,
     /// What the timers call back, which the state can't hold of itself.
     this: Weak<RefCell<State>>,
 }
@@ -538,6 +541,7 @@ impl Drop for Server {
         }
         do_not_disturb::unfollow(&mut state);
         ungrouped::unfollow(&mut state);
+        lock_screen::unfollow(&mut state);
         for shown in &mut state.shown {
             shown.stop_timer();
         }
@@ -586,6 +590,7 @@ impl Server {
                 header: None,
                 center: None,
                 ungrouped: ungrouped::Ungrouped::default(),
+                lock_screen: lock_screen::Lock::default(),
                 this: this.clone(),
             })
         });
@@ -606,6 +611,7 @@ impl Server {
             .map_err(Error::Export)?;
         state.borrow_mut().schedule_expiry();
         ungrouped::follow(&state);
+        lock_screen::follow(&state);
         do_not_disturb::follow(&state);
 
         let owner = gio::bus_own_name_on_connection(
@@ -682,6 +688,13 @@ fn handle(
 /// its app's sound is off, and gets a bubble if it fits, or else counts in the header. While
 /// the Notification center is open it gets none and shows only there.
 fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -> u32 {
+    let id = take(state, replaces, arguments);
+    state.borrow_mut().refresh_lock_screen();
+    id
+}
+
+/// What [`notify`] does before the Lock screen's list is brought up to date.
+fn take(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -> u32 {
     let mut guard = state.borrow_mut();
     let now = guard.clock.now();
     let notification = Notification::new(arguments, guard.settings.timeout());
@@ -698,6 +711,8 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     let replaced = live || guard.history.get(replaces).is_some();
     let id = if replaced { replaces } else { guard.next_id() };
     guard.remember(id, &notification, now);
+    guard.refresh_do_not_disturb();
+    guard.track_for_lock_screen(id, &notification, &app);
 
     // A bubble on screen is replaced whatever the Delivery is now.
     if live {
@@ -1354,6 +1369,7 @@ impl State {
             }
             self.schedule_expiry();
             self.queue_ungrouped();
+            self.refresh_lock_screen();
         }
         result
     }

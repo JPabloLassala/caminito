@@ -361,6 +361,35 @@ fn the_published_layout_follows_a_switch_while_locked() {
     assert_eq!(listener.join().unwrap(), ("es".into(), true));
 }
 
+/// `Locked` at `bus`.
+fn published_lock(f: &mut Fixture, bus: &str) -> bool {
+    let bus = bus.to_owned();
+    f.dbus_call(move || caminito_proxy(&bus).unwrap().locked().unwrap())
+}
+
+/// caminito-notifications lists what arrived since the lock began (CMN-300), so Caminito
+/// publishes whether the session is locked, and signals it as it begins and ends.
+#[test]
+fn the_published_lock_state_follows_the_lock_and_the_unlock() {
+    let mut f = Fixture::new();
+    f.add_output((800, 600), 1.0);
+    let bus = f.start_dbus();
+    let locker = f.connect(Kind::Xdg);
+    assert!(!published_lock(&mut f, &bus));
+    let listener = super::do_not_disturb_properties::listen(&mut f, &bus, "Locked", 2);
+
+    let (lock, _) = lock_with_a_surface(&mut f, locker);
+    assert!(published_lock(&mut f, &bus));
+    f.client(locker).unlock_and_destroy(lock);
+    f.roundtrip(locker);
+
+    assert!(!published_lock(&mut f, &bus));
+    assert_eq!(
+        super::do_not_disturb_properties::heard(&mut f, listener),
+        [true, false]
+    );
+}
+
 /// A menu's grab would keep the keyboard and the pointer, and the menu would be there, open
 /// and without them, after the unlock. One asked for under the lock isn't granted.
 #[test]

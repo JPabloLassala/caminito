@@ -71,6 +71,10 @@ pub trait Caminito {
     #[zbus(property)]
     fn keyboard_layout(&self) -> zbus::Result<HashMap<String, zbus::zvariant::OwnedValue>>;
 
+    /// Whether the session is locked (CMN-300).
+    #[zbus(property)]
+    fn locked(&self) -> zbus::Result<bool>;
+
     /// Chooses the primary output, by the name of an enabled output.
     #[zbus(property)]
     fn set_primary_output(&self, name: &str) -> zbus::Result<()>;

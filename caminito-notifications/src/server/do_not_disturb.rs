@@ -124,6 +124,7 @@ fn watch(this: &Weak<RefCell<State>>, proxy: gio::DBusProxy) {
     guard.following.making = None;
     guard.following.caminito = Some(proxy);
     guard.refresh_do_not_disturb();
+    guard.refresh_locked();
 }
 
 /// Refreshes Do Not Disturb once the change that called it is over: a handler may run while
@@ -136,7 +137,9 @@ fn queue_refresh(this: &Weak<RefCell<State>>, queued: &Rc<Cell<bool>>) {
     glib::MainContext::ref_thread_default().spawn_local(async move {
         queued.set(false);
         if let Some(state) = this.upgrade() {
-            state.borrow_mut().refresh_do_not_disturb();
+            let mut guard = state.borrow_mut();
+            guard.refresh_do_not_disturb();
+            guard.refresh_locked();
         }
     });
 }
@@ -157,7 +160,7 @@ impl State {
     }
 
     /// Caminito's property `name`, the default of its type while it isn't on the bus.
-    fn caminito_says<T: glib::variant::FromVariant + Default>(&self, name: &str) -> T {
+    pub(super) fn caminito_says<T: glib::variant::FromVariant + Default>(&self, name: &str) -> T {
         let proxy = self.following.caminito.as_ref();
         proxy
             .and_then(|proxy| proxy.cached_property(name))

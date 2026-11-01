@@ -48,6 +48,10 @@
  *    gs-watcher.c, as gs-monitor.c's on_watcher_status_message_changed;
  *  - the keyboard layout, from org.mate.Caminito's KeyboardLayout, where mate-screensaver's
  *    libmatekbd indicator read X11's (CMN-299);
+ *  - the notifications the Lock screen shows, in a list that follows the pointer's output, in
+ *    the corner org.mate.Caminito.notifications' corner names, or in a column under the
+ *    clock on an output too narrow for the dialog beside the corner's notifications. It
+ *    isn't in the dialog's .ui file, so a theme can't lose it (CMN-300);
  *  - Log Out only once logout-delay has passed, as gs-window-x11.c's is_logout_enabled. The
  *    daemon asks when it starts a dialog, and its timer starts when its windows show; the
  *    locker's dialog lasts the whole lock, so the button shows once the delay has passed
@@ -72,6 +76,7 @@
 #include <libmate-desktop/mate-bg.h>
 
 #include "gs-lock-plug.h"
+#include "gs-notifications.h"
 #include "gs-prefs.h"
 #include "gs-watcher.h"
 
@@ -85,6 +90,11 @@
 
 /* How far the clock stays above the dialog, or it's made smaller. */
 #define CLOCK_GAP 8
+
+/* How far the notifications are from their corner, and the dialog's width until it has been
+ * shown and measured. */
+#define NOTIFICATIONS_MARGIN 24
+#define DIALOG_WIDTH_GUESS 480
 
 static gboolean verbose = FALSE;
 static gboolean show_version = FALSE;
@@ -117,6 +127,13 @@ static guint logout_timeout_id = 0;
 static char *clock_time = NULL;
 static char *clock_date = NULL;
 static guint fit_clocks_id = 0;
+
+/* The list of notifications, in the lock window that the pointer is in, and where it goes
+ * in it. */
+static GtkWidget *notifications = NULL;
+static GSettings *notification_settings = NULL;
+static guint place_notifications_id = 0;
+static int dialog_width = DIALOG_WIDTH_GUESS;
 
 static char* request_response(GSLockPlug* plug, const char* prompt, gboolean visible)
 {
@@ -709,24 +726,46 @@ static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_
 	return FALSE;
 }
 
-/* The dialog moves to the lock window the pointer or the keyboard is in, shown or hidden, so
- * it shows on the monitor under the pointer, where Caminito gives the keyboard (12). Motion
- * chooses its output and doesn't show it. */
-static gboolean move_dialog(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+/* Puts `widget`, the dialog or the notifications, in the lock window `window`'s overlay. With
+ * its monitor's window gone and none left, it has no window. */
+static void move_to_window(GtkWidget* widget, GtkWidget* window)
 {
-	GtkWidget* parent = gtk_widget_get_parent(plug);
+	GtkWidget* parent = gtk_widget_get_parent(widget);
 	GtkWidget* overlay = g_object_get_data(G_OBJECT(window), "overlay");
 
-	if (parent != overlay)
+	if (parent == overlay)
+	{
+		return;
+	}
+
+	if (parent != NULL)
+	{
+		gtk_container_remove(GTK_CONTAINER(parent), widget);
+	}
+	gtk_overlay_add_overlay(GTK_OVERLAY(overlay), widget);
+	/* A click or a key on them is one on the Idle view. */
+	gtk_overlay_set_overlay_pass_through(GTK_OVERLAY(overlay), widget, widget == notifications);
+}
+
+static void queue_place_notifications(void);
+
+/* The dialog moves to the lock window the pointer or the keyboard is in, shown or hidden, so
+ * it shows on the monitor under the pointer, where Caminito gives the keyboard (12). The
+ * notifications go with it. Motion chooses its output and doesn't show it. */
+static gboolean move_dialog(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+{
+	GtkWidget* overlay = g_object_get_data(G_OBJECT(window), "overlay");
+
+	if (gtk_widget_get_parent(plug) != overlay)
 	{
 		gs_debug("Moving the dialog to %s", gdk_monitor_get_model(g_object_get_data(G_OBJECT(window), "monitor")));
-
-		/* With its monitor's window gone and none left, the dialog has no window. */
-		if (parent != NULL)
-		{
-			gtk_container_remove(GTK_CONTAINER(parent), plug);
-		}
-		gtk_overlay_add_overlay(GTK_OVERLAY(overlay), plug);
+		move_to_window(plug, window);
+	}
+	if (gtk_widget_get_parent(notifications) != overlay)
+	{
+		gs_debug("Moving the notifications to %s", gdk_monitor_get_model(g_object_get_data(G_OBJECT(window), "monitor")));
+		move_to_window(notifications, window);
+		queue_place_notifications();
 	}
 
 	return FALSE;
@@ -906,6 +945,134 @@ static void queue_fit_clocks(void)
 	}
 }
 
+/* Whether the corner key names a corner at the top, and one on the left. */
+static void notifications_corner(gboolean* top, gboolean* left)
+{
+	g_autofree char* corner = NULL;
+
+	*top = TRUE;
+	*left = FALSE;
+	if (notification_settings == NULL)
+	{
+		return;
+	}
+
+	corner = g_settings_get_string(notification_settings, "corner");
+	*top = strstr(corner, "bottom") == NULL;
+	*left = strstr(corner, "left") != NULL;
+}
+
+/* Where the notifications are in their window: in the corner the key names, or, on an output
+ * with no room for the dialog beside the corner's notifications, in a column under the clock,
+ * which the dialog takes the place of while it shows. */
+static gboolean place_notifications(gpointer data G_GNUC_UNUSED)
+{
+	GtkWidget* overlay = gtk_widget_get_parent(notifications);
+	GtkWidget* window;
+	gboolean top;
+	gboolean left;
+	gboolean narrow;
+	gboolean dialog_here;
+	gboolean visible;
+	int width;
+	const char* layout;
+	static char* last = NULL;
+	char* now;
+
+	place_notifications_id = 0;
+	if (overlay == NULL)
+	{
+		return G_SOURCE_REMOVE;
+	}
+
+	width = gtk_widget_get_allocated_width(overlay);
+	if (width <= 1)
+	{
+		/* Placed again when its window has a size. */
+		return G_SOURCE_REMOVE;
+	}
+	window = gtk_widget_get_parent(overlay);
+	dialog_here = gtk_widget_get_parent(plug) == overlay && gs_lock_plug_is_open(GS_LOCK_PLUG(plug));
+	if (dialog_here && gtk_widget_get_allocated_width(plug) > 1)
+	{
+		dialog_width = gtk_widget_get_allocated_width(plug);
+	}
+
+	notifications_corner(&top, &left);
+	narrow = (width - dialog_width) / 2 < GS_NOTIFICATIONS_WIDTH + 2 * NOTIFICATIONS_MARGIN;
+	if (narrow)
+	{
+		int clock_height;
+
+		gtk_widget_get_preferred_height(g_object_get_data(G_OBJECT(window), "clock"), NULL, &clock_height);
+		gtk_widget_set_halign(notifications, GTK_ALIGN_CENTER);
+		gtk_widget_set_valign(notifications, GTK_ALIGN_START);
+		gtk_widget_set_margin_start(notifications, 0);
+		gtk_widget_set_margin_end(notifications, 0);
+		gtk_widget_set_margin_bottom(notifications, 0);
+		gtk_widget_set_margin_top(notifications, NOTIFICATIONS_MARGIN + clock_height + NOTIFICATIONS_MARGIN);
+		layout = "in a column";
+	}
+	else
+	{
+		gtk_widget_set_halign(notifications, left ? GTK_ALIGN_START : GTK_ALIGN_END);
+		gtk_widget_set_valign(notifications, top ? GTK_ALIGN_START : GTK_ALIGN_END);
+		gtk_widget_set_margin_start(notifications, NOTIFICATIONS_MARGIN);
+		gtk_widget_set_margin_end(notifications, NOTIFICATIONS_MARGIN);
+		gtk_widget_set_margin_top(notifications, NOTIFICATIONS_MARGIN);
+		gtk_widget_set_margin_bottom(notifications, NOTIFICATIONS_MARGIN);
+		layout = top ? (left ? "in the top left corner" : "in the top right corner") : (left ? "in the bottom left corner" : "in the bottom right corner");
+	}
+	/* The newest is nearest the corner. */
+	gs_notifications_set_newest_last(notifications, !narrow && !top);
+	visible = gs_notifications_get_count(notifications) > 0 && !(narrow && dialog_here);
+	if (visible != gtk_widget_get_visible(notifications))
+	{
+		gs_debug("Notifications are %s", visible ? "shown" : "hidden");
+	}
+	gtk_widget_set_visible(notifications, visible);
+
+	now = g_strdup_printf("%s %s", gdk_monitor_get_model(g_object_get_data(G_OBJECT(window), "monitor")), layout);
+	if (g_strcmp0(now, last) != 0)
+	{
+		gs_debug("Notifications on %s", now);
+		g_free(last);
+		last = now;
+	}
+	else
+	{
+		g_free(now);
+	}
+
+	return G_SOURCE_REMOVE;
+}
+
+/* The notifications, the corner, the dialog or the window changed. */
+static void queue_place_notifications(void)
+{
+	if (place_notifications_id == 0)
+	{
+		place_notifications_id = g_idle_add(place_notifications, NULL);
+	}
+}
+
+/* Follows the corner key, if this system has it: Caminito's schemas are installed with it. */
+static void follow_notification_corner(void)
+{
+	GSettingsSchemaSource* source = g_settings_schema_source_get_default();
+	GSettingsSchema* schema = source != NULL ? g_settings_schema_source_lookup(source, "org.mate.Caminito.notifications", TRUE) : NULL;
+
+	if (schema == NULL)
+	{
+		gs_debug("No schema for the notifications' corner");
+		return;
+	}
+
+	g_settings_schema_unref(schema);
+	notification_settings = g_settings_new("org.mate.Caminito.notifications");
+	g_signal_connect_swapped(notification_settings, "changed::corner", G_CALLBACK(queue_place_notifications), NULL);
+}
+
 /* The Idle view's clock and date, at the top in the middle of a lock window. */
 static GtkWidget* add_clock(GtkWidget* window)
 {
@@ -954,9 +1121,16 @@ static void add_lock_window(GdkMonitor* monitor)
 	gtk_container_add(GTK_CONTAINER(overlay), add_clock(window));
 	gtk_container_add(GTK_CONTAINER(window), overlay);
 
+	g_signal_connect_swapped(overlay, "size-allocate", G_CALLBACK(queue_place_notifications), NULL);
+
 	if (gtk_widget_get_parent(plug) == NULL)
 	{
 		gtk_overlay_add_overlay(GTK_OVERLAY(overlay), plug);
+	}
+	if (gtk_widget_get_parent(notifications) == NULL)
+	{
+		move_to_window(notifications, window);
+		queue_place_notifications();
 	}
 
 	gtk_widget_show_all(window);
@@ -969,11 +1143,13 @@ static void monitor_added_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* moni
 	add_lock_window(monitor);
 }
 
-/* The dialog goes to another monitor's window before its own goes, if there's another. */
+/* The dialog and the notifications go to another monitor's window before their own goes, if
+ * there's another. */
 static void monitor_removed_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* monitor, gpointer data G_GNUC_UNUSED)
 {
 	GtkWidget* window;
 	GtkWidget* overlay;
+	GtkWidget* widgets[] = {plug, notifications};
 	GHashTableIter iter;
 	gpointer other;
 
@@ -986,23 +1162,30 @@ static void monitor_removed_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* mo
 	}
 
 	overlay = g_object_get_data(G_OBJECT(window), "overlay");
-	if (gtk_widget_get_parent(plug) == overlay)
+	for (guint i = 0; i < G_N_ELEMENTS(widgets); i++)
 	{
+		if (gtk_widget_get_parent(widgets[i]) != overlay)
+		{
+			continue;
+		}
+
 		g_hash_table_iter_init(&iter, lock_windows);
 		while (g_hash_table_iter_next(&iter, NULL, &other))
 		{
 			if (other != window)
 			{
-				move_dialog(other, NULL, NULL);
+				gs_debug("Moving %s to %s", widgets[i] == plug ? "the dialog" : "the notifications", gdk_monitor_get_model(g_object_get_data(G_OBJECT(other), "monitor")));
+				move_to_window(widgets[i], other);
 				break;
 			}
 		}
-	}
 
-	if (gtk_widget_get_parent(plug) == overlay)
-	{
-		gtk_container_remove(GTK_CONTAINER(overlay), plug);
+		if (gtk_widget_get_parent(widgets[i]) == overlay)
+		{
+			gtk_container_remove(GTK_CONTAINER(overlay), widgets[i]);
+		}
 	}
+	queue_place_notifications();
 
 	g_hash_table_remove(lock_windows, monitor);
 }
@@ -1029,7 +1212,8 @@ static void finished_cb(GtkSessionLockLock* session_lock, gpointer data G_GNUC_U
 	exit(1);
 }
 
-/* The clock has to be read over any wallpaper, a light one too. The Idle view has no blur. */
+/* The clock and the notifications have to be read over any wallpaper, a light one too. The Idle
+ * view has no blur. */
 static void load_css(void)
 {
 	GtkCssProvider* provider = gtk_css_provider_new();
@@ -1041,7 +1225,16 @@ static void load_css(void)
 	                                " border-radius: 12px;"
 	                                " padding: 6px 24px;"
 	                                " text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.6);"
-	                                " }",
+	                                " }"
+	                                ".lock-notification {"
+	                                " color: white;"
+	                                " background-color: rgba(0, 0, 0, 0.45);"
+	                                " border-radius: 12px;"
+	                                " padding: 10px 14px;"
+	                                " text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);"
+	                                " }"
+	                                ".lock-notification-app { color: rgba(255, 255, 255, 0.75); font-size: small; }"
+	                                ".lock-notification-summary { font-weight: bold; }",
 	                                -1,
 	                                NULL);
 	gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
@@ -1105,6 +1298,8 @@ int main(int argc, char** argv)
 
 	plug = gs_lock_plug_new();
 	g_object_ref_sink(plug);
+	notifications = gs_notifications_new();
+	g_object_ref_sink(notifications);
 
 	bg = mate_bg_new();
 	prefs = gs_prefs_new();
@@ -1127,6 +1322,10 @@ int main(int argc, char** argv)
 	load_css();
 	g_signal_connect_swapped(plug, "size-allocate", G_CALLBACK(queue_fit_clocks), NULL);
 	g_signal_connect_swapped(plug, "hide", G_CALLBACK(queue_fit_clocks), NULL);
+	g_signal_connect_swapped(plug, "size-allocate", G_CALLBACK(queue_place_notifications), NULL);
+	g_signal_connect_swapped(plug, "show", G_CALLBACK(queue_place_notifications), NULL);
+	g_signal_connect_swapped(plug, "hide", G_CALLBACK(queue_place_notifications), NULL);
+	follow_notification_corner();
 
 	lock_windows = g_hash_table_new_full(NULL, NULL, NULL, (GDestroyNotify) gtk_widget_destroy);
 	update_clocks(NULL);
@@ -1138,6 +1337,8 @@ int main(int argc, char** argv)
 	}
 	g_signal_connect(display, "monitor-added", G_CALLBACK(monitor_added_cb), NULL);
 	g_signal_connect(display, "monitor-removed", G_CALLBACK(monitor_removed_cb), NULL);
+	/* Asynchronous, so that the dialog never waits for the daemon. */
+	gs_notifications_start(notifications, queue_place_notifications);
 
 	g_idle_add(auth_check_idle, plug);
 

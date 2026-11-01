@@ -44,6 +44,7 @@ const CAMINITO_INTERFACE: &str = r#"
     <property name="PointerOutputFullscreenWindow" type="s" access="read"/>
     <property name="FullscreenWindows" type="as" access="read"/>
     <property name="Screencasting" type="b" access="read"/>
+    <property name="Locked" type="b" access="read"/>
   </interface>
 </node>
 "#;
@@ -610,6 +611,29 @@ impl Daemon<'_> {
             .into_iter()
             .map(|entry| entry.summary)
             .collect()
+    }
+
+    /// The Lock screen's list as the private API gives it: app, summary and body, newest first.
+    fn lock_screen(&self) -> Vec<(String, String, String)> {
+        let (entries,) = self
+            .api("LockScreenList", ().to_variant())
+            .get::<(Vec<(String, String, String)>,)>()
+            .expect("LockScreenList answers texts");
+        entries
+    }
+
+    /// The Lock screen's summaries, newest first.
+    fn lock_screen_summaries(&self) -> Vec<String> {
+        self.lock_screen()
+            .into_iter()
+            .map(|(_, summary, _)| summary)
+            .collect()
+    }
+
+    /// Caminito locks the session, and the daemon has heard of it.
+    fn lock(&self, caminito: &FakeCaminito) {
+        caminito.set("Locked", true);
+        self.bus.run_for(QUIET);
     }
 
     /// Each Notifying app's count.
@@ -3291,5 +3315,295 @@ fn turning_it_off_during_a_fullscreen_window_holds_it_off_while_the_pointer_visi
         caminito.set_fullscreen(None, &[]);
         caminito.set_fullscreen(Some("window-b"), &["window-b"]);
         daemon.wait_for_do_not_disturb((true, 0, "fullscreen"));
+    });
+}
+
+/// The daemon locked by `caminito`, with the Lock screen's mode `mode`.
+fn locked_with_mode<'a>(bus: &'a Bus, mode: &str) -> (Daemon<'a>, FakeCaminito) {
+    let daemon = start(bus);
+    daemon.settings.set_string("lock-screen", mode).unwrap();
+    let caminito = FakeCaminito::start(bus);
+    daemon.lock(&caminito);
+    (daemon, caminito)
+}
+
+#[test]
+fn with_none_the_lock_screen_lists_no_notification_at_all() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        let caminito = FakeCaminito::start(bus);
+        daemon.lock(&caminito);
+
+        daemon.notify(Notify {
+            body: "Secret",
+            ..notify("Hello")
+        });
+
+        assert_eq!(daemon.settings.string("lock-screen"), "none");
+        assert!(daemon.lock_screen().is_empty());
+        daemon.settings.set_string("lock-screen", "full").unwrap();
+        assert_eq!(daemon.lock_screen_summaries(), ["Hello"]);
+        daemon.settings.set_string("lock-screen", "none").unwrap();
+        assert!(daemon.lock_screen().is_empty());
+    });
+}
+
+#[test]
+fn with_full_the_lock_screen_lists_app_summary_and_body_newest_first() {
+    bus::run(|bus| {
+        let (daemon, _caminito) = locked_with_mode(bus, "full");
+
+        daemon.notify(Notify {
+            body: "First body",
+            ..notify("First")
+        });
+        daemon.notify(Notify {
+            app_name: "Mail",
+            body: "Second body",
+            ..notify("Second")
+        });
+
+        assert_eq!(
+            daemon.lock_screen(),
+            [
+                (
+                    "Mail".to_owned(),
+                    "Second".to_owned(),
+                    "Second body".to_owned()
+                ),
+                (
+                    "Test".to_owned(),
+                    "First".to_owned(),
+                    "First body".to_owned()
+                ),
+            ]
+        );
+    });
+}
+
+#[test]
+fn with_title_the_lock_screen_lists_app_and_summary_only() {
+    bus::run(|bus| {
+        let (daemon, _caminito) = locked_with_mode(bus, "title");
+
+        daemon.notify(Notify {
+            body: "Secret body",
+            ..notify("Hello")
+        });
+
+        assert_eq!(
+            daemon.lock_screen(),
+            [("Test".to_owned(), "Hello".to_owned(), String::new())]
+        );
+    });
+}
+
+#[test]
+fn an_app_with_previews_off_shows_its_name_and_notification_in_full_and_title() {
+    bus::run(|bus| {
+        for mode in ["full", "title"] {
+            let (daemon, _caminito) = locked_with_mode(bus, mode);
+            daemon
+                .apps
+                .app("Bank")
+                .set_boolean("previews", false)
+                .unwrap();
+
+            daemon.notify(Notify {
+                app_name: "Bank",
+                body: "Balance",
+                ..notify("Transfer")
+            });
+
+            assert_eq!(
+                daemon.lock_screen(),
+                [("Bank".to_owned(), "Notification".to_owned(), String::new())],
+                "in {mode}"
+            );
+        }
+    });
+}
+
+#[test]
+fn delivery_decides_what_the_lock_screen_lists() {
+    bus::run(|bus| {
+        let (daemon, _caminito) = locked_with_mode(bus, "full");
+        daemon
+            .apps
+            .app("Quiet")
+            .set_string("delivery", "history")
+            .unwrap();
+        daemon
+            .apps
+            .app("Off")
+            .set_string("delivery", "off")
+            .unwrap();
+
+        for app_name in ["Quiet", "Off", "Loud"] {
+            daemon.notify(Notify {
+                app_name,
+                ..notify(app_name)
+            });
+        }
+
+        assert_eq!(daemon.lock_screen_summaries(), ["Loud"]);
+    });
+}
+
+#[test]
+fn do_not_disturb_keeps_a_notification_off_the_lock_screen_unless_it_breaks_through() {
+    bus::run(|bus| {
+        let (daemon, _caminito) = locked_with_mode(bus, "full");
+        daemon
+            .apps
+            .app("Phone")
+            .set_boolean("breaks-through", true)
+            .unwrap();
+        daemon.set_do_not_disturb("until-turned-off");
+
+        daemon.notify(notify("Quiet"));
+        daemon.notify(Notify {
+            app_name: "Phone",
+            ..notify("Call")
+        });
+        daemon.notify(notify("Battery low").hint("urgency", 2u8));
+
+        assert_eq!(daemon.lock_screen_summaries(), ["Battery low", "Call"]);
+        // It doesn't show when Do Not Disturb ends.
+        daemon.set_do_not_disturb("off");
+        assert_eq!(daemon.lock_screen_summaries(), ["Battery low", "Call"]);
+    });
+}
+
+#[test]
+fn a_transient_notification_is_not_on_the_lock_screen() {
+    bus::run(|bus| {
+        let (daemon, _caminito) = locked_with_mode(bus, "full");
+
+        daemon.notify(notify("Volume").hint("transient", true));
+        daemon.notify(notify("Mail"));
+
+        assert_eq!(daemon.lock_screen_summaries(), ["Mail"]);
+    });
+}
+
+#[test]
+fn a_notification_its_app_withdraws_or_the_user_dismisses_leaves_the_lock_screen() {
+    bus::run(|bus| {
+        let (daemon, _caminito) = locked_with_mode(bus, "full");
+        let withdrawn = daemon.notify(notify("Withdrawn"));
+        let dismissed = daemon.notify(notify("Dismissed"));
+        daemon.notify(notify("Kept"));
+
+        daemon.close(withdrawn);
+        daemon.api("Dismiss", (dismissed,).to_variant());
+
+        assert_eq!(daemon.lock_screen_summaries(), ["Kept"]);
+    });
+}
+
+#[test]
+fn what_arrived_before_the_lock_is_not_on_the_lock_screen_and_the_unlock_empties_it() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.settings.set_string("lock-screen", "full").unwrap();
+        let caminito = FakeCaminito::start(bus);
+        daemon.notify(notify("Before"));
+
+        daemon.lock(&caminito);
+        assert!(daemon.lock_screen().is_empty());
+        daemon.notify(notify("During"));
+        assert_eq!(daemon.lock_screen_summaries(), ["During"]);
+
+        caminito.set("Locked", false);
+        daemon.bus.run_for(QUIET);
+        assert!(daemon.lock_screen().is_empty());
+        // The next lock starts again.
+        daemon.lock(&caminito);
+        assert!(daemon.lock_screen().is_empty());
+    });
+}
+
+#[test]
+fn a_replacement_shows_its_new_text_on_the_lock_screen_as_the_newest() {
+    bus::run(|bus| {
+        let (daemon, _caminito) = locked_with_mode(bus, "full");
+        let first = daemon.notify(notify("Download 10%"));
+        daemon.notify(notify("Other"));
+
+        daemon.notify(Notify {
+            replaces: first,
+            ..notify("Download 90%")
+        });
+
+        assert_eq!(daemon.lock_screen_summaries(), ["Download 90%", "Other"]);
+    });
+}
+
+#[test]
+fn the_lock_screen_gets_text_only_and_limited() {
+    bus::run(|bus| {
+        let (daemon, _caminito) = locked_with_mode(bus, "full");
+
+        daemon.notify(Notify {
+            body: "<b>Bold</b> &amp; <a href=\"https://x.org\">link</a> <img src=\"x.png\"/>a &lt; b\nnext\u{202e}line\u{7}",
+            ..notify("Tom\tand\nJerry")
+        });
+
+        assert_eq!(
+            daemon.lock_screen(),
+            [(
+                "Test".to_owned(),
+                "Tom and Jerry".to_owned(),
+                "Bold & link a < b nextline".to_owned()
+            )]
+        );
+
+        let huge = "é".repeat(5_000);
+        let huge: &'static str = Box::leak(huge.into_boxed_str());
+        for _ in 0..12 {
+            daemon.notify(Notify {
+                app_name: huge,
+                body: huge,
+                ..notify(huge)
+            });
+        }
+        let list = daemon.lock_screen();
+        assert_eq!(list.len(), 8);
+        for (app, summary, body) in list {
+            assert!(app.chars().count() <= 60);
+            assert!(summary.chars().count() <= 120);
+            assert!(body.chars().count() <= 300);
+            assert!(summary.ends_with('…') && body.ends_with('…'));
+        }
+    });
+}
+
+#[test]
+fn a_change_of_the_list_or_of_the_key_is_signalled_to_the_lock_screen() {
+    bus::run(|bus| {
+        let (daemon, _caminito) = locked_with_mode(bus, "full");
+        let changed = signal("LockScreenChanged", "()");
+        let wait_for_change = |daemon: &Daemon<'_>| {
+            daemon.bus.wait_until("LockScreenChanged", || {
+                daemon.api_signals().contains(&changed)
+            });
+        };
+        daemon.forget_signals();
+
+        let id = daemon.notify(Notify {
+            body: "Text",
+            ..notify("Mail")
+        });
+        wait_for_change(&daemon);
+
+        daemon.forget_signals();
+        daemon.settings.set_string("lock-screen", "title").unwrap();
+        wait_for_change(&daemon);
+        assert_eq!(daemon.api_signals(), [signal("LockScreenChanged", "()")]);
+
+        daemon.forget_signals();
+        daemon.close(id);
+        wait_for_change(&daemon);
     });
 }

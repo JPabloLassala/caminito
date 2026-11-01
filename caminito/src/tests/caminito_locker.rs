@@ -21,8 +21,8 @@ use std::io::ErrorKind;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use smithay::output::Output;
 
@@ -34,7 +34,7 @@ use super::keymap::strings;
 use super::locker::fixture_with;
 use crate::output::output_geometry;
 use crate::settings::Value;
-use crate::settings::translate::{CAMINITO, KEYBOARD_XKB};
+use crate::settings::translate::{CAMINITO, KEYBOARD_XKB, POWER_MANAGER, SCREENSAVER, SESSION};
 
 /// The password of the stand-in service, typed as three presses of `KEY_A`.
 const PASSWORD: &str = "aaa";
@@ -1381,4 +1381,396 @@ fn the_layout_indicator_hides_when_caminito_cant_be_asked_and_the_dialog_still_o
     tap(&mut f, KEY_A);
     f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == 1, seen);
     assert_eq!(locker.count(&indicator("us")), 0, "{}", locker.seen());
+}
+
+const NOTIFICATIONS_NAME: &str = "org.mate.Caminito.Notifications";
+const NOTIFICATIONS_PATH: &str = "/org/mate/Caminito/Notifications";
+
+/// An entry of `LockScreenList`: the app, the summary and the body.
+type Entry = (String, String, String);
+
+fn entry(app: &str, summary: &str, body: &str) -> Entry {
+    (app.to_owned(), summary.to_owned(), body.to_owned())
+}
+
+/// What the stand-in daemon answers with, and whether it answers at all.
+#[derive(Clone, Default)]
+struct Answers {
+    entries: Arc<Mutex<Vec<Entry>>>,
+    hangs: Arc<AtomicBool>,
+}
+
+/// caminito-notifications' private API, as much of it as the Locker calls.
+struct FakeNotifications(Answers);
+
+#[zbus::interface(name = "org.mate.Caminito.Notifications")]
+impl FakeNotifications {
+    async fn lock_screen_list(&self) -> Vec<Entry> {
+        if self.0.hangs.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
+        self.0.entries.lock().unwrap().clone()
+    }
+}
+
+/// A daemon that answers `LockScreenList` with another type than the method has.
+struct FakeNotificationsOfAnotherType;
+
+#[zbus::interface(name = "org.mate.Caminito.Notifications")]
+impl FakeNotificationsOfAnotherType {
+    fn lock_screen_list(&self) -> Vec<(String, String)> {
+        vec![("App".to_owned(), "Summary".to_owned())]
+    }
+}
+
+/// A session bus of the Locker's own, and the notification daemon on it, if there is one:
+/// the tests share the real session bus, where one name has one owner.
+struct NotificationsBus {
+    _dir: tempfile::TempDir,
+    bus: Bus,
+    owner: Option<zbus::blocking::Connection>,
+    answers: Answers,
+}
+
+impl NotificationsBus {
+    /// A bus with nobody on it.
+    fn without_a_daemon() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let bus = Bus::start(&dir.path().join("bus"));
+        NotificationsBus {
+            _dir: dir,
+            bus,
+            owner: None,
+            answers: Answers::default(),
+        }
+    }
+
+    fn connect(&self) -> zbus::blocking::connection::Builder<'static> {
+        zbus::blocking::connection::Builder::address(self.bus.address.as_str())
+            .unwrap()
+            .name(NOTIFICATIONS_NAME)
+            .unwrap()
+    }
+
+    /// A bus with the daemon, listing `entries`.
+    fn listing(entries: Vec<Entry>) -> Self {
+        let mut bus = Self::without_a_daemon();
+        *bus.answers.entries.lock().unwrap() = entries;
+        bus.serve();
+        bus
+    }
+
+    fn serve(&mut self) {
+        let fake = FakeNotifications(self.answers.clone());
+        self.owner = Some(
+            self.connect()
+                .serve_at(NOTIFICATIONS_PATH, fake)
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+    }
+
+    /// A bus with a daemon that takes the call and never answers.
+    fn hanging() -> Self {
+        let mut bus = Self::without_a_daemon();
+        bus.answers.hangs.store(true, Ordering::SeqCst);
+        bus.serve();
+        bus
+    }
+
+    /// A bus with a daemon whose answer isn't of the method's type.
+    fn of_another_type() -> Self {
+        let mut bus = Self::without_a_daemon();
+        bus.owner = Some(
+            bus.connect()
+                .serve_at(NOTIFICATIONS_PATH, FakeNotificationsOfAnotherType)
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+        bus
+    }
+
+    /// The list is `entries` from now on, and the daemon says so.
+    fn list(&self, entries: Vec<Entry>) {
+        *self.answers.entries.lock().unwrap() = entries;
+        self.owner
+            .as_ref()
+            .expect("the daemon is on the bus")
+            .emit_signal(
+                None::<&str>,
+                NOTIFICATIONS_PATH,
+                NOTIFICATIONS_NAME,
+                "LockScreenChanged",
+                &(),
+            )
+            .unwrap();
+    }
+
+    /// The daemon leaves the bus.
+    fn leave(&mut self) {
+        self.owner = None;
+    }
+
+    /// The Locker's session bus is this one.
+    fn env(&self) -> Vec<(&'static str, String)> {
+        vec![("DBUS_SESSION_BUS_ADDRESS", self.bus.address.clone())]
+    }
+}
+
+/// The corner key at `corner`, with the background.
+fn with_corner(corner: &str) -> String {
+    format!("{SOLID_BACKGROUND}\n[org/mate/caminito/notifications]\ncorner='{corner}'\n")
+}
+
+/// The locker with `keyfile` on `outputs`, on the bus of `daemon`, locked.
+fn locked_with_notifications(
+    outputs: &[(i32, i32)],
+    keyfile: &str,
+    daemon: &NotificationsBus,
+) -> (Fixture, Locker) {
+    let mut locker = Locker::new();
+    locker.set_settings(keyfile);
+    locker.env.extend(daemon.env());
+    let (mut f, locker) = lock_with(locker, outputs, |_| None);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    (f, locker)
+}
+
+/// Where a card of the list is on an output of 1920 by 1080 with the list at the top right,
+/// the top left, the bottom right or the bottom left, inside the first or last entry.
+const TOP_RIGHT_CARD: (i32, i32) = (1700, 36);
+const BOTTOM_LEFT_CARD: (i32, i32) = (124, 1040);
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_list_shows_in_the_corner_the_key_names_and_follows_a_change_of_it() {
+    let daemon = NotificationsBus::listing(vec![
+        entry("Mail", "Ana", "Lunch?"),
+        entry("Chat", "Luis", "On my way"),
+    ]);
+    let (mut f, locker) = locked_with_notifications(&[(1920, 1080)], SOLID_BACKGROUND, &daemon);
+    let seen = || locker.seen();
+    let output = f.state.caminito.outputs[0].clone();
+
+    f.dispatch_until_explained(|_| locker.count("in the top right corner") == 1, seen);
+    assert_eq!(
+        locker.count("Notifications: 2 shown"),
+        1,
+        "{}",
+        locker.seen()
+    );
+    wait_for_not_wallpaper(&mut f, &locker, &output, TOP_RIGHT_CARD.0, TOP_RIGHT_CARD.1);
+    f.wait_for_pixel_on(&output, BOTTOM_LEFT_CARD.0, BOTTOM_LEFT_CARD.1, WALLPAPER);
+
+    locker.set_settings(&with_corner("bottom-left"));
+    f.dispatch_until_explained(|_| locker.count("in the bottom left corner") == 1, seen);
+    wait_for_not_wallpaper(
+        &mut f,
+        &locker,
+        &output,
+        BOTTOM_LEFT_CARD.0,
+        BOTTOM_LEFT_CARD.1,
+    );
+    f.wait_for_pixel_on(&output, TOP_RIGHT_CARD.0, TOP_RIGHT_CARD.1, WALLPAPER);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_list_follows_the_pointers_output_and_stays_while_the_dialog_shows() {
+    let daemon = NotificationsBus::listing(vec![entry("Mail", "Ana", "Lunch?")]);
+    let (mut f, locker) =
+        locked_with_notifications(&[(1920, 1080), (1920, 1080)], SOLID_BACKGROUND, &daemon);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|_| locker.count("Notifications: 1 shown") == 1, seen);
+    let outputs = f.state.caminito.outputs.clone();
+    let (x, y) = TOP_RIGHT_CARD;
+    wait_for_not_wallpaper(&mut f, &locker, &outputs[0], x, y);
+
+    f.pointer_move(2020.0, 100.0);
+    f.dispatch_until_explained(|_| locker.count("Moving the notifications to") == 1, seen);
+    wait_for_not_wallpaper(&mut f, &locker, &outputs[1], x, y);
+    f.wait_for_pixel_on(&outputs[0], x, y, WALLPAPER);
+
+    // The dialog opens in the middle and the list stays in its corner.
+    tap(&mut f, KEY_LEFTSHIFT);
+    wait_for_dialog_on(&mut f, &locker, &outputs[1]);
+    wait_for_not_wallpaper(&mut f, &locker, &outputs[1], x, y);
+    assert_eq!(
+        locker.count("Notifications are hidden"),
+        0,
+        "{}",
+        locker.seen()
+    );
+
+    // Its output goes: the list goes to the other.
+    f.unplug(&outputs[1]);
+    wait_for_not_wallpaper(&mut f, &locker, &outputs[0], x, y);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn on_a_narrow_output_the_list_is_a_column_under_the_clock_and_the_dialog_takes_its_place() {
+    let daemon = NotificationsBus::listing(vec![entry("Mail", "Ana", "Lunch?")]);
+    let (mut f, locker) = locked_with_notifications(&[(800, 600)], SOLID_BACKGROUND, &daemon);
+    let seen = || locker.seen();
+    let output = f.state.caminito.outputs[0].clone();
+
+    f.dispatch_until_explained(|_| locker.count("in a column") == 1, seen);
+    assert_eq!(
+        locker.count("in the top right corner"),
+        0,
+        "{}",
+        locker.seen()
+    );
+    // In the middle under the clock, and nothing in the corner.
+    wait_for_not_wallpaper(&mut f, &locker, &output, 300, 240);
+    f.wait_for_pixel_on(&output, 780, 20, WALLPAPER);
+
+    tap(&mut f, KEY_LEFTSHIFT);
+    f.dispatch_until_explained(|_| locker.count("Notifications are hidden") == 1, seen);
+    tap(&mut f, KEY_ESC);
+    f.dispatch_until_explained(|_| locker.count("Notifications are shown") == 2, seen);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_list_follows_the_daemon_and_is_empty_without_it() {
+    let mut daemon = NotificationsBus::listing(Vec::new());
+    let (mut f, locker) = locked_with_notifications(&[(1920, 1080)], SOLID_BACKGROUND, &daemon);
+    let seen = || locker.seen();
+    let output = f.state.caminito.outputs[0].clone();
+    f.dispatch_until_explained(|_| locker.count("Notifications: 0 shown") == 1, seen);
+    f.wait_for_pixel_on(&output, TOP_RIGHT_CARD.0, TOP_RIGHT_CARD.1, WALLPAPER);
+
+    daemon.list(vec![entry("Mail", "Ana", "Lunch?")]);
+    f.dispatch_until_explained(|_| locker.count("Notifications: 1 shown") == 1, seen);
+    wait_for_not_wallpaper(&mut f, &locker, &output, TOP_RIGHT_CARD.0, TOP_RIGHT_CARD.1);
+
+    daemon.leave();
+    f.dispatch_until_explained(|_| locker.count("Notifications: 0 shown") == 2, seen);
+    f.wait_for_pixel_on(&output, TOP_RIGHT_CARD.0, TOP_RIGHT_CARD.1, WALLPAPER);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_hung_daemon_does_not_delay_the_dialog() {
+    let daemon = NotificationsBus::hanging();
+    let (mut f, locker) = locked_with_notifications(&[(1920, 1080)], SOLID_BACKGROUND, &daemon);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
+
+    tap(&mut f, KEY_LEFTSHIFT);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == 1, seen);
+
+    // The call has no answer yet, and the password unlocks all the same.
+    assert_eq!(locker.count("Notifications:"), 0, "{}", locker.seen());
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", seen);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_daemon_that_never_answers_is_an_empty_list_once_the_time_is_up() {
+    let daemon = NotificationsBus::hanging();
+    let (mut f, locker) = locked_with_notifications(&[(1920, 1080)], SOLID_BACKGROUND, &daemon);
+
+    f.dispatch_until_explained(
+        |_| locker.count("Notifications: 0 shown") == 1,
+        || locker.seen(),
+    );
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn huge_and_odd_text_is_cut_and_shown_as_text_and_the_locker_still_unlocks() {
+    let huge = "é".repeat(200_000);
+    let mut entries = vec![
+        entry(
+            "<b>App</b>",
+            "<span foreground=\"red\">&amp; %s %n</span>",
+            "line\none\u{7}\u{202e}",
+        ),
+        entry("", "", ""),
+        entry(&huge, &huge, &huge),
+    ];
+    entries.extend((0..20).map(|n| entry("Many", &format!("Entry {n}"), "")));
+    let daemon = NotificationsBus::listing(entries);
+    let (mut f, locker) = locked_with_notifications(&[(1920, 1080)], SOLID_BACKGROUND, &daemon);
+    let seen = || locker.seen();
+
+    // At most eight, and no text of more than the longest limit.
+    f.dispatch_until_explained(|_| locker.count("Notifications: 8 shown") == 1, seen);
+    let longest = locker
+        .seen()
+        .lines()
+        .filter_map(|line| line.split("Notification text: ").nth(1))
+        .filter_map(|rest| rest.split(' ').next()?.parse::<usize>().ok())
+        .max();
+    assert_eq!(longest, Some(300), "{}", locker.seen());
+
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
+    tap(&mut f, KEY_A);
+    f.dispatch_until_explained(|_| locker.count(DIALOG_SHOWS) == 1, seen);
+    type_and_enter(&mut f, &PASSWORD[1..]);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", seen);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn an_answer_of_another_type_is_an_empty_list_and_the_locker_goes_on() {
+    let daemon = NotificationsBus::of_another_type();
+    let (mut f, locker) = locked_with_notifications(&[(1920, 1080)], SOLID_BACKGROUND, &daemon);
+    let seen = || locker.seen();
+
+    f.dispatch_until_explained(|_| locker.count("Notifications: 0 shown") == 1, seen);
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(|f| f.lock_state() == "unlocked", seen);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_notification_does_not_wake_a_blanked_output() {
+    let daemon = NotificationsBus::listing(Vec::new());
+    let mut locker = Locker::new();
+    locker.set_settings(SOLID_BACKGROUND);
+    locker.env.extend(daemon.env());
+    let settings = vec![
+        (SESSION, "idle-delay".into(), Value::Int(1)),
+        (
+            SCREENSAVER,
+            "idle-activation-enabled".into(),
+            Value::Bool(true),
+        ),
+        (SCREENSAVER, "lock-enabled".into(), Value::Bool(false)),
+        (POWER_MANAGER, "sleep-display-ac".into(), Value::Int(0)),
+        (
+            CAMINITO,
+            "locker-command".into(),
+            Value::StrList(locker.command()),
+        ),
+    ];
+    let mut f = Fixture::with_settings(settings);
+    let output = f.add_output((1920, 1080), 1.0);
+    f.dispatch();
+    assert!(f.state.request_lock());
+    locker.connect(&mut f);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
+    f.dispatch_until_explained(|_| locker.count("Notifications: 0 shown") == 1, seen);
+    let blanked = |f: &Fixture| dump(f)["idle"]["blanked"].as_bool().unwrap();
+
+    f.advance_clock(std::time::Duration::from_secs(60));
+    assert!(blanked(&f));
+    f.wait_for_pixel_on(&output, TOP_RIGHT_CARD.0, TOP_RIGHT_CARD.1, 0x000000);
+
+    daemon.list(vec![entry("Mail", "Ana", "Lunch?")]);
+    f.dispatch_until_explained(|_| locker.count("Notifications: 1 shown") == 1, seen);
+    f.dispatch_for(std::time::Duration::from_millis(300));
+
+    // The list is in the locker's window, which a blanked output doesn't show.
+    assert!(blanked(&f), "{}", locker.seen());
+    f.wait_for_pixel_on(&output, TOP_RIGHT_CARD.0, TOP_RIGHT_CARD.1, 0x000000);
 }

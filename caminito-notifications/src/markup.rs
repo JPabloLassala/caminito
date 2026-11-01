@@ -58,6 +58,86 @@ pub(crate) fn sanitize(body: &str) -> String {
     out
 }
 
+/// The text of `markup`, which [`sanitize`] made: its tags gone and its entities read.
+pub(crate) fn plain(markup: &str) -> String {
+    let mut out = String::with_capacity(markup.len());
+    let mut rest = markup;
+    while let Some(c) = rest.chars().next() {
+        if c == '<' {
+            // Sanitized markup has every `>` of its text escaped, so the tag ends at the next.
+            rest = rest.find('>').map_or("", |end| &rest[end + 1..]);
+            continue;
+        }
+        if c == '&'
+            && let Some(length) = entity(rest)
+        {
+            out.push(read_entity(&rest[1..length - 1]));
+            rest = &rest[length..];
+            continue;
+        }
+        out.push(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    out
+}
+
+/// The character the entity `name` (between `&` and `;`) stands for, as [`entity`] knows it.
+fn read_entity(name: &str) -> char {
+    let number = match name.strip_prefix('#') {
+        Some(number) => match number.strip_prefix(['x', 'X']) {
+            Some(hex) => u32::from_str_radix(hex, 16).ok(),
+            None => number.parse().ok(),
+        },
+        None => None,
+    };
+    match name {
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        "quot" => '"',
+        "apos" => '\'',
+        _ => number
+            .and_then(char::from_u32)
+            .unwrap_or(char::REPLACEMENT_CHARACTER),
+    }
+}
+
+/// `text` as one line for a screen nobody has unlocked: its white space is one space between
+/// words, its control characters and the ones that turn text around are gone, and it is
+/// cut to `max` characters, the last of them `…` when it was longer.
+pub(crate) fn line(text: &str, max: usize) -> String {
+    let mut out = String::new();
+    let mut space = false;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            space = !out.is_empty();
+        } else if !c.is_control() && !is_bidi_control(c) {
+            if space {
+                out.push(' ');
+                space = false;
+            }
+            out.push(c);
+        }
+    }
+    match out.char_indices().nth(max) {
+        Some(_) => {
+            let end = out
+                .char_indices()
+                .nth(max.saturating_sub(1))
+                .map_or(0, |(at, _)| at);
+            out.truncate(end);
+            out.push('…');
+            out
+        }
+        None => out,
+    }
+}
+
+/// Whether `c` sets the direction of the text around it, which could turn a line inside out.
+fn is_bidi_control(c: char) -> bool {
+    matches!(c, '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
 fn close(out: &mut String, tag: &str) {
     out.push_str("</");
     out.push_str(tag);
@@ -166,7 +246,24 @@ fn entity(text: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize;
+    use super::{line, plain, sanitize};
+
+    #[test]
+    fn plain_text_loses_tags_and_reads_entities() {
+        assert_eq!(
+            plain("<b>a</b> &amp; <a href=\"x?a=1&amp;b\">b</a> &lt;3 &#169;&#xA9;"),
+            "a & b <3 \u{a9}\u{a9}"
+        );
+    }
+
+    #[test]
+    fn a_line_has_single_spaces_no_control_characters_and_a_limit() {
+        assert_eq!(line("  a \n\t b\u{7}c\u{202e}d  ", 20), "a bcd");
+        assert_eq!(line("abcdef", 6), "abcdef");
+        assert_eq!(line("abcdefg", 6), "abcde…");
+        assert_eq!(line("ééééééé", 3), "éé…");
+        assert_eq!(line("", 3), "");
+    }
 
     #[test]
     fn the_specs_styles_and_links_are_kept() {

@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use caminito_notifications::apps::{self, App};
 use caminito_notifications::server::Icon;
-use caminito_notifications::settings::{self, Corner, Delivery, Settings};
+use caminito_notifications::settings::{self, Corner, Delivery, LockScreen, Settings};
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 
@@ -174,6 +174,18 @@ fn general(settings: &gio::Settings) -> gtk::Widget {
     seconds.append(&timeout);
     seconds.append(&gtk::Label::new(Some("seconds")));
     row(&bubbles, 1, "Stay for", &seconds);
+
+    let locked = section(&page, "Lock screen");
+    row(
+        &locked,
+        0,
+        "Show",
+        &choice(
+            settings,
+            settings::LOCK_SCREEN,
+            &LockScreen::ALL.map(|mode| (mode.nick(), mode.label())),
+        ),
+    );
 
     let quiet = section(&page, "Do Not Disturb");
     full_row(
