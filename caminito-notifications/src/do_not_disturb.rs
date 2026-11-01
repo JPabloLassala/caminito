@@ -110,14 +110,14 @@ impl DoNotDisturb {
         let Some(text) = read(path) else {
             return DoNotDisturb::Off;
         };
-        let Some(read) = decode(&text) else {
+        let Some(kept) = decode(&text) else {
             glib::g_warning!(DOMAIN, "can't read {}", path.display());
             return DoNotDisturb::Off;
         };
-        if read.ended(now) {
+        if kept.ended(now) {
             DoNotDisturb::Off
         } else {
-            read
+            kept
         }
     }
 
@@ -127,7 +127,7 @@ impl DoNotDisturb {
             DoNotDisturb::Off => None,
             DoNotDisturb::On { end } => Some(encode(end)),
         };
-        keep(path, text);
+        write_or_remove(path, text);
     }
 
     /// Whether it's on with an end that `now` has reached.
@@ -207,7 +207,7 @@ impl ScheduleHold {
 
     /// Keeps `hold` in `path`, which no hold is the absence of.
     pub(crate) fn save(hold: Option<ScheduleHold>, path: &Path) {
-        keep(path, hold.map(encode_hold));
+        write_or_remove(path, hold.map(encode_hold));
     }
 }
 
@@ -456,8 +456,8 @@ fn read(path: &Path) -> Option<String> {
     }
 }
 
-/// Keeps `text` in the file at `path`, which nothing is the absence of.
-fn keep(path: &Path, text: Option<String>) {
+/// Writes `text` to the file at `path`, or removes the file if there's no text.
+fn write_or_remove(path: &Path, text: Option<String>) {
     let written = match text {
         None => match std::fs::remove_file(path) {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),

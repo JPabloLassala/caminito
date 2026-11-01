@@ -2866,16 +2866,21 @@ fn the_schedules_hold_survives_a_restart_of_the_daemon_until_the_schedules_next_
         assert_eq!(daemon.bubbles.ids().len(), 1);
         drop(daemon);
 
-        // The next night it's on again, and a restart then has no hold left to find.
+        let hold_file = home
+            .directory
+            .path()
+            .join("caminito")
+            .join("do-not-disturb-schedule-hold");
+        assert!(hold_file.exists());
+
+        // The next night it's on again, and the hold's file is gone.
         home.clock.0.set(january(13, 22, 0));
         let daemon = start_scheduled_in(bus, home.clone(), 22 * 60, 7 * 60);
         assert_eq!(
             daemon.do_not_disturb(),
             (true, january(14, 7, 0), "schedule".to_owned())
         );
-        drop(daemon);
-        let daemon = start_scheduled_in(bus, home, 22 * 60, 7 * 60);
-        assert!(daemon.do_not_disturb().0);
+        assert!(!hold_file.exists());
     });
 }
 
