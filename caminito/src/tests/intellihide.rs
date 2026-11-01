@@ -44,8 +44,16 @@ fn bottom_panel() -> LayerSpec {
 /// Caminito with one 1920×1080 output, the Popup slide on or off, and a client. The clock is
 /// stopped, so the slide is read where `advance_clock` has it.
 fn desk(slide: bool) -> (Fixture, ClientId) {
-    let mut f =
-        Fixture::with_settings(vec![(CAMINITO, "popup-slide".into(), Setting::Bool(slide))]);
+    desk_with(if slide { "slide" } else { "none" })
+}
+
+/// Caminito as `desk` has it, with the Popup animation `animation`.
+fn desk_with(animation: &str) -> (Fixture, ClientId) {
+    let mut f = Fixture::with_settings(vec![(
+        CAMINITO,
+        "popup-animation".into(),
+        Setting::Str(animation.into()),
+    )]);
     f.add_output((1920, 1080), 1.0);
     let id = f.connect(Kind::Xdg);
     f.stop_clock();
@@ -270,6 +278,22 @@ fn with_the_popup_slide_off_a_panel_goes_at_once() {
 
     maximise(&mut f, window);
 
+    assert_eq!(panel(&f), (true, (0, 1080)));
+}
+
+#[test]
+fn under_the_popup_fade_a_panel_still_slides() {
+    let (mut f, id) = desk_with("fade");
+    let window = f.map(id, WindowSpec::plain((400, 300)));
+    a_panel(&mut f, id);
+    f.pointer_move(960., 500.);
+
+    maximise(&mut f, window);
+    let (hidden, (_, y)) = panel(&f);
+    assert!(hidden);
+    assert!(y < 1080, "it's on its way, at {y}");
+
+    f.advance_clock(crate::popup_slide::LENGTH);
     assert_eq!(panel(&f), (true, (0, 1080)));
 }
 

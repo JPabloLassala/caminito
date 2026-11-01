@@ -102,7 +102,11 @@ fn hidden(f: &Fixture) -> Option<bool> {
 #[test]
 #[ignore = "needs the probe built from the mate-panel patch, CAMINITO_INTELLIHIDE_PROBE"]
 fn the_patched_panels_request_is_understood_and_ending_it_shows_the_panel() {
-    let mut f = Fixture::with_settings(vec![(CAMINITO, "popup-slide".into(), Setting::Bool(true))]);
+    let mut f = Fixture::with_settings(vec![(
+        CAMINITO,
+        "popup-animation".into(),
+        Setting::Str("slide".into()),
+    )]);
     f.add_output((1920, 1080), 1.0);
     let id = f.connect(Kind::Xdg);
     f.stop_clock();

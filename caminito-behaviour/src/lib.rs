@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod animations;
 pub mod hot_corners;
 pub mod key_remaps;
 pub mod open_windows;
@@ -17,7 +18,12 @@ pub const SCHEMA: &str = "org.mate.Caminito";
 
 /// The installed `org.mate.Caminito`, if it's installed and compiled.
 fn installed() -> Option<gio::Settings> {
+    installed_schema(SCHEMA)
+}
+
+/// The settings of the schema `id`, if it's installed and compiled.
+fn installed_schema(id: &str) -> Option<gio::Settings> {
     let source = gio::SettingsSchemaSource::default()?;
-    source.lookup(SCHEMA, true)?;
-    Some(gio::Settings::new(SCHEMA))
+    source.lookup(id, true)?;
+    Some(gio::Settings::new(id))
 }

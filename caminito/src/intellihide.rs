@@ -198,7 +198,7 @@ impl Caminito {
     /// it, from the refresh pass after the last step that changes the windows, and before the
     /// pointer's focus, which finds a panel where it is drawn. A slide starts when policy's
     /// answer changes, runs the Popup slide's motion, and turns round from where it is. With
-    /// the slide off, or the session locked, or the Overview open, a panel goes at once.
+    /// the Popup animation None, or the session locked, or the Overview open, a panel goes at once.
     pub(crate) fn refresh_intellihide(&mut self) {
         let askers = self.intellihide_askers();
         let panels: Vec<IntellihidePanel> = askers.iter().map(|asker| asker.panel).collect();

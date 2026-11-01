@@ -23,7 +23,7 @@ use crate::settings::Value as Setting;
 use crate::settings::translate::CAMINITO;
 use crate::switcher::POPUP_DELAY;
 
-/// One 1280 × 800 output with `popup-slide` on, a stopped clock, and a Wayland window.
+/// One 1280 × 800 output with the Popup slide on, a stopped clock, and a Wayland window.
 fn with_window() -> (Fixture, ClientId, ClientWindow) {
     let (mut f, id) = desk(Vec::new());
     f.client(id).bind_input();
@@ -318,7 +318,11 @@ fn the_window_switcher_and_the_workspace_popup_show_at_once() {
 
 #[test]
 fn with_the_slide_off_the_menu_is_there_and_gone_in_one_frame() {
-    let (mut f, id) = desk(vec![(CAMINITO, "popup-slide".into(), Setting::Bool(false))]);
+    let (mut f, id) = desk(vec![(
+        CAMINITO,
+        "popup-animation".into(),
+        Setting::Str("none".into()),
+    )]);
     f.map(id, WindowSpec::default());
 
     alt_space(&mut f);

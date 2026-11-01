@@ -1342,33 +1342,54 @@ fn the_maximise_animations_key_leaves_the_other_animations_on() {
     assert!(settings.workspace_slide);
     assert!(settings.overview_animation);
     assert!(settings.open_close_animation);
-    assert!(settings.popup_slide);
+    assert_eq!(settings.popup_animation, PopupAnimation::Slide);
 }
 
 // The Popup slide (ADR 0037).
 
 #[test]
 fn the_defaults_slide_a_popup_that_opens() {
-    assert!(settings(&defaults()).popup_slide);
-    assert!(settings(&Reading::default()).popup_slide);
+    assert_eq!(settings(&defaults()).popup_animation, PopupAnimation::Slide);
+    assert_eq!(
+        settings(&Reading::default()).popup_animation,
+        PopupAnimation::Slide
+    );
 }
 
 #[test]
-fn its_own_key_and_the_minimise_animations_three_turn_the_popup_slide_off() {
+fn the_minimise_animations_three_turn_the_popup_animation_off() {
     for (schema, key, value) in [
-        (CAMINITO, "popup-slide", false),
         (MARCO_GENERAL, "compositing-manager", false),
         (MARCO_GENERAL, "reduced-resources", true),
         (INTERFACE, "enable-animations", false),
     ] {
-        let reading = with(schema, key, Value::Bool(value));
-        assert!(!settings(&reading).popup_slide, "{key}");
+        let reading = with_all(&[
+            (schema, key, Value::Bool(value)),
+            (CAMINITO, "popup-animation", string("fade")),
+        ]);
+        assert_eq!(
+            settings(&reading).popup_animation,
+            PopupAnimation::None,
+            "{key}"
+        );
     }
 }
 
 #[test]
-fn the_popup_slides_key_leaves_the_other_animations_on() {
-    let reading = with(CAMINITO, "popup-slide", Value::Bool(false));
+fn the_popup_animation_is_its_keys_nick() {
+    for (nick, animation) in [
+        ("slide", PopupAnimation::Slide),
+        ("fade", PopupAnimation::Fade),
+        ("none", PopupAnimation::None),
+    ] {
+        let reading = with(CAMINITO, "popup-animation", string(nick));
+        assert_eq!(settings(&reading).popup_animation, animation);
+    }
+}
+
+#[test]
+fn the_popup_animations_key_leaves_the_other_animations_on() {
+    let reading = with(CAMINITO, "popup-animation", string("none"));
     let settings = settings(&reading);
     assert!(settings.minimize_animation);
     assert!(settings.workspace_slide);
