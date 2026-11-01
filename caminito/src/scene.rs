@@ -43,7 +43,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
-use crate::esmeril::{self, DrawsEsmeril, Esmeril};
+use crate::esmeril::{self, DrawsEsmeril, Esmeril, SurfacePlace};
 use crate::open_close_animation::{Closing, Picture};
 use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
@@ -1528,38 +1528,41 @@ pub(crate) fn window_is_in(caminito: &Caminito, id: WindowId, layer: SceneLayer)
     fullscreen == (layer == SceneLayer::FullscreenWindows)
 }
 
-/// Esmeril behind each surface with see-through pixels of the tree of a layer surface's
-/// `surface`, at `strength` and `alpha`, with its origin at `location` on an output of the size
-/// `output`. While it slides as `slid` has it, Esmeril goes with it and is cut off at its place,
+/// Esmeril in the region each surface of `surface`'s tree asks for (CMN-238), and if `listed`,
+/// behind each that doesn't ask and has see-through pixels, as `place` has it, with its origin at
+/// `location`. While it slides as `slid` has it, Esmeril goes with it and is cut off at its place,
 /// as it is.
-fn layer_surface_esmeril<R>(
+fn surface_tree_esmeril<R>(
     surface: &WlSurface,
     location: Point<f64, Physical>,
-    output: Size<i32, Logical>,
-    scale: f64,
-    (strength, alpha): (u32, f32),
+    mut place: SurfacePlace,
+    listed: bool,
     slid: Option<Slid>,
     elements: &mut Vec<SceneElement<R>>,
 ) where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let cut = slid.map(|_| {
+    let scale = place.scale;
+    place.cut = slid.map(|_| {
         let place = bbox_from_surface_tree(surface, (0, 0))
             .to_f64()
             .to_physical(scale);
         Rectangle::new(location + place.loc, place.size).to_i32_round()
     });
-    let (moved, alpha) = slid.map_or((location, alpha), |slid| {
-        let offset = slid.offset.to_f64().to_physical(scale);
-        (location + offset, alpha * slid.alpha)
-    });
+    let mut moved = location;
+    if let Some(slid) = slid {
+        moved += slid.offset.to_f64().to_physical(scale);
+        place.alpha *= slid.alpha;
+    }
     for_each_surface_in_tree(surface, moved, scale, |surface, states, at| {
-        if !esmeril::has_see_through_pixels(states) {
-            return;
-        }
-        let esmeril =
-            Esmeril::behind_surface(surface, states, at, output, scale, strength, alpha, cut);
+        let esmeril = match esmeril::asked_region(states) {
+            Some(region) => Esmeril::in_region(&region, states, at, &place),
+            None if listed && esmeril::has_see_through_pixels(states) => {
+                Esmeril::behind_surface(surface, states, at, &place)
+            }
+            None => None,
+        };
         elements.extend(esmeril.map(SceneElement::Esmeril));
     });
 }
@@ -1594,20 +1597,22 @@ fn layer_shell_elements<R>(
             closing_popups_on(caminito, wl_surface, origin, scale, now, elements);
         }
         let slides = Some((&caminito.popup_slides, now));
-        let esmeril = caminito
-            .settings
-            .esmeril
-            .filter(|_| ESMERIL_NAMESPACES.contains(&surface.namespace()))
-            .map(|strength| (strength, alpha));
+        let esmeril = caminito.settings.esmeril.map(|strength| SurfacePlace {
+            output: output_geometry.size,
+            scale,
+            strength,
+            alpha,
+            cut: None,
+        });
+        let listed = ESMERIL_NAMESPACES.contains(&surface.namespace());
         for (popup, offset) in popups {
             let location = (origin + offset).to_f64().to_physical(scale);
             elements.extend(popup_elements(
                 renderer, &popup, location, scale, alpha, slides,
             ));
             let slid = caminito.popup_slides.slid(&Popup::Xdg(popup.clone()), now);
-            if let Some(esmeril) = esmeril {
-                let size = output_geometry.size;
-                layer_surface_esmeril(&popup, location, size, scale, esmeril, slid, elements);
+            if let Some(place) = esmeril {
+                surface_tree_esmeril(&popup, location, place, listed, slid, elements);
             }
         }
         if part.contains(WindowSurfaceType::TOPLEVEL) {
@@ -1617,9 +1622,8 @@ fn layer_shell_elements<R>(
                     .into_iter()
                     .map(SceneElement::Window),
             );
-            if let Some(esmeril) = esmeril {
-                let size = output_geometry.size;
-                layer_surface_esmeril(wl_surface, location, size, scale, esmeril, None, elements);
+            if let Some(place) = esmeril {
+                surface_tree_esmeril(wl_surface, location, place, listed, None, elements);
             }
         }
     }
@@ -1894,8 +1898,30 @@ fn window_elements<R>(
                 closing_popups_on(caminito, &root, origin, scale, now, elements);
             }
             let slides = Some((&caminito.popup_slides, now));
-            one_window_elements(
-                renderer, mapped, origin, shown, scale, 1.0, slides, elements,
+            // A popup that asks has it just under itself, over the window (CMN-238).
+            let mut behind_popup = |popup: &WlSurface, location, elements: &mut Vec<_>| {
+                if let Some(strength) = caminito.settings.esmeril {
+                    let slid = caminito.popup_slides.slid(&Popup::Xdg(popup.clone()), now);
+                    let place = SurfacePlace {
+                        output: output_geometry.size,
+                        scale,
+                        strength,
+                        alpha: 1.0,
+                        cut: None,
+                    };
+                    surface_tree_esmeril(popup, location, place, false, slid, elements);
+                }
+            };
+            one_window_elements_with(
+                renderer,
+                mapped,
+                origin,
+                shown,
+                scale,
+                1.0,
+                slides,
+                &mut behind_popup,
+                elements,
             );
             // Behind the strips and a listed window's surfaces, and only on the output (ADR
             // 0048): a capture of the window and a thumbnail are the window with its frame, and
@@ -1941,7 +1967,8 @@ fn window_elements<R>(
 /// Esmeril behind each of `mapped`'s own surfaces if its app id is listed, front to back, with
 /// the window geometry's origin at `origin` (ADR 0048): the toplevel and its subsurfaces, under
 /// all of them, and not its popups, which aren't in its surface tree. Where a see-through
-/// subsurface is over a see-through toplevel, the two blurs add up.
+/// subsurface is over a see-through toplevel, the two blurs add up. A surface that asks, listed
+/// or not, has it in its region alone (CMN-238), and under all of them too.
 fn surface_esmeril_elements<R>(
     caminito: &Caminito,
     mapped: &Mapped,
@@ -1955,21 +1982,29 @@ fn surface_esmeril_elements<R>(
     R::TextureId: Send + Clone + 'static,
 {
     let applications = &caminito.settings.esmeril_applications;
-    if mapped.is_shaded() || !esmeril::is_listed(applications, mapped.app_id().as_deref()) {
+    if mapped.is_shaded() {
         return;
     }
+    let listed = esmeril::is_listed(applications, mapped.app_id().as_deref());
     let window = mapped.window();
     let Some(root) = window.wl_surface() else {
         return;
     };
     let location = (origin - window.geometry().loc).to_f64().to_physical(scale);
+    let place = SurfacePlace {
+        output,
+        scale,
+        strength,
+        alpha: 1.0,
+        cut: None,
+    };
     for_each_surface_in_tree(&root, location, scale, |surface, states, location| {
-        elements.extend(
-            Esmeril::behind_surface(
-                surface, states, location, output, scale, strength, 1.0, None,
-            )
-            .map(SceneElement::Esmeril),
-        );
+        let esmeril = match esmeril::asked_region(states) {
+            Some(region) => Esmeril::in_region(&region, states, location, &place),
+            None if listed => Esmeril::behind_surface(surface, states, location, &place),
+            None => None,
+        };
+        elements.extend(esmeril.map(SceneElement::Esmeril));
     });
 }
 
@@ -2219,6 +2254,46 @@ fn one_window_elements<R, E>(
         + From<MemoryRenderBufferRenderElement<R>>
         + From<PopupSlidePart<R>>,
 {
+    let mut behind_popup = |_: &WlSurface, _, _: &mut Vec<E>| {};
+    one_window_elements_with(
+        renderer,
+        mapped,
+        origin,
+        shown,
+        scale,
+        alpha,
+        slides,
+        &mut behind_popup,
+        elements,
+    );
+}
+
+/// Adds what goes just under a popup, given the popup and where its origin is.
+type BehindPopup<'a, E> = &'a mut dyn FnMut(&WlSurface, Point<f64, Physical>, &mut Vec<E>);
+
+/// As `one_window_elements`, with `behind_popup` adding what goes just under each popup, given
+/// the popup and where its origin is.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one_window_elements' own, and the hook"
+)]
+fn one_window_elements_with<R, E>(
+    renderer: &mut R,
+    mapped: &Mapped,
+    origin: Point<i32, Logical>,
+    shown: Rectangle<i32, Logical>,
+    scale: f64,
+    alpha: f32,
+    slides: Slides<'_>,
+    behind_popup: BehindPopup<'_, E>,
+    elements: &mut Vec<E>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+    E: From<WaylandSurfaceRenderElement<R>>
+        + From<MemoryRenderBufferRenderElement<R>>
+        + From<PopupSlidePart<R>>,
+{
     let window = mapped.window();
     // The surface's origin sits the window geometry's offset away from where policy
     // placed the geometry. A shaded window's surfaces have left the scene.
@@ -2228,7 +2303,13 @@ fn one_window_elements<R, E>(
     if !mapped.is_shaded() && bbox.overlaps(shown) {
         let location = surface_origin.to_f64().to_physical(scale);
         elements.extend(window_surface_elements(
-            renderer, window, location, scale, alpha, slides,
+            renderer,
+            window,
+            location,
+            scale,
+            alpha,
+            slides,
+            behind_popup,
         ));
     }
 
@@ -2250,6 +2331,7 @@ fn window_surface_elements<R, E>(
     scale: f64,
     alpha: f32,
     slides: Slides<'_>,
+    behind_popup: BehindPopup<'_, E>,
 ) -> Vec<E>
 where
     R: Renderer + ImportAll,
@@ -2271,6 +2353,7 @@ where
                     alpha,
                     slides,
                 ));
+                behind_popup(popup.wl_surface(), location, &mut elements);
             }
             let toplevel = surface_tree_elements(renderer, surface, location, scale, alpha);
             elements.extend(toplevel.into_iter().map(E::from));

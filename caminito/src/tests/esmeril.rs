@@ -6,10 +6,14 @@
 //! a listed window gets it runs on both, as their app ids come each its own way; subsurfaces and
 //! popups are xdg's own, and once a window has it, its pixels and its place in the stack don't
 //! depend on the kind. A layer surface is a Wayland client's, and the window that hides an
-//! Intellihide panel only has to overlap it.
+//! Intellihide panel only has to overlap it. A client's region (CMN-238) is asked for through
+//! ext-background-effect-v1, whichever kind of Wayland surface has it.
 
 use std::time::Duration;
 
+use caminito_test_client::background_effect::{
+    ExtBackgroundEffectSurfaceV1, RegionRect, WlSurface,
+};
 use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
 use caminito_test_client::{Anchor, ConstraintAdjustment, Gravity, Positioner};
 use caminito_theme::{GtkState, Palette, PaletteColors, Rgba, StateColors};
@@ -19,8 +23,8 @@ use smithay::output::Output;
 use smithay::utils::{Physical, Point, Rectangle, Scale};
 
 use super::fixture::{
-    ClientWindow, Fixture, KEY_ESC, KEY_F10, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT, KEY_TAB, Kind,
-    WindowSpec, on_both_kinds,
+    ClientId, ClientWindow, Fixture, KEY_ESC, KEY_F10, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT,
+    KEY_TAB, Kind, WindowSpec, on_both_kinds,
 };
 use super::maximise_animation::asked_size;
 use super::overview;
@@ -1163,4 +1167,277 @@ fn a_popups_esmeril_slides_with_it_and_rests_at_its_place() {
     f.advance_clock(Duration::from_millis(400));
     let resting = esmerils(&mut f, &output).remove(0);
     assert_eq!(resting.strip(), place);
+}
+
+#[test]
+fn a_client_is_told_there_is_blur_only_while_esmeril_is_drawn() {
+    let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+    let id = f.connect(Kind::Xdg);
+    f.client(id).bind_background_effect();
+    f.roundtrip(id);
+    assert_eq!(f.client_state(id).blur_capabilities, [true]);
+
+    f.set_setting(CAMINITO, "esmeril-strength", Value::Uint(3));
+    f.dispatch_until(|f| f.state.caminito.settings.esmeril == Some(3));
+    f.roundtrip(id);
+    assert_eq!(f.client_state(id).blur_capabilities, [true]);
+
+    f.set_setting(MARCO_GENERAL, "reduced-resources", Value::Bool(true));
+    f.dispatch_until(|f| f.state.caminito.settings.esmeril.is_none());
+    f.roundtrip(id);
+    assert_eq!(f.client_state(id).blur_capabilities, [true, false]);
+
+    f.set_setting(MARCO_GENERAL, "reduced-resources", Value::Bool(false));
+    f.dispatch_until(|f| f.state.caminito.settings.esmeril.is_some());
+    f.set_setting(CAMINITO, "esmeril", Value::Bool(false));
+    f.dispatch_until(|f| f.state.caminito.settings.esmeril.is_none());
+    f.roundtrip(id);
+    assert_eq!(
+        f.client_state(id).blur_capabilities,
+        [true, false, true, false]
+    );
+
+    let late = f.connect(Kind::Xdg);
+    f.client(late).bind_background_effect();
+    f.roundtrip(late);
+    assert_eq!(f.client_state(late).blur_capabilities, [false]);
+}
+
+/// A window with the app id `app_id`, of 200 by 100, whose client draws it `argb`, on an output
+/// covered in `BENEATH`.
+fn asking_desk(
+    f: &mut Fixture,
+    app_id: &'static str,
+    argb: u32,
+) -> (Output, ClientId, ClientWindow, Point<i32, Physical>) {
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map_layer(id, LayerSpec::covering(Layer::Background, "test"), BENEATH);
+    let id = f.connect(Kind::Xdg);
+    let window = f.map(
+        id,
+        WindowSpec {
+            size: (200, 100),
+            app_id: Some(app_id),
+            ..WindowSpec::default()
+        },
+    );
+    f.client(id)
+        .ack_and_commit_buffer(window.xdg(), (200, 100), argb);
+    f.roundtrip(id);
+    let loc = f.geometry(window).loc;
+    (output, id, window, (loc.x, loc.y).into())
+}
+
+/// Asks for `rects` on `surface`, and commits it.
+fn ask(
+    f: &mut Fixture,
+    id: ClientId,
+    surface: &WlSurface,
+    rects: Option<&[RegionRect]>,
+) -> ExtBackgroundEffectSurfaceV1 {
+    let effect = f.client(id).get_background_effect(surface);
+    f.client(id).set_blur_region(&effect, rects);
+    surface.commit();
+    f.roundtrip(id);
+    effect
+}
+
+fn window_surface(f: &mut Fixture, id: ClientId, window: ClientWindow) -> WlSurface {
+    f.client(id).window(window.xdg()).surface.clone()
+}
+
+/// What's shown of each Esmeril on `output`, narrowest first.
+fn shown(f: &mut Fixture, output: &Output) -> Vec<Rectangle<i32, Physical>> {
+    let mut shown: Vec<_> = esmerils(f, output).iter().map(Esmeril::shown).collect();
+    shown.sort_by_key(|rect| rect.size.w);
+    shown
+}
+
+fn rect_at(corner: Point<i32, Physical>, (x, y, w, h): RegionRect) -> Rectangle<i32, Physical> {
+    Rectangle::new((corner.x + x, corner.y + y).into(), (w, h).into())
+}
+
+#[test]
+fn a_window_that_asks_gets_it_in_its_region_once_it_commits_even_if_opaque() {
+    let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+    let (output, id, window, corner) = asking_desk(&mut f, "pluma", 0xff_20_40_60);
+    let surface = window_surface(&mut f, id, window);
+    assert!(esmerils(&mut f, &output).is_empty());
+
+    let effect = f.client(id).get_background_effect(&surface);
+    f.client(id)
+        .set_blur_region(&effect, Some(&[(10, 20, 30, 40)]));
+    f.roundtrip(id);
+    assert!(esmerils(&mut f, &output).is_empty(), "it isn't committed");
+
+    surface.commit();
+    f.roundtrip(id);
+    assert_eq!(shown(&mut f, &output), [rect_at(corner, (10, 20, 30, 40))]);
+
+    // Clipped to the surface, and gone with the object at the next commit.
+    f.client(id)
+        .set_blur_region(&effect, Some(&[(190, 90, 30, 40)]));
+    surface.commit();
+    f.roundtrip(id);
+    assert_eq!(shown(&mut f, &output), [rect_at(corner, (190, 90, 10, 10))]);
+    effect.destroy();
+    surface.commit();
+    f.roundtrip(id);
+    assert!(esmerils(&mut f, &output).is_empty());
+}
+
+#[test]
+fn a_region_replaces_a_listed_window_s_esmeril_on_that_surface_only() {
+    let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+    let (output, id, window, corner) = asking_desk(&mut f, "mate-terminal", 0x80_00_00_00);
+    let child = f
+        .client(id)
+        .add_subsurface(window.xdg(), (10, 20), (50, 40), OTHER);
+    f.client(id).commit(window.xdg());
+    f.roundtrip(id);
+
+    ask(&mut f, id, &child, Some(&[(0, 0, 5, 5)]));
+    assert_eq!(
+        shown(&mut f, &output),
+        [
+            rect_at(corner, (10, 20, 5, 5)),
+            rect_at(corner, (0, 0, 200, 100)),
+        ]
+    );
+}
+
+#[test]
+fn an_empty_region_asks_for_none_and_no_region_goes_back_to_the_listing() {
+    let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+    let (output, id, window, corner) = asking_desk(&mut f, "mate-terminal", 0x80_00_00_00);
+    let surface = window_surface(&mut f, id, window);
+    let effect = ask(&mut f, id, &surface, Some(&[]));
+    assert!(esmerils(&mut f, &output).is_empty());
+
+    f.client(id).set_blur_region(&effect, None);
+    surface.commit();
+    f.roundtrip(id);
+    assert_eq!(shown(&mut f, &output), [rect_at(corner, (0, 0, 200, 100))]);
+}
+
+#[test]
+fn the_settings_win_over_a_client_that_asks() {
+    for (schema, key, value) in [
+        (CAMINITO, "esmeril", false),
+        (MARCO_GENERAL, "reduced-resources", true),
+    ] {
+        let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+        let (output, id, window, _) = asking_desk(&mut f, "pluma", 0xff_20_40_60);
+        let surface = window_surface(&mut f, id, window);
+        ask(&mut f, id, &surface, Some(&[(10, 20, 30, 40)]));
+        assert_eq!(esmerils(&mut f, &output).len(), 1);
+        f.set_setting(schema, key, Value::Bool(value));
+        f.dispatch_until(|f| f.state.caminito.settings.esmeril.is_none());
+        assert!(esmerils(&mut f, &output).is_empty());
+    }
+}
+
+#[test]
+fn a_layer_surface_of_any_namespace_gets_it_where_it_asks() {
+    let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+    let output = f.add_output(OUTPUT, 1.0);
+    let id = f.connect(Kind::Xdg);
+    let layer = f.map_layer(id, LayerSpec::covering(Layer::Top, "test"), 0xff_20_40_60);
+    assert!(esmerils(&mut f, &output).is_empty());
+
+    let surface = f.client(id).layer_surface(layer).surface.clone();
+    ask(&mut f, id, &surface, Some(&[(10, 20, 30, 40)]));
+    let corner = Point::from((0, 0));
+    assert_eq!(shown(&mut f, &output), [rect_at(corner, (10, 20, 30, 40))]);
+}
+
+#[test]
+fn a_window_s_popup_that_asks_gets_it_over_the_window_and_under_itself() {
+    let mut f = Fixture::with_settings(settings("EsmerilSolid", 15));
+    let (output, id, window, _) = asking_desk(&mut f, "pluma", 0xff_20_40_60);
+    let popup = f.client(id).create_popup(
+        window.xdg(),
+        Positioner {
+            size: (60, 60),
+            anchor_rect: (0, 0, 10, 10),
+            anchor: Anchor::BottomRight,
+            gravity: Gravity::BottomRight,
+            constraint_adjustment: ConstraintAdjustment::None,
+        },
+    );
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, 0xff_20_40_60);
+    f.roundtrip(id);
+    let surface = f.client(id).popup(popup).surface.clone();
+    ask(&mut f, id, &surface, Some(&[(0, 0, 60, 60)]));
+
+    let Drawing::Pixman(renderer, _) = f.state.backend.headless_mut().drawing() else {
+        panic!("it draws with pixman");
+    };
+    let elements = scene::output_elements(renderer, &f.state.caminito, &output);
+    let windows: Vec<_> = elements
+        .iter()
+        .enumerate()
+        .filter(|(_, element)| matches!(element, SceneElement::Window(_)))
+        .map(|(index, _)| index)
+        .collect();
+    let esmeril = elements
+        .iter()
+        .position(|element| matches!(element, SceneElement::Esmeril(_)))
+        .expect("the popup asked");
+    assert!(
+        windows[0] < esmeril,
+        "under the popup: {windows:?}, {esmeril}"
+    );
+    assert!(
+        esmeril < windows[1],
+        "over the window: {windows:?}, {esmeril}"
+    );
+}
+
+#[test]
+fn a_wholly_clear_pixel_in_a_region_shows_esmeril_and_one_outside_shows_what_is_beneath() {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSolid", 1)) else {
+        return;
+    };
+    let (output, id, window, corner) = asking_desk(&mut f, "pluma", 0x00_00_00_00);
+    let surface = window_surface(&mut f, id, window);
+    ask(&mut f, id, &surface, Some(&[(0, 0, 100, 100)]));
+    f.draw(&output);
+    let inside = channels(pixel(&mut f, &output, corner + Point::from((25, 50))));
+    assert_near(inside, saturated_and_contrasted(BENEATH));
+    let outside = channels(pixel(&mut f, &output, corner + Point::from((175, 50))));
+    assert_near(outside, channels(BENEATH).map(f64::from));
+}
+
+#[test]
+fn a_new_region_in_the_same_bounds_is_drawn_at_once() {
+    let Some(mut f) = Fixture::on_gles_with(settings("EsmerilSolid", 1)) else {
+        return;
+    };
+    let (output, id, window, corner) = asking_desk(&mut f, "pluma", 0x00_00_00_00);
+    let surface = window_surface(&mut f, id, window);
+    let effect = ask(
+        &mut f,
+        id,
+        &surface,
+        Some(&[(0, 0, 100, 50), (100, 50, 100, 50)]),
+    );
+    f.draw(&output);
+    let at = corner + Point::from((25, 25));
+    assert_near(
+        channels(pixel(&mut f, &output, at)),
+        saturated_and_contrasted(BENEATH),
+    );
+
+    f.client(id)
+        .set_blur_region(&effect, Some(&[(100, 0, 100, 50), (0, 50, 100, 50)]));
+    surface.commit();
+    f.roundtrip(id);
+    f.draw(&output);
+    assert_near(
+        channels(pixel(&mut f, &output, at)),
+        channels(BENEATH).map(f64::from),
+    );
 }

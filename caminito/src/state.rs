@@ -118,6 +118,7 @@ use crate::output::saved::{self, SavedLayouts};
 use crate::overview::Overview;
 use crate::popup_slide::PopupSlides;
 use crate::protocols::appmenu::AppmenuState;
+use crate::protocols::background_effect::BackgroundEffectState;
 use crate::protocols::ext_workspace::ExtWorkspaceState;
 use crate::protocols::foreign_toplevel::ForeignToplevelState;
 use crate::protocols::gamma_control::GammaControlState;
@@ -265,6 +266,8 @@ pub struct Caminito {
     pub single_pixel_buffer_state: SinglePixelBufferState,
     pub content_type_state: ContentTypeState,
     pub alpha_modifier_state: AlphaModifierState,
+    /// The managers a client asks for Esmeril through (CMN-238).
+    pub(crate) background_effect_state: BackgroundEffectState,
     pub fifo_manager_state: FifoManagerState,
     pub commit_timing_state: CommitTimingManagerState,
 
@@ -1053,6 +1056,7 @@ impl Caminito {
             single_pixel_buffer_state: SinglePixelBufferState::new::<State>(dh),
             content_type_state: ContentTypeState::new::<State>(dh),
             alpha_modifier_state: AlphaModifierState::new::<State>(dh),
+            background_effect_state: BackgroundEffectState::new::<State>(dh),
             fifo_manager_state: FifoManagerState::new::<State>(dh),
             commit_timing_state: CommitTimingManagerState::new::<State>(dh),
 
@@ -1197,6 +1201,11 @@ impl Caminito {
             || settings.esmeril_applications != self.settings.esmeril_applications
         {
             self.queue_redraw_all();
+        }
+        if settings.esmeril.is_some() != self.settings.esmeril.is_some() {
+            let capabilities = Self::blur_capabilities(settings.esmeril);
+            self.background_effect_state
+                .capabilities_changed(capabilities);
         }
         let factor = settings.interface.window_scaling_factor;
         let factor_changed = factor != self.settings.interface.window_scaling_factor;

@@ -2,6 +2,7 @@
 //! of something from it, a handler trait (15).
 
 pub mod appmenu;
+pub mod background_effect;
 pub mod ext_workspace;
 pub mod foreign_toplevel;
 pub mod gamma_control;

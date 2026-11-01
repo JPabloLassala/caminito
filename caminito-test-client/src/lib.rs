@@ -16,6 +16,7 @@
 //! tokens and activates windows with them.
 
 pub mod appmenu;
+pub mod background_effect;
 pub mod data_control;
 pub mod dbus;
 pub mod ext_workspace;
@@ -108,6 +109,7 @@ use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
 use wayland_protocols_misc::server_decoration::client::org_kde_kwin_server_decoration::{
     self, OrgKdeKwinServerDecoration,
 };
+use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1;
 use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
 use wayland_protocols::ext::session_lock::v1::client::ext_session_lock_manager_v1::ExtSessionLockManagerV1;
 use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
@@ -140,6 +142,9 @@ pub struct State {
     /// The globals the compositor advertised, in the order it did.
     pub globals: Vec<Global>,
     compositor: Option<WlCompositor>,
+    background_effect_manager: Option<ExtBackgroundEffectManagerV1>,
+    /// Whether each `capabilities` event had blur, oldest first.
+    pub blur_capabilities: Vec<bool>,
     shm: Option<WlShm>,
     subcompositor: Option<WlSubcompositor>,
     wm_base: Option<XdgWmBase>,
