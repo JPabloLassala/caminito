@@ -2499,6 +2499,58 @@ fn a_sites_notifications_group_with_each_other_and_not_with_another_sites() {
     });
 }
 
+#[test]
+fn a_sites_name_stays_in_its_history_entry_through_a_restart() {
+    bus::run(|bus| {
+        let home = Home::new();
+        let daemon = start_in(bus, home.clone());
+        daemon.notify(tab("Ready", "claude.ai"));
+        assert_eq!(daemon.history()[0].app_name, "claude.ai · Chromium");
+        drop(daemon);
+
+        let daemon = start_in(bus, home);
+        assert_eq!(daemon.history()[0].app_name, "claude.ai · Chromium");
+    });
+}
+
+#[test]
+fn the_center_groups_a_browsers_entries_whatever_a_sites_grouping_is() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.notify(tab("Ready", "claude.ai"));
+        daemon
+            .apps
+            .app(&site_key("chromium", "claude.ai"))
+            .set_boolean("group", false)
+            .unwrap();
+        daemon
+            .apps
+            .app("Other")
+            .set_boolean("group", false)
+            .unwrap();
+        daemon.notify(Notify {
+            app_name: "Other",
+            ..notify("Sync")
+        });
+        assert_eq!(
+            daemon.wait_for_api_signal("UngroupedChanged"),
+            "(['Other'],)"
+        );
+    });
+}
+
+#[test]
+fn a_newline_in_an_apps_name_doesnt_make_it_a_site() {
+    bus::run(|bus| {
+        let daemon = start(bus);
+        daemon.notify(Notify {
+            app_name: "Two\nlines",
+            ..notify("Named")
+        });
+        assert_eq!(daemon.apps.known_apps(), ["Two lines"]);
+    });
+}
+
 /// The summaries of the notifications before the newest in the bubble `id`, newest first.
 fn earlier(daemon: &Daemon<'_>, id: u32) -> Vec<String> {
     let bubble = daemon.bubbles.bubble(id);

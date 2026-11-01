@@ -68,7 +68,10 @@ impl Notification {
             .map(|id| id.trim_end_matches(".desktop").to_owned())
             .filter(|id| !id.is_empty());
         let entry = entry_id.as_deref().and_then(desktop_entry);
-        let app = entry_id.unwrap_or_else(|| arguments.app_name.to_owned());
+        // A newline in a key is what parts a site from its browser.
+        let app = entry_id
+            .unwrap_or_else(|| arguments.app_name.to_owned())
+            .replace('\n', " ");
         let site = hint::<String>(hints, "x-kde-origin-name").filter(|site| !site.is_empty());
         let settings_key = site
             .as_deref()

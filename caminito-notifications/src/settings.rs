@@ -204,7 +204,7 @@ impl Settings {
         own.apply();
     }
 
-    /// Takes `app`'s own settings away, so it follows the default.
+    /// Takes `app`'s own settings away, so it follows the default, or its browser if it's a site.
     pub fn use_default(&self, app: &str) {
         let own = self.app(app);
         own.delay();
@@ -246,8 +246,8 @@ impl Settings {
     }
 }
 
-/// The Notifying app's key of the site `site` in the browser `app`. A newline, which no desktop
-/// id has, parts them.
+/// The Notifying app's key of the site `site` in the browser `app`. A newline, which no app's
+/// own key has, parts them.
 pub fn site_key(app: &str, site: &str) -> String {
     format!("{app}\n{site}")
 }

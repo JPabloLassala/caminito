@@ -198,10 +198,14 @@ impl History {
 impl HistoryEntry {
     /// The entry of `notification` as `id`, which arrived at `time`.
     pub(crate) fn new(id: u32, notification: &Notification, time: u64) -> HistoryEntry {
+        // The Notification center has no place of its own for the site, which goes with the name.
+        let mut bubble = notification.bubble.clone();
+        bubble.app_name = bubble.top_row();
+        bubble.site = None;
         HistoryEntry {
             id,
             app: notification.app.clone(),
-            bubble: notification.bubble.clone(),
+            bubble,
             has_default: notification.has_default,
             resident: notification.resident,
             time,

@@ -143,7 +143,7 @@ pub struct Bubble {
     /// The site a browser's tab is on, from `x-kde-origin-name`, which goes before the app's
     /// name.
     pub site: Option<String>,
-    /// Whether it's a browser tab's: the image leads, with the app's icon as its badge, or the
+    /// Whether it's a browser tab's: the image leads, with the app's icon on its corner, or the
     /// app's icon alone leads while Previews hide the image.
     pub leads: bool,
     /// The actions that have buttons, in the app's order. The default action is a click.
@@ -156,6 +156,16 @@ pub struct Bubble {
     /// In a grouped bubble, the notifications before this one, newest first. Empty in a
     /// bubble of one notification.
     pub earlier: Vec<Earlier>,
+}
+
+impl Bubble {
+    /// What its top row reads: the app's name, after the site's if it has one.
+    pub fn top_row(&self) -> String {
+        match &self.site {
+            Some(site) => format!("{site} · {}", self.app_name),
+            None => self.app_name.clone(),
+        }
+    }
 }
 
 /// What a grouped bubble shows of a notification before its newest.
@@ -482,7 +492,8 @@ struct Shown {
     key: u32,
     /// Its notifications, oldest first, which are never none.
     ids: Vec<u32>,
-    /// The app of its notifications, and whether they're critical.
+    /// The key its notifications' settings go by, which is their site's if they have one, and
+    /// whether they're critical.
     app: String,
     critical: bool,
     /// Whether it's a grouped bubble, which its app's next notifications join.
