@@ -342,6 +342,25 @@ fn a_layout_switch_works_while_locked() {
     assert_eq!(f.client_state(locker).group, 1);
 }
 
+/// The Locker reads the layout on `org.mate.Caminito` while the session is locked (CMN-299).
+#[test]
+fn the_published_layout_follows_a_switch_while_locked() {
+    let mut f = super::keymap::two_layouts();
+    let bus = f.start_dbus();
+    let locker = f.connect(Kind::Xdg);
+    lock_with_a_surface(&mut f, locker);
+    assert_eq!(
+        super::keymap::published_layout(&mut f, &bus),
+        ("us".into(), true)
+    );
+
+    let listener = super::keymap::next_layout_signalled(&mut f, &bus);
+    f.chord(&[KEY_LEFTALT, KEY_LEFTSHIFT]);
+    f.dispatch_until(|_| listener.is_finished());
+
+    assert_eq!(listener.join().unwrap(), ("es".into(), true));
+}
+
 /// A menu's grab would keep the keyboard and the pointer, and the menu would be there, open
 /// and without them, after the unlock. One asked for under the lock isn't granted.
 #[test]

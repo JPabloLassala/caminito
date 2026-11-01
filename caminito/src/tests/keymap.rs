@@ -2,6 +2,13 @@
 //! Xwayland follows the keymap `wl_keyboard` sends it, so a Wayland client stands for
 //! either kind (45).
 
+use std::collections::HashMap;
+use std::sync::mpsc;
+use std::thread;
+
+use caminito_test_client::dbus::caminito_proxy;
+use zbus::zvariant::OwnedValue;
+
 use super::fixture::{
     ClientId, Fixture, KEY_LEFTALT, KEY_LEFTSHIFT, KEY_NUMLOCK, Kind, WindowSpec,
 };
@@ -36,6 +43,101 @@ fn groups(f: &Fixture, id: ClientId) -> Vec<String> {
         .filter_map(|line| line.split('"').nth(1))
         .map(str::to_owned)
         .collect()
+}
+
+/// What `KeyboardLayout` said: the short name, and whether there are several layouts.
+fn read_layout(value: HashMap<String, OwnedValue>) -> (String, bool) {
+    let name = String::try_from(value["name"].try_clone().unwrap()).unwrap();
+    let multiple = bool::try_from(&value["multiple"]).unwrap();
+    (name, multiple)
+}
+
+/// `KeyboardLayout` at `bus`.
+pub(super) fn published_layout(f: &mut Fixture, bus: &str) -> (String, bool) {
+    let bus = bus.to_owned();
+    read_layout(f.dbus_call(move || caminito_proxy(&bus).unwrap().keyboard_layout().unwrap()))
+}
+
+/// Waits on another thread for `org.mate.Caminito` at `bus` to signal `KeyboardLayout` once,
+/// and returns a handle to what it said. It returns once the thread listens.
+pub(super) fn next_layout_signalled(
+    f: &mut Fixture,
+    bus: &str,
+) -> thread::JoinHandle<(String, bool)> {
+    let bus = bus.to_owned();
+    let (listening, is_listening) = mpsc::channel();
+    let listener = thread::spawn(move || {
+        let proxy = caminito_proxy(&bus).unwrap();
+        // Reading it has the proxy listen for changes before this goes on, and zbus's
+        // stream of changes starts with the value read.
+        proxy.keyboard_layout().unwrap();
+        let mut changes = proxy.receive_keyboard_layout_changed();
+        changes.next().unwrap();
+        listening.send(()).unwrap();
+        read_layout(changes.next().unwrap().get().unwrap())
+    });
+    f.dispatch_until(|_| is_listening.try_recv().is_ok());
+    listener
+}
+
+/// Two layouts and the key that switches them, on one output.
+pub(super) fn two_layouts() -> Fixture {
+    let mut f = Fixture::with_settings(vec![
+        (KEYBOARD_XKB, "layouts".into(), strings(&["us", "es"])),
+        (
+            KEYBOARD_XKB,
+            "options".into(),
+            strings(&["grp\tgrp:alt_shift_toggle"]),
+        ),
+    ]);
+    f.add_output((1920, 1080), 1.0);
+    f
+}
+
+#[test]
+fn the_published_layout_follows_a_switch_and_signals_it() {
+    let mut f = two_layouts();
+    let bus = f.start_dbus();
+    assert_eq!(published_layout(&mut f, &bus), ("us".into(), true));
+
+    let listener = next_layout_signalled(&mut f, &bus);
+    f.chord(&[KEY_LEFTALT, KEY_LEFTSHIFT]);
+    f.dispatch_until(|_| listener.is_finished());
+
+    assert_eq!(listener.join().unwrap(), ("es".into(), true));
+    assert_eq!(published_layout(&mut f, &bus), ("es".into(), true));
+}
+
+#[test]
+fn one_layout_is_published_as_one_and_a_second_one_set_live_is_signalled() {
+    let mut f = Fixture::with_settings(vec![(
+        KEYBOARD_XKB,
+        "layouts".into(),
+        strings(&["de\tnodeadkeys"]),
+    )]);
+    f.add_output((1920, 1080), 1.0);
+    let bus = f.start_dbus();
+    assert_eq!(published_layout(&mut f, &bus), ("de".into(), false));
+
+    let listener = next_layout_signalled(&mut f, &bus);
+    f.set_setting(KEYBOARD_XKB, "layouts", strings(&["de", "fr"]));
+    f.dispatch_until(|_| listener.is_finished());
+
+    assert_eq!(listener.join().unwrap(), ("de".into(), true));
+}
+
+#[test]
+fn a_layout_that_cant_compile_leaves_the_published_name_of_the_one_kept() {
+    let mut f = Fixture::with_settings(vec![(KEYBOARD_XKB, "layouts".into(), strings(&["es"]))]);
+    f.add_output((1920, 1080), 1.0);
+    let bus = f.start_dbus();
+
+    f.set_setting(KEYBOARD_XKB, "layouts", strings(&["no-such-layout"]));
+    // Settings arrive in order, so once the rate has, so has the layout.
+    f.set_setting(KEYBOARD, "rate", Value::Int(50));
+    f.dispatch_until(|f| f.state.caminito.settings.keyboard.repeat_rate == 50);
+
+    assert_eq!(published_layout(&mut f, &bus), ("es".into(), false));
 }
 
 #[test]

@@ -67,6 +67,10 @@ pub trait Caminito {
     #[zbus(property)]
     fn screencasting(&self) -> zbus::Result<bool>;
 
+    /// The active keyboard layout's short name, and whether there are several (CMN-299).
+    #[zbus(property)]
+    fn keyboard_layout(&self) -> zbus::Result<HashMap<String, zbus::zvariant::OwnedValue>>;
+
     /// Chooses the primary output, by the name of an enabled output.
     #[zbus(property)]
     fn set_primary_output(&self, name: &str) -> zbus::Result<()>;

@@ -40,7 +40,7 @@ auth = static_library(
 watcher = static_library('gs-watcher', 'gs-watcher.c', dependencies: gio)
 
 # gtk-session-lock is barely maintained (ADR 0007); it builds at 16's baseline as it is, so
-# it isn't vendored. libmate-desktop has MateBG, for the background (132). There's no libmatekbd: the layout indicator is X11's alone.
+# it isn't vendored. libmate-desktop has MateBG, for the background (132). There's no libmatekbd: the layout indicator reads org.mate.Caminito (CMN-299).
 executable(
   'caminito-locker',
   'caminito-locker.c',

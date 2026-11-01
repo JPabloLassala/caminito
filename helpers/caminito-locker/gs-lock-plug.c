@@ -95,6 +95,7 @@ struct GSLockPlugPrivate
 	GtkWidget   *auth_logout_button;
 
 	GtkWidget   *auth_prompt_kbd_layout_indicator;
+	GtkWidget   *kbd_layout_label;
 
 	/* The lock window the dialog is in, and its handler of the keys typed there. */
 	GtkWidget   *toplevel;
@@ -958,6 +959,38 @@ gs_lock_plug_set_status_message (GSLockPlug *plug,
 			gtk_widget_hide (plug->priv->status_message_label);
 		}
 	}
+}
+
+/* Shows the keyboard layout's short name in the theme's slot, read-only, or hides the slot
+ * for NULL (CMN-299). A theme without the slot shows none. */
+void
+gs_lock_plug_set_kbd_layout (GSLockPlug *plug,
+                             const char *name)
+{
+	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
+
+	if (plug->priv->auth_prompt_kbd_layout_indicator == NULL)
+	{
+		return;
+	}
+
+	if (name == NULL)
+	{
+		gtk_widget_hide (plug->priv->auth_prompt_kbd_layout_indicator);
+		return;
+	}
+
+	if (plug->priv->kbd_layout_label == NULL)
+	{
+		plug->priv->kbd_layout_label = gtk_label_new (NULL);
+		gtk_widget_set_margin_start (plug->priv->kbd_layout_label, 6);
+		gtk_container_add (GTK_CONTAINER (plug->priv->auth_prompt_kbd_layout_indicator),
+		                   plug->priv->kbd_layout_label);
+		gtk_widget_show (plug->priv->kbd_layout_label);
+	}
+
+	gtk_label_set_text (GTK_LABEL (plug->priv->kbd_layout_label), name);
+	gtk_widget_show (plug->priv->auth_prompt_kbd_layout_indicator);
 }
 
 static void
@@ -1859,7 +1892,8 @@ gs_lock_plug_init (GSLockPlug *plug)
 
 	load_theme (plug);
 
-	/* Layout indicator: libmatekbd's, on X11 alone. No show_all of a lock window's shows it. */
+	/* Layout indicator: hidden until gs_lock_plug_set_kbd_layout has a layout for it. No
+	 * show_all of a lock window's shows it. */
 	if (plug->priv->auth_prompt_kbd_layout_indicator != NULL)
 	{
 		gtk_widget_set_no_show_all (plug->priv->auth_prompt_kbd_layout_indicator, TRUE);

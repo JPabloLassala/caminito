@@ -84,6 +84,9 @@ void        gs_lock_plug_open_at_key    (GSLockPlug  *plug,
 void        gs_lock_plug_set_busy       (GSLockPlug *plug);
 void        gs_lock_plug_set_ready      (GSLockPlug *plug);
 
+void        gs_lock_plug_set_kbd_layout (GSLockPlug *plug,
+        const char *name);
+
 void        gs_lock_plug_get_text       (GSLockPlug *plug,
         char      **text);
 void        gs_lock_plug_show_message   (GSLockPlug *plug,

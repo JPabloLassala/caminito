@@ -18,7 +18,7 @@ Caminito owns `org.mate.ScreenSaver` as a shim and locks through ext-session-loc
 - The lock screen is MATE's: same dialog, same themes, same keys, same PAM stack (fingerprint and keyring included). The price is a second C helper to maintain beside `caminito-gtk-palette` (ADR 0003), and following mate-screensaver's dialog by hand.
 - gtk-session-lock (GTK3) is barely maintained. If it stops building, Caminito vendors it.
 - mate-screensaver stays installed for its data, and its daemon exits because Caminito already owns the name.
-- The embedded on-screen keyboard and the libmatekbd layout indicator are lost.
+- The embedded on-screen keyboard is lost. So was the libmatekbd layout indicator, until the dialog got its own from `org.mate.Caminito`'s `KeyboardLayout` (CMN-299).
 - Rejected:
   - swaylock, waylock or gtklock as the default (no MATE look, keys unhonoured; they remain usable through `locker-command`);
   - drawing the lock screen inside Caminito (password entry, PAM and GTK theming in the compositor process);
