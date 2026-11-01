@@ -1,5 +1,10 @@
 # The stand-in mate-screensaver service of the conversation's test: pam_chatty says a
-# line of its own, and pam_matrix checks the password against the test's file.
+# line of its own, and pam_matrix checks the password against the test's file. The
+# pam_faillock lines are Arch's system-auth shape, with its tally in a directory of the
+# test's, so a failure that PAM counts can be seen, and without its 2 s delay.
 auth     optional @MODULES@/pam_chatty.so info
-auth     required @MODULES@/pam_matrix.so passdb=@PASSDB@
+auth     required pam_faillock.so preauth silent dir=@FAILLOCK@
+auth     [success=1 default=bad] @MODULES@/pam_matrix.so passdb=@PASSDB@
+auth     [default=die] pam_faillock.so authfail nodelay dir=@FAILLOCK@
+auth     sufficient pam_faillock.so authsucc dir=@FAILLOCK@
 account  required @MODULES@/pam_matrix.so passdb=@PASSDB@

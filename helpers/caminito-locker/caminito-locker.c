@@ -31,8 +31,10 @@
  * runs as a GtkPlug in its own lock window and which tells the daemon how the conversation
  * went on stdout. Here the program is the lock: the conversation's outcome unlocks it, and
  * neither a cancel nor the fifth failure ends it, as mate-screensaver's daemon would end its
- * dialog. Each starts the conversation again. The dialog isn't setuid, so hack_uid and the
- * privileged start-up are gone.
+ * dialog. A failure starts the conversation again. A cancel or a timeout doesn't answer
+ * PAM, whose pam_faillock would count it: the prompt stays open in the conversation's
+ * thread until a key or a click asks it again (CMN-256). The dialog isn't setuid, so
+ * hack_uid and the privileged start-up are gone.
  *
  * What the daemon gave the dialog, the locker finds itself (132), where the daemon did:
  *  - the background, as gs-manager.c's apply_background_to_window: the desktop's through
@@ -113,6 +115,8 @@ static char* request_response(GSLockPlug* plug, const char* prompt, gboolean vis
 
 	text = NULL;
 
+	/* Only a submitted password is a response: the dialog's timeout and its Cancel button
+	 * leave the prompt open, so the run ends for a password or the dialog's destruction. */
 	if (response == GS_LOCK_PLUG_RESPONSE_OK)
 	{
 		gs_lock_plug_get_text(plug, &text);
@@ -173,9 +177,6 @@ static const char* maybe_translate_message(const char* msg)
 		return msg;
 	}
 }
-
-/* Whether the last prompt was cancelled, so its conversation's end is no failure. */
-static gboolean cancelled = FALSE;
 
 static gboolean auth_message_handler(GSAuthMessageStyle style, const char* msg, char** response, gpointer data)
 {
@@ -270,7 +271,7 @@ static gboolean do_auth_check(GSLockPlug* plug)
 
 	gs_debug("Verify user returned: %s", res ? "TRUE" : "FALSE");
 
-	if (! res && ! cancelled)
+	if (! res)
 	{
 		if (error != NULL)
 		{
@@ -299,14 +300,6 @@ static void unlock(void)
 	gtk_main_quit();
 }
 
-static void response_cb(GSLockPlug* plug G_GNUC_UNUSED, gint response_id)
-{
-	if (response_id == GS_LOCK_PLUG_RESPONSE_CANCEL)
-	{
-		cancelled = TRUE;
-	}
-}
-
 static gboolean auth_check_idle(gpointer data)
 {
 	GSLockPlug* plug = data;
@@ -314,7 +307,6 @@ static gboolean auth_check_idle(gpointer data)
 	static guint conversations = 0;
 
 	gs_debug("Starting conversation %u", ++conversations);
-	cancelled = FALSE;
 	res = do_auth_check(plug);
 
 	if (res)
@@ -324,14 +316,6 @@ static gboolean auth_check_idle(gpointer data)
 		{
 			unlock();
 		}
-		return G_SOURCE_REMOVE;
-	}
-
-	if (cancelled)
-	{
-		gs_debug ("Prompt cancelled, starting again");
-		gs_lock_plug_show_message(plug, NULL);
-		g_idle_add(auth_check_idle, plug);
 		return G_SOURCE_REMOVE;
 	}
 
@@ -669,6 +653,14 @@ static gboolean move_dialog(GtkWidget* window, GdkEvent* event G_GNUC_UNUSED, gp
 	return FALSE;
 }
 
+/* A click asks the prompt again if the dialog's timeout or Cancel put it away. */
+static gboolean wake_dialog(GtkWidget* window G_GNUC_UNUSED, GdkEvent* event G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+{
+	gs_lock_plug_wake(GS_LOCK_PLUG(plug));
+
+	return FALSE;
+}
+
 static void add_lock_window(GdkMonitor* monitor)
 {
 	GtkWidget* window;
@@ -677,7 +669,8 @@ static void add_lock_window(GdkMonitor* monitor)
 	/* The background is drawn instead of the theme's. */
 	gtk_widget_set_app_paintable(window, TRUE);
 	g_signal_connect(window, "draw", G_CALLBACK(draw_background), NULL);
-	gtk_widget_add_events(window, GDK_ENTER_NOTIFY_MASK | GDK_POINTER_MOTION_MASK);
+	gtk_widget_add_events(window, GDK_ENTER_NOTIFY_MASK | GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK);
+	g_signal_connect(window, "button-press-event", G_CALLBACK(wake_dialog), NULL);
 	g_signal_connect(window, "enter-notify-event", G_CALLBACK(move_dialog), NULL);
 	g_signal_connect(window, "motion-notify-event", G_CALLBACK(move_dialog), NULL);
 	g_signal_connect(window, "focus-in-event", G_CALLBACK(move_dialog), NULL);
@@ -808,7 +801,6 @@ int main(int argc, char** argv)
 
 	plug = gs_lock_plug_new();
 	g_object_ref_sink(plug);
-	g_signal_connect(plug, "response", G_CALLBACK(response_cb), NULL);
 
 	bg = mate_bg_new();
 	prefs = gs_prefs_new();

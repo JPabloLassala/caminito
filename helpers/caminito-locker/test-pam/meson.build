@@ -3,5 +3,5 @@
 configure_file(
   input: 'mate-screensaver.in',
   output: 'mate-screensaver',
-  configuration: {'MODULES': pam_modules, 'PASSDB': passdb},
+  configuration: {'MODULES': pam_modules, 'PASSDB': passdb, 'FAILLOCK': faillock_dir},
 )

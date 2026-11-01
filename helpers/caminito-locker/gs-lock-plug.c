@@ -128,6 +128,12 @@ struct GSLockPlugPrivate
 	guint        auth_check_idle_id;
 	guint        response_idle_id;
 
+	/* The prompt PAM asked and has had no answer to, kept while the dialog is asleep (a
+	   timeout or Cancel): the next key or click asks it again. */
+	char        *prompt;
+	gboolean     prompt_visible;
+	gboolean     asleep;
+
 	GList       *key_events;
 };
 
@@ -369,6 +375,45 @@ remove_response_idle (GSLockPlug *plug)
 	}
 }
 
+static void restart_cancel_timeout (GSLockPlug *plug);
+
+/* The dialog's timeout and its Cancel button don't answer PAM: a cancelled prompt makes
+ * pam_authenticate fail, and pam_faillock counts that. The prompt is put away and the
+ * entry cleared, and the conversation stays open in its thread until the next key or click
+ * asks the same prompt again (CMN-256). Only a submitted password is a response. */
+static void
+gs_lock_plug_sleep (GSLockPlug *plug)
+{
+	remove_cancel_timeout (plug);
+	remove_response_idle (plug);
+
+	/* Between prompts there is nothing to put away. */
+	if (plug->priv->prompt == NULL)
+	{
+		return;
+	}
+
+	gs_debug ("The prompt is put away, the conversation stays open");
+	plug->priv->asleep = TRUE;
+	gtk_entry_set_text (GTK_ENTRY (plug->priv->auth_prompt_entry), "");
+	set_status_text (plug, "");
+	gs_lock_plug_set_sensitive (plug, FALSE);
+}
+
+void
+gs_lock_plug_wake (GSLockPlug *plug)
+{
+	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
+
+	if (! plug->priv->asleep)
+	{
+		return;
+	}
+
+	gs_debug ("Asking the prompt again");
+	gs_lock_plug_enable_prompt (plug, plug->priv->prompt, plug->priv->prompt_visible);
+}
+
 static void
 gs_lock_plug_response (GSLockPlug *plug,
                        gint        response_id)
@@ -386,13 +431,25 @@ gs_lock_plug_response (GSLockPlug *plug,
 		return;
 	}
 
-	remove_cancel_timeout (plug);
-	remove_response_idle (plug);
-
 	if (response_id == GS_LOCK_PLUG_RESPONSE_CANCEL)
 	{
-		gtk_entry_set_text (GTK_ENTRY (plug->priv->auth_prompt_entry), "");
+		gs_lock_plug_sleep (plug);
+		return;
 	}
+
+	/* Enter in an empty entry sends nothing to PAM: the empty password it would send is
+	   a failure like any other. */
+	if (gtk_entry_get_text_length (GTK_ENTRY (plug->priv->auth_prompt_entry)) == 0)
+	{
+		gs_debug ("An empty answer is not sent to PAM");
+		gtk_widget_set_sensitive (plug->priv->auth_prompt_entry, TRUE);
+		gtk_widget_grab_focus (plug->priv->auth_prompt_entry);
+		restart_cancel_timeout (plug);
+		return;
+	}
+
+	remove_cancel_timeout (plug);
+	remove_response_idle (plug);
 
 	g_signal_emit (plug,
 	               lock_plug_signals [RESPONSE],
@@ -1352,6 +1409,16 @@ gs_lock_plug_enable_prompt (GSLockPlug *plug,
 
 	gs_debug ("Setting prompt to: %s", message);
 
+	/* The message may be the stored prompt itself, from a wake. */
+	if (message != plug->priv->prompt)
+	{
+		g_free (plug->priv->prompt);
+		plug->priv->prompt = g_strdup (message);
+	}
+	plug->priv->prompt_visible = visible;
+	plug->priv->asleep = FALSE;
+	gs_lock_plug_set_sensitive (plug, TRUE);
+
 	gtk_widget_set_sensitive (plug->priv->auth_unlock_button, TRUE);
 	gtk_widget_show (plug->priv->auth_unlock_button);
 	set_default_button (plug, plug->priv->auth_unlock_button);
@@ -1378,6 +1445,9 @@ void
 gs_lock_plug_disable_prompt (GSLockPlug *plug)
 {
 	g_return_if_fail (GS_IS_LOCK_PLUG (plug));
+
+	g_clear_pointer (&plug->priv->prompt, g_free);
+	plug->priv->asleep = FALSE;
 
 	/* gtk_widget_hide (plug->priv->auth_prompt_entry); */
 	/* gtk_widget_hide (plug->priv->auth_prompt_label); */
@@ -1415,6 +1485,17 @@ toplevel_key_press (GtkWidget   *toplevel G_GNUC_UNUSED,
                     GdkEventKey *event,
                     GSLockPlug  *plug)
 {
+	/* A key asks a put-away prompt again, and is typed at it. */
+	if (plug->priv->asleep)
+	{
+		if (strcmp (event->string, "") != 0)
+		{
+			queue_key_event (plug, event);
+		}
+		gs_lock_plug_wake (plug);
+		return TRUE;
+	}
+
 	restart_cancel_timeout (plug);
 
 	/* if the input widget is visible and ready for input
@@ -1896,6 +1977,12 @@ gs_lock_plug_init (GSLockPlug *plug)
 	}
 
 	plug->priv->timeout = DIALOG_TIMEOUT_MSEC;
+	/* For the tests, which can't wait a minute for the timeout. */
+	if (g_getenv ("CAMINITO_LOCKER_DIALOG_TIMEOUT_MSEC") != NULL)
+	{
+		plug->priv->timeout = g_ascii_strtoull (g_getenv ("CAMINITO_LOCKER_DIALOG_TIMEOUT_MSEC"),
+		                                        NULL, 10);
+	}
 
 	/* button press handler used to inhibit popup menu */
 	g_signal_connect (plug->priv->auth_prompt_entry, "button_press_event",
@@ -1959,6 +2046,7 @@ gs_lock_plug_finalize (GObject *object)
 
 	g_free (plug->priv->logout_command);
 	g_free (plug->priv->status_message);
+	g_free (plug->priv->prompt);
 	g_list_free_full (plug->priv->key_events, (GDestroyNotify) gdk_event_free);
 
 	remove_response_idle (plug);

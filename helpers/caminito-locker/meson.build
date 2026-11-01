@@ -70,6 +70,7 @@ pam_wrapper = dependency('pam_wrapper', required: false)
 if pam_wrapper.found()
   pam_modules = pam_wrapper.get_variable(pkgconfig: 'modules')
   passdb = meson.current_build_dir() / 'test-passdb'
+  faillock_dir = meson.current_build_dir() / 'test-faillock'
   subdir('test-pam')
   test(
     'auth-pam',
@@ -79,7 +80,7 @@ if pam_wrapper.found()
       link_with: auth,
       dependencies: glib,
     ),
-    args: [passdb],
+    args: [passdb, faillock_dir],
     env: {
       'LD_PRELOAD': 'libpam_wrapper.so',
       'PAM_WRAPPER': '1',

@@ -40,6 +40,8 @@ const PROMPT: &str = "Setting prompt to: Password:";
 struct Locker {
     dir: tempfile::TempDir,
     listener: UnixListener,
+    /// How long the dialog waits for a key before it puts its prompt away, if not a minute.
+    dialog_timeout_msec: Option<u32>,
 }
 
 impl Locker {
@@ -47,7 +49,11 @@ impl Locker {
         let dir = tempfile::tempdir().unwrap();
         let listener = UnixListener::bind(dir.path().join("wayland-test")).unwrap();
         listener.set_nonblocking(true).unwrap();
-        let locker = Locker { dir, listener };
+        let locker = Locker {
+            dir,
+            listener,
+            dialog_timeout_msec: None,
+        };
         locker.write_stand_in_service();
         locker
     }
@@ -56,7 +62,8 @@ impl Locker {
         self.dir.path().join(name)
     }
 
-    /// pam_matrix's password file, with the test's user, and the service on it.
+    /// pam_matrix's password file, with the test's user, and the service on it, with
+    /// pam_faillock's tally in `faillock` as `system-auth`'s has it.
     fn write_stand_in_service(&self) {
         let modules = std::env::var("PAM_WRAPPER_MODULES")
             .expect("PAM_WRAPPER_MODULES names pam_wrapper's modules directory");
@@ -70,10 +77,15 @@ impl Locker {
         let line = format!("{}:{PASSWORD}:mate-screensaver\n", users_name());
         std::fs::write(&passdb, line).unwrap();
         std::fs::create_dir(self.path("pam.d")).unwrap();
+        std::fs::create_dir(self.path("faillock")).unwrap();
         let service = format!(
-            "auth required {modules}/pam_matrix.so passdb={passdb}\n\
+            "auth required pam_faillock.so preauth silent dir={faillock}\n\
+             auth [success=1 default=bad] {modules}/pam_matrix.so passdb={passdb}\n\
+             auth [default=die] pam_faillock.so authfail nodelay dir={faillock}\n\
+             auth sufficient pam_faillock.so authsucc dir={faillock}\n\
              account required {modules}/pam_matrix.so passdb={passdb}\n",
             passdb = passdb.display(),
+            faillock = self.path("faillock").display(),
         );
         std::fs::write(self.path("pam.d").join("mate-screensaver"), service).unwrap();
     }
@@ -97,6 +109,10 @@ impl Locker {
             ("PAM_WRAPPER", "1".into()),
             ("PAM_WRAPPER_SERVICE_DIR", quoted(&self.path("pam.d"))),
         ];
+        let mut env: Vec<(&str, String)> = env.to_vec();
+        if let Some(msec) = self.dialog_timeout_msec {
+            env.push(("CAMINITO_LOCKER_DIALOG_TIMEOUT_MSEC", msec.to_string()));
+        }
         let env: Vec<String> = env
             .iter()
             .map(|(name, value)| format!("{name}={value}"))
@@ -195,7 +211,18 @@ fn locked_with_wallpapers(
     keyfile: &str,
     wallpapers: impl FnOnce(&[Output]) -> Option<String>,
 ) -> (Fixture, Locker) {
-    let locker = Locker::new();
+    locked_with(outputs, keyfile, None, wallpapers)
+}
+
+/// As `locked_with_wallpapers`, with the dialog's timeout `dialog_timeout_msec` if given.
+fn locked_with(
+    outputs: &[(i32, i32)],
+    keyfile: &str,
+    dialog_timeout_msec: Option<u32>,
+    wallpapers: impl FnOnce(&[Output]) -> Option<String>,
+) -> (Fixture, Locker) {
+    let mut locker = Locker::new();
+    locker.dialog_timeout_msec = dialog_timeout_msec;
     locker.set_settings(keyfile);
     let command = Value::StrList(locker.command());
     let mut f = Fixture::with_settings(vec![(CAMINITO, "locker-command".into(), command)]);
@@ -262,6 +289,75 @@ fn the_password_typed_at_caminito_lockers_dialog_unlocks_after_a_wrong_one() {
 
     type_and_enter(&mut f, PASSWORD);
     // The locker unlocks and exits, and Caminito doesn't start it again (126).
+    f.dispatch_until_explained(
+        |f| f.lock_state() == "unlocked" && dump(f)["locker"]["state"] == "idle",
+        seen,
+    );
+}
+
+/// What the dialog puts in its debug line when the prompt is put away.
+const PUT_AWAY: &str = "The prompt is put away, the conversation stays open";
+
+/// The failures `pam_faillock` has recorded for the user in the stand-in service's tally.
+fn faillock_records(locker: &Locker) -> usize {
+    std::fs::read_to_string(locker.path("faillock").join(users_name()))
+        .map(|tally| {
+            tally
+                .lines()
+                .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_dialog_that_times_out_leaves_the_conversation_open_and_counts_no_failure() {
+    let (mut f, locker) = locked_with(&[(1920, 1080)], "", Some(500), |_| None);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
+
+    // The timeout puts the prompt away. The conversation is the same one, still waiting:
+    // PAM has no result, so pam_faillock has no record.
+    f.dispatch_until_explained(|_| locker.count(PUT_AWAY) == 1, seen);
+    f.dispatch_for(std::time::Duration::from_millis(1500));
+    assert_eq!(locker.count("Starting conversation"), 1, "{}", seen());
+    assert_eq!(locker.count("Verify user returned"), 0, "{}", seen());
+    assert_eq!(faillock_records(&locker), 0, "{}", seen());
+    assert_eq!(f.lock_state(), "locked");
+
+    // A key asks the same prompt again, and the password typed at it unlocks.
+    type_and_enter(&mut f, PASSWORD);
+    f.dispatch_until_explained(
+        |f| f.lock_state() == "unlocked" && dump(f)["locker"]["state"] == "idle",
+        seen,
+    );
+    assert_eq!(locker.count("Starting conversation"), 1, "{}", seen());
+    assert_eq!(faillock_records(&locker), 0, "{}", seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn an_empty_answer_is_not_sent_to_pam() {
+    let (mut f, locker) = locked_by_caminito_locker(&[(1920, 1080)]);
+    let seen = || locker.seen();
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", seen);
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, seen);
+
+    f.key(KEY_ENTER, true);
+    f.key(KEY_ENTER, false);
+    f.dispatch_until_explained(
+        |_| locker.count("An empty answer is not sent to PAM") == 1,
+        seen,
+    );
+    f.dispatch_for(std::time::Duration::from_millis(1000));
+    assert_eq!(locker.count("got response"), 0, "{}", seen());
+    assert_eq!(locker.count("Verify user returned"), 0, "{}", seen());
+    assert_eq!(faillock_records(&locker), 0, "{}", seen());
+
+    // The same prompt takes the password after it.
+    type_and_enter(&mut f, PASSWORD);
     f.dispatch_until_explained(
         |f| f.lock_state() == "unlocked" && dump(f)["locker"]["state"] == "idle",
         seen,
