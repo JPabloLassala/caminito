@@ -19,7 +19,7 @@ if [ "${1-}" = --deps ]; then
   # the palette helper's test runs under. xorg-xwayland: the X11 tier spawns a real Xwayland
   # from the headless fixture (14). seatd, systemd-libs, mesa, libdisplay-info, libinput: the
   # tty backend links them. gtk4: caminito-displays (84). gtk-session-lock, mate-desktop, pam:
-  # caminito-locker's build (131). pam_wrapper: the stand-in PAM service its tests check
+  # caminito-locker's build (131). gettext: its translations' msgfmt, and its test's. pam_wrapper: the stand-in PAM service its tests check
   # passwords against. nodejs, npm: the global menu extension (116). desktop-file-utils:
   # desktop-file-validate, for the System Shortcuts entry (183). python-dbusmock: the BlueZ
   # caminito-bluetooth's tests run against (255), and NetworkManager the Network applet's and
@@ -32,7 +32,7 @@ if [ "${1-}" = --deps ]; then
   # (ADR 0051).
   sudo pacman -S --needed gcc pkgconf rustup cargo-deny libxkbcommon pixman wayland dbus libcanberra \
     pango gdk-pixbuf2 meson gtk3 gtk4 xorg-server-xvfb xorg-xauth xorg-xwayland seatd \
-    systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper \
+    systemd-libs mesa libdisplay-info libinput gtk-session-lock mate-desktop pam pam_wrapper gettext \
     nodejs npm desktop-file-utils python-dbusmock libnm libxfce4windowing gtk-layer-shell gvfs \
     gtk4-layer-shell reuse
   rustup toolchain install

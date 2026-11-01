@@ -1,0 +1,182 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Crimean Turkish (https://app.transifex.com/mate/teams/13566/"
+"crh/)\n"
+"Language: crh\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "Show debugging output"
+msgstr "Arızasızlandıruv çıqtısını köster"
+
+msgid "Version of this application"
+msgstr "Bu uygulamanıñ sürümi"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Qullanıcı adı:"
+
+msgid "Password:"
+msgstr "Sır-söz:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Hemen parolanızı değiştirmeniz gerekiyor (parolanız eskidi)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Parolanızı hemen değiştirmeniz gerekiyor (root zorluyor)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Esabıñız eskirgendir; lütfen sistem memurıñız ile temasqa keçiñiz"
+
+msgid "No password supplied"
+msgstr "Bir parola sağlanmadı"
+
+msgid "Password unchanged"
+msgstr "Parola değişmedi"
+
+msgid "Can not get username"
+msgstr "Qullanıcı adı alınamay"
+
+msgid "Retype new UNIX password:"
+msgstr "Yañı UNIX sır-sözüñizni kene daktilo etiñiz:"
+
+msgid "Enter new UNIX password:"
+msgstr "Yañı UNIX sır-sözüñizni kirsetiñiz:"
+
+msgid "(current) UNIX password:"
+msgstr "(cari) UNIX sır-sözüñiz:"
+
+msgid "Error while changing NIS password."
+msgstr "NIS parolası değiştirilirken hata"
+
+msgid "You must choose a longer password"
+msgstr "Daha uzun bir parola seçmelisiniz"
+
+msgid "Password has been already used. Choose another."
+msgstr "Parola kullanılmaktadır. Başka bir tane seçin."
+
+msgid "You must wait longer to change your password"
+msgstr "Sır-sözüñizni deñiştirmek içün daa uzun beklemelisiñiz"
+
+msgid "Sorry, passwords do not match"
+msgstr "Üzgünüm, parolalar uyuşmuyor"
+
+msgid "Checking..."
+msgstr "Teşkerile..."
+
+msgid "Authentication failed."
+msgstr "Sahihlenme muvafaqiyetsiz."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Servis %s qurulamadı: %s\n"
+
+msgid "Incorrect password."
+msgstr "Yanlış parola."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Şu an erişim kazanmaya izinli değil."
+
+msgid "No longer permitted to access the system."
+msgstr "Sisteme erişimine artık izin verilmiyor."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "Büyük Arif Kiliti (Caps Lock) tuşuñız faaldir."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%h üzerinde %U</span>"
+
+msgid "_Switch User"
+msgstr "Qullanıcı _Almaştır"
+
+msgid "_Log Out"
+msgstr "_Tışarı İmzalan"
+
+msgid "_Cancel"
+msgstr "_Vazgeç"
+
+msgid "_Unlock"
+msgstr "_Kilitsizle"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Ekran koruyucudan nazikçe çıkmasına sebep olur"
+
+msgid "Query the state of the screensaver"
+msgstr "Ekran qoruyıcısınıñ durumını sorğula"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Ekran koruyucusunun etkin olduğu zamanı sorgula"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Çapmaqta olğan ekran qoruyıcısı esnasına ekrannı deral kilitlemege söyler"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Eğer ekran koruyucu etkin ise başka bir grafik gösterimine geç"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Ekran koruyucuyu aç (ekranı boş bırak)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Eğer ekran koruyucu etkin ise etkinliğini kaldır (ekranı boş bırakma)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Kullanıcı aktivitesini taklit etmek için çalışan ekran koruyucuyu dürt"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Ekran koruyucunun etkinleşmesini engelle. Engelleme etkin iken komut bloke "
+"edilir."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Ekran koruyucuyu engelleyen çağrılan uygulama"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Ekran koruyucuya engel olmak için sebep"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Ekran qoruyıcısı: %s\n"
+
+msgid "active"
+msgstr "faal"
+
+msgid "inactive"
+msgstr "ğayrı faal"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Ekran qoruyıcı manialı degil\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Ekran koruyucuyu durduran:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Ekran koruyucu %d saniyedir etkin.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Ekran qoruyıcı al-azırda faal degildir.\n"

@@ -1,0 +1,180 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Mongolian (https://app.transifex.com/mate/teams/13566/mn/)\n"
+"Language: mn\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Шалгах гарцыг харуулах"
+
+msgid "Version of this application"
+msgstr "Энэ програмын хувилбар"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Хэрэглэгч:"
+
+msgid "Password:"
+msgstr "Нууц үг:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Та нууц үгээ дариу солих шаардлагатай (нууц үг хуучирсан)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Та нууц үгээ дариу солих шаардлагатай (root шаардсан)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Таны дансны хугацаа дууссан; Системийн админ руу хандана уу"
+
+msgid "No password supplied"
+msgstr "Нууц үг нийлүүлэгдсэнгүй"
+
+msgid "Password unchanged"
+msgstr "Нууц үг өөрчилөгдсөнгүй"
+
+msgid "Can not get username"
+msgstr "Хэрэглэгчийн нэрийг авах боломжгүй"
+
+msgid "Retype new UNIX password:"
+msgstr "Шинэ UNIX нууц үгээ давтана уу:"
+
+msgid "Enter new UNIX password:"
+msgstr "Шинэ UNIX нууц үг оруул:"
+
+msgid "(current) UNIX password:"
+msgstr "(идэвхтэй) UNIX нууц үг:"
+
+msgid "Error while changing NIS password."
+msgstr "NIS нууц үг сольж байхад алдаа."
+
+msgid "You must choose a longer password"
+msgstr "Та илүү урт нууц үг сонгох ёстой"
+
+msgid "Password has been already used. Choose another."
+msgstr "Нууц үг хэдийнэ хэрэглэгдсэн. Өөрийг сонгоно уу."
+
+msgid "You must wait longer to change your password"
+msgstr "Та нууц үгээ солихдоо удаан хүлээх ёстой"
+
+msgid "Sorry, passwords do not match"
+msgstr "Уучилаарай, нууц үг таарахгүй байна"
+
+msgid "Checking..."
+msgstr "Шалгаж байна..."
+
+msgid "Authentication failed."
+msgstr "Баталгаажуулалт амжилтгүй."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Сервис %s үүсгэх боломжгүй: %s\n"
+
+msgid "Incorrect password."
+msgstr "Буруу нууц үг..."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Энэ хугацаанд хандах эрх олгогдоогүй."
+
+msgid "No longer permitted to access the system."
+msgstr "Систем рүү хандах эрх олгогдохгүй."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "Таны Caps Lock түлхүүр асаалттай байна."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U on %h</span>"
+
+msgid "_Switch User"
+msgstr ""
+
+msgid "_Log Out"
+msgstr "_Гарах"
+
+msgid "_Cancel"
+msgstr "_Буцах"
+
+msgid "_Unlock"
+msgstr "_Онгойлгох"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Скринсэвэрийг хаах шалтгаан"
+
+msgid "Query the state of the screensaver"
+msgstr "Дэлгэц гамнагчийн байдлыг асууна уу"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr ""
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Ажиллаж байгаа скринсевер дэлгэцийг хурдан түгжихийг сануулж байна."
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Хэрвээ скринсевер идэвхитэй бол өөр график демо-д холбох."
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "сринсеверийг асаах (хар дэлгэц)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Хэрвээ скринсевер идэвхитэй бол түүнийг идэвхигүйжүүлэх (дэлгэцийг "
+"харлуулахгүй)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Хэрэглэгчийн үйл ажиллагааг ажилллаж байгаа скринсеверээр идэхижүүл."
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Дэпгэц гамнагч барих програм дуудалт"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Дэлгэц гамнагчийн барих шалтгаан"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Дэлгэц гамнагч %s байна\n"
+
+msgid "active"
+msgstr "идэвхтэй"
+
+msgid "inactive"
+msgstr "идэвхгүй"
+
+msgid "The screensaver is not inhibited\n"
+msgstr ""
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr ""
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr ""
+
+msgid "The screensaver is not currently active.\n"
+msgstr ""

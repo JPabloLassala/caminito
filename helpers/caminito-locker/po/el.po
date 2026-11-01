@@ -1,0 +1,194 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Efstathios Iosifidis <eiosifidis@gmail.com>, 2018
+# Petros Freris (Πέτρος Φρέρης) <petrosfreris@gmail.com>, 2018
+# alexandros_ <alexandros.venn@gmail.com>, 2018
+# Angel Chraniotis, 2018
+# 437c9d6e19936ed69f57bed9e0fe4716, 2018
+# thunk <thunk77@gmail.com>, 2019
+# Achillefs Zogias <achillefs76@hotmail.com>, 2020
+# Alexandros Kapetanios <alexandros@gnugr.org>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Greek (https://app.transifex.com/mate/teams/13566/el/)\n"
+"Language: el\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Προβολή επιλογών αποσφαλμάτωσης"
+
+msgid "Version of this application"
+msgstr "Η Έκδοση αυτής της εφαρμογής"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Όνομα χρήστη:"
+
+msgid "Password:"
+msgstr "Συνθηματικό:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"Απαιτείται να αλλάξετε κωδικό άμεσα (ο κωδικός σας έχει ημερομηνία λήξης)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Απαιτείται να αλλάξετε κωδικό άμεσα (εξαναγκασμός από το root)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Ο λογαριασμός σας έχει λήξει. Παρακαλώ επικοινωνήστε με το διαχειριστή του "
+"συστήματος σας"
+
+msgid "No password supplied"
+msgstr "Δεν δόθηκε κωδικός"
+
+msgid "Password unchanged"
+msgstr "Αναλλοίωτος κωδικός"
+
+msgid "Can not get username"
+msgstr "Αδυναμία λήψης ονόματος χρήστη"
+
+msgid "Retype new UNIX password:"
+msgstr "Επαπληκτρολόγηση νέου κωδικού UNIX:"
+
+msgid "Enter new UNIX password:"
+msgstr "Εισαγωγή νέου κωδικού UNIX:"
+
+msgid "(current) UNIX password:"
+msgstr "(τρέχων) κωδικός UNIX:"
+
+msgid "Error while changing NIS password."
+msgstr "Σφάλμα κατά την αλλαγή του κωδικού NIS"
+
+msgid "You must choose a longer password"
+msgstr "Θα πρέπει να επιλέξετε ένα μεγαλύτερο κωδικό."
+
+msgid "Password has been already used. Choose another."
+msgstr "Ο Κωδικός χρησιμοποιείται ήδη. Διαλέξτε έναν άλλο."
+
+msgid "You must wait longer to change your password"
+msgstr "Θα πρέπει να περιμένετε περισσότερο για να αλλάξετε το κωδικό σας"
+
+msgid "Sorry, passwords do not match"
+msgstr "Συγγνώμη, οι κωδικοί δεν ταιριάζουν"
+
+msgid "Checking..."
+msgstr "Έλεγχος..."
+
+msgid "Authentication failed."
+msgstr "Αποτυχία πιστοποίησης."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Αδυναμία διατήρησης υπηρεσίας %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Μη έγκυρος κωδικός."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Δεν σας επιτρέπεται η πρόσβαση αυτή τη φορά."
+
+msgid "No longer permitted to access the system."
+msgstr "Δεν σας επιτρέπεται πια η πρόσβαση στο σύστημα."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "Έχετε πατημένο το πλήκτρο Caps Lock."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U σε %h</span>"
+
+msgid "_Switch User"
+msgstr "_Αλλαγή χρήστη"
+
+msgid "_Log Out"
+msgstr "_Αποσύνδεση"
+
+msgid "_Cancel"
+msgstr "Α_κύρωση"
+
+msgid "_Unlock"
+msgstr "_Ξεκλείδωμα"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Προκαλεί την έξοδο της προστασίας οθόνης"
+
+msgid "Query the state of the screensaver"
+msgstr "Ερώτηση της κατάστασης της προστασίας οθόνης"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Ερώτημα για το χρόνο που ήταν ενεργή η προστασία οθόνης"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Ειδοποιεί την προστασία οθόνης που εκτελείται για να κλειδώσει την οθόνη "
+"άμεσα."
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Αν η προστασία οθόνης είναι ενεργή τότε να γίνει αλλαγή σε ένα άλλο graphics "
+"demo"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Ενεργοποίηση της προστασίας οθόνης (κενή οθόνη)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Αν η προστασία οθόνης είναι ενεργή τότε να γίνει απενεργοποίηση"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Η εκτελούμενη προστασία οθόνης να εξομοιώνει δρλασεις χρήστη"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Παρεμπόδιση της προστασίας οθόνης. Command blocks while inhibit is active."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Η εφαρμογή που παρακωλύει την προστασία οθόνης"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Ο λόγος για την παρακώλυση της προστασίας οθόνης."
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Η προστασία οθόνης είναι %s\n"
+
+msgid "active"
+msgstr "ενεργή"
+
+msgid "inactive"
+msgstr "ανενεργή"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Η προστασία οθόνης δεν παρεμποδίζεται\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Η προστασία οθόνης παρεμποδίζεται από:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Η προστασία οθόνης ήταν ενεργή για %d δευτερόλεπτα.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Η προστασία οθόνης δεν είναι προς το παρόν ενεργή\n"

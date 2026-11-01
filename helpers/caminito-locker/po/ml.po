@@ -1,0 +1,182 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Malayalam (https://app.transifex.com/mate/teams/13566/ml/)\n"
+"Language: ml\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "പിഴവ് തിരുത്തുന്നതിന് സഹായകമായ ഔട്ട്പുട്ട് കാണിയ്ക്കുക"
+
+msgid "Version of this application"
+msgstr "ഈ പ്രയോഗത്തിന്റെ ലക്കം"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "ഉപയോക്താവിന്റെ പേര്:"
+
+msgid "Password:"
+msgstr "അടയാളവാക്ക്:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "നിങ്ങളുടെ അടയാളവാക്ക് ഉടന്‍ തന്നെ മാറ്റേണ്ടതാകുന്നു (അടയാളവാക്ക് പഴയതായിരിക്കുന്നു)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "നിങ്ങളുടെ അടയാളവാക്ക് ഉടന്‍ തന്നെ മാറ്റേണ്ടതാകുന്നു (റൂട്ട് നിര്‍ബന്ധിതമാക്കിയത്)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"നിങ്ങളുടെ അക്കൌണ്ടിന്റെ കാലാവധി കഴിഞ്ഞിരിക്കുന്നു; ദയവായി നിങ്ങളുടെ സിസ്റ്റം "
+"നടത്തിപ്പുകാരനുമായി ബന്ധപ്പെടുക"
+
+msgid "No password supplied"
+msgstr "അടയാളവാക്കൊന്നും നല്‍കിയിട്ടില്ല"
+
+msgid "Password unchanged"
+msgstr "അടയാളവാക്ക് മാറിയിട്ടില്ല"
+
+msgid "Can not get username"
+msgstr "ഉപയോക്താവിന്റെ പേര് ലഭിച്ചില്ല"
+
+msgid "Retype new UNIX password:"
+msgstr "പുതിയ യുണിക്സ് അടയാളവാക്ക് വീണ്ടും നല്‍കുക:"
+
+msgid "Enter new UNIX password:"
+msgstr "പുതിയ യുണിക്സ് അടയാളവാക്ക് നല്‍കുക:"
+
+msgid "(current) UNIX password:"
+msgstr "(നിലവിലുളള) യുണിക്സ് അടയാളവാക്ക്:"
+
+msgid "Error while changing NIS password."
+msgstr "എന്‍ഐഎസ് അടയാളവാക്ക് മാറ്റുന്നതിനിടയില്‍ തെറ്റ്."
+
+msgid "You must choose a longer password"
+msgstr "ഇതിലും വലിയൊരു അടയാളവാക്ക് തിരഞ്ഞെടുക്കേണ്ടതാണ്"
+
+msgid "Password has been already used. Choose another."
+msgstr "അടയാളവാക്ക് നേരത്തെ ഉപയോഗിച്ചതാണ്. മറ്റൊന്ന് തിരഞ്ഞെടുക്കുക."
+
+msgid "You must wait longer to change your password"
+msgstr "നിങ്ങളുടെ അടയാളവാക്ക് മാറ്റുന്നതിനായി ഇനിയും കാത്തിരിയ്ക്കേണ്ടതാണ്"
+
+msgid "Sorry, passwords do not match"
+msgstr "ക്ഷമിക്കണം, അടയാളവാക്കുകള്‍ തമ്മില്‍ പൊരുത്തമില്ല"
+
+msgid "Checking..."
+msgstr "പരിശോധനയില്‍..."
+
+msgid "Authentication failed."
+msgstr "തിരിച്ചറിയല്‍ പരാജയപ്പെട്ടു."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "%2$s :%1$s എന്ന സേവനം സ്ഥാപിയ്ക്കുവാന്‍ സാധ്യമായില്ല\n"
+
+msgid "Incorrect password."
+msgstr "അടയാളവാക്ക് തെറ്റാണ്."
+
+msgid "Not permitted to gain access at this time."
+msgstr "ഈ സമയത്ത് പ്രവേശനത്തിനുളള അനുമതിയില്ല."
+
+msgid "No longer permitted to access the system."
+msgstr "സിസ്റ്റത്തിലേക്ക് ഇനി പ്രവേശിക്കുന്നതിനുളള അനുമതിയില്ല."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "നിങ്ങളുടെ കാപ്സ് ലോക്ക് കീ ഓണ്‍ ആണ്."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U on %h</span>"
+
+msgid "_Switch User"
+msgstr "_മറ്റൊരുപയോക്താവാകുക"
+
+msgid "_Log Out"
+msgstr "_പുറത്തിറങ്ങുക"
+
+msgid "_Cancel"
+msgstr "_റദ്ദാക്കുക"
+
+msgid "_Unlock"
+msgstr "_പൂട്ട് തുറക്കുക"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "സ്ക്രീന്‍സേവറില്‍ നിന്നും നല്ലനിലയില്‍ പുറത്ത് കടക്കുന്നുതിനു കാരണമാകുന്നു"
+
+msgid "Query the state of the screensaver"
+msgstr "സ്ക്രീന്‍സേവറിന്റെ അവസ്ഥ അന്വേഷിയ്ക്കുക"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "സ്ക്രീന്‍സേവര്‍ എത്ര സമയമായി സജീവമാണെന്ന് അന്വേഷിയ്ക്കുക"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"ഉടന്‍ തന്നെ സ്ക്രീന്‍ പൂട്ടുന്നതിനായി പ്രവര്‍ത്തിച്ചുകൊണ്ടിരിക്കുന്ന സ്ക്രീന്‍സേവര്‍ പ്രക്രിയയോട് പറയുന്നു"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "സ്ക്രീന്‍സേവര്‍ സജീവമാണെങ്കില്‍ മറ്റൊരു ഗ്രാഫിക്സ് പ്രവര്‍ത്തനമാതൃകയിലേയ്ക്ക് മാറ്റുക"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "സ്ക്രീന്‍സേവര്‍ ഓണ്‍ ചെയ്യുക (സ്ക്രീന്‍ ശൂന്യമാക്കുക)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "സ്ക്രീന്‍സേവര്‍ സജീവമാണെങ്കില്‍ അതിനെ നിഷ്ക്രിയമാക്കുക (സ്ക്രീന്‍ ശൂന്യമല്ലാതാക്കുക)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"ഉപയോക്താക്കളുടെ പ്രവര്‍ത്തനം അനുകരിയ്ക്കാനായി പ്രവര്‍ത്തിച്ചുകൊണ്ടിരിയ്ക്കുന്ന സ്ക്രീന്‍സേവറിനെ തോണ്ടുക"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr "സ്ക്രീന്‍സേവര്‍ സജീവമാകുന്നത് തടയുക. തടയല്‍ സജീവമാകുമ്പോള്‍ ആജ്ഞ തടസ്സപ്പെടുന്നു."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "സ്ക്രീന്‍സേവറിനെ തടയാന്‍ വിളിയ്ക്കുന്ന പ്രയോഗം"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "സ്ക്രീന്‍സേവറിനെ തടയുന്നതിനുള്ള കാരണം"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "%s എന്നതാണ് സ്ക്രീന്‍സേവര്‍\n"
+
+msgid "active"
+msgstr "സജീവമാകുക"
+
+msgid "inactive"
+msgstr "നിഷ്ക്രിയമാകുക"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "സ്ക്രീന്‍സേവര്‍ തടഞ്ഞിട്ടില്ല\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "സ്ക്രീന്‍സേവര്‍ തടയപ്പെട്ടിരിയ്ക്കുന്നതു്:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "സ്ക്രീന്‍സേവര്‍ %d സെക്കന്റുകള്‍ സജീവമായിരുന്നു.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "സ്ക്രീന്‍സേവര്‍ നിലവില്‍ സജീവമല്ല.\n"

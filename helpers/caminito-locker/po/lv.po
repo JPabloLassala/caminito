@@ -1,0 +1,188 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Rihards Priedītis <rprieditis@gmail.com>, 2018
+# Klāvs Priedītis <klavs.pr@gmail.com>, 2018
+# Imants Liepiņš <imzzinator@gmail.com>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Latvian (https://app.transifex.com/mate/teams/13566/lv/)\n"
+"Language: lv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n != 0 ? 1 : "
+"2);\n"
+
+msgid "Show debugging output"
+msgstr "Rādīt atkļūdošanas izvadu"
+
+msgid "Version of this application"
+msgstr "Šīs lietotnes versija"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Lietotājvārds:"
+
+msgid "Password:"
+msgstr "Parole:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Jums nekavējoties jānomaina parole (parole novecojusi)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Jums nekavējoties jānomaina parole (administratora prasība)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Jūsu konta derīgums ir beidzies. Lūdzu, sazinieties ar sistēmas "
+"administratoru"
+
+msgid "No password supplied"
+msgstr "Nav ievadīta parole"
+
+msgid "Password unchanged"
+msgstr "Parole nav mainīta"
+
+msgid "Can not get username"
+msgstr "Nevar noteikt lietotājvārdu"
+
+msgid "Retype new UNIX password:"
+msgstr "Ievadiet jauno UNIX paroli vēlreiz:"
+
+msgid "Enter new UNIX password:"
+msgstr "Ievadiet jauno UNIX paroli:"
+
+msgid "(current) UNIX password:"
+msgstr "(pašreizējā) UNIX parole:"
+
+msgid "Error while changing NIS password."
+msgstr "Kļūda, mainot NIS paroli."
+
+msgid "You must choose a longer password"
+msgstr "Jums jāizvēlas garāka parole"
+
+msgid "Password has been already used. Choose another."
+msgstr "Šāda parole jau ir tikusi izmantota. Izvēlieties citu."
+
+msgid "You must wait longer to change your password"
+msgstr "Jums jāuzgaida ilgāk, lai nomainītu savu paroli"
+
+msgid "Sorry, passwords do not match"
+msgstr "Atvainojiet, paroles nesakrīt"
+
+msgid "Checking..."
+msgstr "Notiek pārbaude..."
+
+msgid "Authentication failed."
+msgstr "Autentifikācija nav izdevusies."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Nevar uzsākt servisu %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Nepareiza parole."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Šādā laikā nav ļauts piekļūt sistēmai."
+
+msgid "No longer permitted to access the system."
+msgstr "Vairs nav tiesību piekļūt sistēmai."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "Jums ir ieslēgts Caps Lock taustiņš."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">Lietotājs %U uz datora %h</span>"
+
+msgid "_Switch User"
+msgstr "Nomainīt _lietotāju"
+
+msgid "_Log Out"
+msgstr "Beigt _darbu"
+
+msgid "_Cancel"
+msgstr "At_celt"
+
+msgid "_Unlock"
+msgstr "_Atslēgt"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Liek ekrānsaudzētājam saudzīgi iziet"
+
+msgid "Query the state of the screensaver"
+msgstr "Vaicā ekrānsaudzētāja stāvokli"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Vaicājums par laiku, kurā ekrānsaudzētāja ir bijis aktīvs"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Liek strādājošam ekrānsaudzētāja procesam nekavējoties noslēgt ekrānu"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Ja ekrānsaudzētājs ir aktīvs, tad pārslēgties uz citu grafikas demonstrāciju"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Ieslēgt ekrānsaudzētāju (notīrīt ekrānu)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Ja ekrānsaudzētājs ir aktīvs, tad deaktivizēt to (at-notīrīt ekrānu)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Pabikstīt darbojošos ekrānsaudzētāju, lai simulētu lietotāja aktivitāti"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Atturēt ekrānsaudzētāju no aktivizēšanās. Komanda bloķē, kamēr atturēšana ir "
+"aktīva."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Izsaucošā lietotne, kas nomāc ekrānsaudzētāju"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Ekrānsaudzētāja nomākšanas iemesls"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Ekrānsaudzētājs ir %s\n"
+
+msgid "active"
+msgstr "aktīvs"
+
+msgid "inactive"
+msgstr "neaktīvs"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Ekrānsaudzētājs nav nomākts\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Ekrānsaudzētāju nomāc:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Ekrānsaudzētājs ir bijis aktīvs %d sekundes.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Ekrānsaudzētājs pašlaik nav aktīvs.\n"

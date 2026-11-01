@@ -1,0 +1,184 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# shuyu liu <liushuyu011@gmail.com>, 2018
+# e0c668032ced196bd60f2b6a070d982d_8f72ae0, 2019
+# Mingcong Bai <jeffbai@aosc.xyz>, 2020
+# Mingye Wang <arthur200126@gmail.com>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+# Wenbin Lv <wenbin816@gmail.com>, 2022
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Wenbin Lv <wenbin816@gmail.com>, 2022\n"
+"Language-Team: Chinese (China) (https://app.transifex.com/mate/teams/13566/"
+"zh_CN/)\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Show debugging output"
+msgstr "显示调试输出"
+
+msgid "Version of this application"
+msgstr "此应用程序的版本"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "用户名："
+
+msgid "Password:"
+msgstr "密码："
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "您必须立即更改您的密码（密码到期）"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "您必须立即更改您的密码（root 强制）"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "您的账户已过期；请联系您的系统管理员"
+
+msgid "No password supplied"
+msgstr "没有提供密码"
+
+msgid "Password unchanged"
+msgstr "密码未更改"
+
+msgid "Can not get username"
+msgstr "无法获取用户名"
+
+msgid "Retype new UNIX password:"
+msgstr "重新输入新 UNIX 密码："
+
+msgid "Enter new UNIX password:"
+msgstr "输入新 UNIX 密码："
+
+msgid "(current) UNIX password:"
+msgstr "当前 UNIX 密码："
+
+msgid "Error while changing NIS password."
+msgstr "更改 NIS 密码出错。"
+
+msgid "You must choose a longer password"
+msgstr "您必须选择一个更长的密码"
+
+msgid "Password has been already used. Choose another."
+msgstr "密码已经被使用过。请重新选择。"
+
+msgid "You must wait longer to change your password"
+msgstr "您必须等待更长时间才能更改您的密码"
+
+msgid "Sorry, passwords do not match"
+msgstr "对不起，密码不匹配"
+
+msgid "Checking..."
+msgstr "正在检查..."
+
+msgid "Authentication failed."
+msgstr "身份认证失败。"
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "无法建立服务 %s：%s\n"
+
+msgid "Incorrect password."
+msgstr "密码不正确。"
+
+msgid "Not permitted to gain access at this time."
+msgstr "目前不允许获取访问权限。"
+
+msgid "No longer permitted to access the system."
+msgstr "不再允许访问系统。"
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%-m月%-d日%A"
+
+msgid "You have the Caps Lock key on."
+msgstr "您打开了 Caps Lock 键。"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U，登录于 %h</span>"
+
+msgid "_Switch User"
+msgstr "切换用户(_S)"
+
+msgid "_Log Out"
+msgstr "注销(_L)"
+
+msgid "_Cancel"
+msgstr "取消(_C)"
+
+msgid "_Unlock"
+msgstr "解锁(_U)"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "使屏幕保护程序正常退出"
+
+msgid "Query the state of the screensaver"
+msgstr "查询屏幕保护程序的状态"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "查询屏幕保护程序已经活动的时间"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "通知正在运行的屏幕保护程序进程立即锁定屏幕"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr "通知正在运行的屏幕保护程序进程立即解锁屏幕"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "如果屏幕保护程序处于活动状态，则切换到另一个演示图形"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "开启屏幕保护程序（黑屏）"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "如果屏幕保护程序正活动则使之不活动（解除黑屏）"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "发送信息到正在运行的屏幕保护程序以模拟用户活动"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr "阻止屏幕保护程序激活。若已阻止，此命令将被阻塞。"
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "正在阻止屏幕保护程序的应用程序"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "阻止屏幕保护程序的原因"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "屏幕保护程序%s\n"
+
+msgid "active"
+msgstr "已激活"
+
+msgid "inactive"
+msgstr "未激活"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "屏幕保护程序未被阻止\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "屏幕保护程序被此程序阻止：\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "屏幕保护程序已运行 %d 秒。\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "屏幕保护当前没有激活。\n"

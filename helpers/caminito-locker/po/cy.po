@@ -1,0 +1,180 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# ciaran, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Welsh (https://app.transifex.com/mate/teams/13566/cy/)\n"
+"Language: cy\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=4; plural=(n==1) ? 0 : (n==2) ? 1 : (n != 8 && n != "
+"11) ? 2 : 3;\n"
+
+msgid "Show debugging output"
+msgstr "Dangos allbwn datnamu"
+
+msgid "Version of this application"
+msgstr "Fersiwn y rhaglen hon"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Enw defnyddiwr:"
+
+msgid "Password:"
+msgstr "Cyfrinair:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+
+msgid "No password supplied"
+msgstr ""
+
+msgid "Password unchanged"
+msgstr ""
+
+msgid "Can not get username"
+msgstr ""
+
+msgid "Retype new UNIX password:"
+msgstr ""
+
+msgid "Enter new UNIX password:"
+msgstr ""
+
+msgid "(current) UNIX password:"
+msgstr ""
+
+msgid "Error while changing NIS password."
+msgstr ""
+
+msgid "You must choose a longer password"
+msgstr ""
+
+msgid "Password has been already used. Choose another."
+msgstr ""
+
+msgid "You must wait longer to change your password"
+msgstr ""
+
+msgid "Sorry, passwords do not match"
+msgstr ""
+
+msgid "Checking..."
+msgstr ""
+
+msgid "Authentication failed."
+msgstr ""
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr ""
+
+msgid "Incorrect password."
+msgstr ""
+
+msgid "Not permitted to gain access at this time."
+msgstr ""
+
+msgid "No longer permitted to access the system."
+msgstr ""
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "Mae'r fysell Caps Lock ymlaen gennych."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr ""
+
+msgid "_Switch User"
+msgstr "_Newid Defnyddiwr"
+
+msgid "_Log Out"
+msgstr "_Allgofnodi"
+
+msgid "_Cancel"
+msgstr "_Diddymu"
+
+msgid "_Unlock"
+msgstr "_Datgloi"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Achosi i'r arbedwr sgrin orffen yn daclus"
+
+msgid "Query the state of the screensaver"
+msgstr "Holi cyflwr yr arbedwr sgrin"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr ""
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Gorchymyn i'r broses arbedwr sgrin sy'n rhedeg i gloi'r sgrin yn syth"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Os yw'r arbedwr sgrin ar waith, newid i ddemo graffeg gwahanol"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Troi'r arbedwr sgrin ymlaen (clirio'r sgrin)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Os yw'r arbedwr sgrin ar waith, ei ddi-ysgogi (dad-glirio'r sgrin)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Procio'r arbedwr sgrin sy'n rhedeg, i ddynwared gweithred defnyddiwr"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr ""
+
+msgid "The reason for inhibiting the screensaver"
+msgstr ""
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Yr arbedwr sgrin yw %s\n"
+
+msgid "active"
+msgstr "ar waith"
+
+msgid "inactive"
+msgstr "ddim ar waith"
+
+msgid "The screensaver is not inhibited\n"
+msgstr ""
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr ""
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr ""
+
+msgid "The screensaver is not currently active.\n"
+msgstr ""

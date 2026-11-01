@@ -1,0 +1,201 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# mauron, 2018
+# dfd998a47e5ece82efa734d3c31b5c3e_071ebb8, 2018
+# Charles Monzat <c.monzat@laposte.net>, 2018
+# yoplait <yoplait@tememe.org>, 2018
+# Étienne Deparis <etienne@depar.is>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2020
+# Benjamin Teissier <enatheme@enatheme.org>, 2020
+# clefebvre <clement.lefebvre@linuxmint.com>, 2021
+# Tubuntu, 2021
+# David D, 2024
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: David D, 2024\n"
+"Language-Team: French (https://app.transifex.com/mate/teams/13566/fr/)\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % "
+"1000000 == 0 ? 1 : 2;\n"
+
+msgid "Show debugging output"
+msgstr "Affiche la sortie de débogage"
+
+msgid "Version of this application"
+msgstr "Version de cette application"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Utilisateur :"
+
+msgid "Password:"
+msgstr "Mot de passe :"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"Vous devez modifier votre mot de passe immédiatement (mot de passe ancien)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"Vous devez modifier votre mot de passe immédiatement (à la demande de "
+"l'administratrice ou de l'administrateur)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Votre compte a expiré ; veuillez contacter votre administratrice ou "
+"administrateur système"
+
+msgid "No password supplied"
+msgstr "Aucun mot de passe fourni"
+
+msgid "Password unchanged"
+msgstr "Mot de passe non modifié"
+
+msgid "Can not get username"
+msgstr "Impossible d'obtenir un nom d'utilisateur"
+
+msgid "Retype new UNIX password:"
+msgstr "Ressaisissez un nouveau mot de passe UNIX :"
+
+msgid "Enter new UNIX password:"
+msgstr "Saisissez un nouveau mot de passe UNIX :"
+
+msgid "(current) UNIX password:"
+msgstr "Mot de passe UNIX (actuel) :"
+
+msgid "Error while changing NIS password."
+msgstr "Erreur lors de la modification du mot de passe NIS."
+
+msgid "You must choose a longer password"
+msgstr "Vous devez choisir un mot de passe plus long"
+
+msgid "Password has been already used. Choose another."
+msgstr "Le mot de passe a déjà été utilisé. Choisissez en un autre."
+
+msgid "You must wait longer to change your password"
+msgstr "Vous devez attendre plus longtemps pour modifier votre mot de passe"
+
+msgid "Sorry, passwords do not match"
+msgstr "Désolé, les mots de passe ne correspondent pas"
+
+msgid "Checking..."
+msgstr "Vérification en cours..."
+
+msgid "Authentication failed."
+msgstr "L'authentification a échoué."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Impossible d'établir le service %s : %s\n"
+
+msgid "Incorrect password."
+msgstr "Mot de passe non valide."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Vous n'êtes pas autorisé à accéder au système à cette heure."
+
+msgid "No longer permitted to access the system."
+msgstr "Vous n'êtes plus autorisé à accéder au système."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A %e %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "La touche Verr. Maj. est enfoncée."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U sur %h</span>"
+
+msgid "_Switch User"
+msgstr "Changer d'utili_sateur"
+
+msgid "_Log Out"
+msgstr "_Déconnexion"
+
+msgid "_Cancel"
+msgstr "_Annuler"
+
+msgid "_Unlock"
+msgstr "_Déverrouiller"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Demande à l'économiseur d'écran de quitter proprement"
+
+msgid "Query the state of the screensaver"
+msgstr "Indique l'état de l'économiseur d'écran"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Indique la durée pendant laquelle l'économiseur d'écran a été actif"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Demande à l'économiseur d'écran en cours de fonctionnement de verrouiller "
+"l'écran immédiatement"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"Demande à l'économiseur d'écran en cours de fonctionnement de déverrouiller "
+"l'écran immédiatement"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Change de démonstration graphique si l'économiseur d'écran est actif"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Démarre l'économiseur d'écran (efface l'écran)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Désactive l'économiseur d'écran s'il est actif (réaffiche l'écran)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Demande à l'économiseur d'écran en cours de fonctionnement de simuler "
+"l'activité d'un utilisateur"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Empêche l'activation de l'économiseur d'écran. La commande se bloque lorsque "
+"la désactivation est active."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "L'application demandant la désactivation de l'économiseur d'écran"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "La raison de la désactivation de l'économiseur d'écran"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "L'économiseur d'écran est %s\n"
+
+msgid "active"
+msgstr "actif"
+
+msgid "inactive"
+msgstr "inactif"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "L'économiseur d'écran n'est pas inhibé\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "L'économiseur d'écran est inhibé par :\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "L'économiseur d'écran a été actif pendant %d secondes.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "L'économiseur d'écran n'est actuellement pas actif.\n"

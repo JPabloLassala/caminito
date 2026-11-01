@@ -1,0 +1,189 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Puretech <terjemah.puretech@gmail.com>, 2018
+# abuyop <abuyop@gmail.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: abuyop <abuyop@gmail.com>, 2021\n"
+"Language-Team: Malay (https://app.transifex.com/mate/teams/13566/ms/)\n"
+"Language: ms\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Show debugging output"
+msgstr "Tunjukkan output penyahpepijatan"
+
+msgid "Version of this application"
+msgstr "Versi bagi aplikasi ini"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Nama pengguna:"
+
+msgid "Password:"
+msgstr "Kata laluan:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"Anda perlu menukar kata laluan anda serta merta (kata laluan terlalu lama)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"Anda perlu menukar kata laluan anda serta merta (dikuatkuasa oleh root)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Akaun anda telah luput, sila hubungi pentadbir sistem anda"
+
+msgid "No password supplied"
+msgstr "Tiada kata laluan dibekalkan"
+
+msgid "Password unchanged"
+msgstr "Kata laluan tidak berubah"
+
+msgid "Can not get username"
+msgstr "Tidak boleh mendapatkan nama pengguna"
+
+msgid "Retype new UNIX password:"
+msgstr "Taip semula kata laluan baharu UNIX:"
+
+msgid "Enter new UNIX password:"
+msgstr "Masukkan katalaluan baharu UNIX:"
+
+msgid "(current) UNIX password:"
+msgstr "Kata laluan UNIX (semasa):"
+
+msgid "Error while changing NIS password."
+msgstr "Ralat ketika menukar kata laluan NIS."
+
+msgid "You must choose a longer password"
+msgstr "Anda mesti pilih kata laluan yang lebih panjang"
+
+msgid "Password has been already used. Choose another."
+msgstr "Kata laluan telah digunakan. Pilih yang lain."
+
+msgid "You must wait longer to change your password"
+msgstr "Anda mesti tunggu lebih lama untuk menukar kata laluan anda"
+
+msgid "Sorry, passwords do not match"
+msgstr "Maaf, kata laluan tidak sepadan"
+
+msgid "Checking..."
+msgstr "Memeriksa..."
+
+msgid "Authentication failed."
+msgstr "Pengesahihan gagal."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Tidak dapat menubuhkan perkhidmatan %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Kata laluan salah."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Tidak diizinkan untuk mendapat capaian pada masa ini."
+
+msgid "No longer permitted to access the system."
+msgstr "Tidak lagi diizinkan untuk mencapai sistem."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "Anda telah menghidupkan kekunci Caps Lock."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U pada %h</span>"
+
+msgid "_Switch User"
+msgstr "_Tukar Pengguna"
+
+msgid "_Log Out"
+msgstr "_Daftar Keluar"
+
+msgid "_Cancel"
+msgstr "_Batal"
+
+msgid "_Unlock"
+msgstr "Buka k_unci"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Menyebabkan penyelamat skrin keluar secara lemah lembut"
+
+msgid "Query the state of the screensaver"
+msgstr "Tanya keadaan penyelamat skrin"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Tanya panjang masa penyelamat skrin telah aktif"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Memberitahu proses penyelamat skrin sedang berjalan untuk mengunci skrin "
+"serta-merta"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"Beritahu proses penyelamat skrin yang berjalan untuk menyahkunci skrin serta-"
+"merta"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Jika penyelamat skrin sedang aktif, maka tukar ke demo grafik lain"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Hidupkan penyelamat skrin (kosongkan skrin)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Jika penyelamat skrin sedang aktif, nyah-aktifkan (skrin tidak kosong lagi)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Cuit penyelamat skrin yang sedang berjalan untuk meniru aktiviti pengguna"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Halang penyelamat skrin dari mengaktif.  Perintah menghalang semasa "
+"penghalang sedang aktif."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Aplikasi pemanggil yang menghalang penyelamat skrin"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Alasan menghalang penyelamat skrin"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Penyelamat skrin adalah %s\n"
+
+msgid "active"
+msgstr "aktif"
+
+msgid "inactive"
+msgstr "tidak aktif"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Penyelamat skrin tidak dihalang\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Penyelamat skrin sedang dihalang oleh:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Penyelamat skrin telah diaktifkan selama %d saat.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Penyelamat skrin tidak aktif buat masa ini.\n"

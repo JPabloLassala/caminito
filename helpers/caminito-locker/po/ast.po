@@ -1,0 +1,186 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Iñigo Varela <ivarela@softastur.org>, 2018
+# Xuacu Saturio <xuacusk8@gmail.com>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Asturian (https://app.transifex.com/mate/teams/13566/ast/)\n"
+"Language: ast\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Amosar salida depuración"
+
+msgid "Version of this application"
+msgstr "Versión d'esta aplicación"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Nome d'usuariu:"
+
+msgid "Password:"
+msgstr "Contraseña:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Tienes que camudar la to contraseña darréu (contraseña caducada)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Ríquese camudar la clave darréu (forzáu pol root)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"La to cuenta espiró; por favor, contauta col to alministrador del sistema"
+
+msgid "No password supplied"
+msgstr "Nun s'especificó contraseña dala"
+
+msgid "Password unchanged"
+msgstr "Clave non camudada"
+
+msgid "Can not get username"
+msgstr "Nun pudo garrase nome d'usuariu"
+
+msgid "Retype new UNIX password:"
+msgstr "Reescribe la nueva clave UNIX"
+
+msgid "Enter new UNIX password:"
+msgstr "Introduz nueva clave UNIX"
+
+msgid "(current) UNIX password:"
+msgstr "(actual) Clave UNIX:"
+
+msgid "Error while changing NIS password."
+msgstr "Fallu al camudar la contraseña NIS."
+
+msgid "You must choose a longer password"
+msgstr "Tienes qu'escoyer una clave llarga"
+
+msgid "Password has been already used. Choose another."
+msgstr "Clave ta n'usu. Escueyi otra."
+
+msgid "You must wait longer to change your password"
+msgstr "Tienes d'esperar pa camudar la to clave"
+
+msgid "Sorry, passwords do not match"
+msgstr "Siéntolo, clave non camudada"
+
+msgid "Checking..."
+msgstr "Comprobando..."
+
+msgid "Authentication failed."
+msgstr "Falló l'autentificación."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Nun pudo establecese serviciu %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Contraseña incorrecta."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Nun se permite acceder nesti momentu."
+
+msgid "No longer permitted to access the system."
+msgstr "Yá nun se te permite acceder más al sistema."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %e %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "Tien les mayúscules prendíes."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U en %h</span>"
+
+msgid "_Switch User"
+msgstr "Camudar _usuariu"
+
+msgid "_Log Out"
+msgstr "_Desconeutar"
+
+msgid "_Cancel"
+msgstr "_Encaboxar"
+
+msgid "_Unlock"
+msgstr "D_esbloquiar"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Fai que'l curiapantalles zarre bien"
+
+msgid "Query the state of the screensaver"
+msgstr "Entrugar estáu del curiapantalles"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Entrugar la duración del tiempu dende que foi activáu'l curiapantalles"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Indica al procesu de curiapantalles n'execución que cande la pantalla nel "
+"intre"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Si'l curiapantalles ta activu entós camudar a otra demo gráfica"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Prender el curiapantalles (apagar la pantalla)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Si'l curiapantalles ta activu entós desactivalu (prender la pantalla)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Unviar mensaxes al curiapantalles n'execución pa simular actividá del usuariu"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Inhibir l'activación del curiapantalles. El comandu blóquiase mentes la "
+"inhibición ta activa."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "La llamada de l'aplicación deshabilitó'l curiapantalles"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "El motivu pa inhibir el curiapantalles"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "El curiapantalles ye %s\n"
+
+msgid "active"
+msgstr "activu"
+
+msgid "inactive"
+msgstr "inactivu"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "El curiapantalles nun ta inhibíu\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "El curiapantalles ta siendo inhibíu por:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "El curiapantalles foi activáu pa %d segundos.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "El curiapantalles anguaño nun ta activáu.\n"

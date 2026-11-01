@@ -1,7 +1,7 @@
 /*
- * The PAM conversation of gs-auth-pam.c (131) against a stand-in mate-screensaver service.
+ * The PAM conversation of gs-auth-pam.c (131) against a stand-in caminito-locker service.
  *
- * Meson runs it under pam_wrapper, whose PAM_WRAPPER_SERVICE_DIR has a mate-screensaver
+ * Meson runs it under pam_wrapper, whose PAM_WRAPPER_SERVICE_DIR has a caminito-locker
  * service on pam_matrix, pam_chatty and pam_faillock, and passes the path of pam_matrix's
  * password file and the directory of pam_faillock's tally as its two arguments. The test
  * writes that file with the running user's password, so the service is the only thing that
@@ -125,7 +125,7 @@ verify_after (const char *typed,
   g_unlink (tally);
   *dialog = (Dialog) { typed, wait_msec, 0, FALSE, g_ptr_array_new_with_free_func (g_free) };
 
-  return gs_auth_verify_user (g_get_user_name (), ":0", answer, dialog, error);
+  return gs_auth_verify_user (g_get_user_name (), answer, dialog, error);
 }
 
 static gboolean
@@ -243,6 +243,20 @@ a_wrong_password_after_the_wait_is_one_failure (void)
   g_ptr_array_unref (dialog.messages);
 }
 
+/* pam_start would take a missing service as `other`, so the locker asks first (ADR 0056). */
+static void
+the_service_is_found_only_where_pam_would_read_it (void)
+{
+  g_autofree char *dir = g_strdup (g_getenv ("PAM_WRAPPER_SERVICE_DIR"));
+  g_autofree char *empty = g_dir_make_tmp ("caminito-locker-XXXXXX", NULL);
+
+  g_assert_true (gs_auth_service_exists ());
+  g_setenv ("PAM_WRAPPER_SERVICE_DIR", empty, TRUE);
+  g_assert_false (gs_auth_service_exists ());
+  g_setenv ("PAM_WRAPPER_SERVICE_DIR", dir, TRUE);
+  g_rmdir (empty);
+}
+
 static void
 the_services_messages_reach_the_dialog (void)
 {
@@ -267,7 +281,7 @@ main (int    argc,
   g_assert_cmpint (g_mkdir_with_parents (faillock_dir, 0700), ==, 0);
 
   /* pam_matrix's format: user, password and service. */
-  contents = g_strdup_printf ("%s:%s:mate-screensaver\n", g_get_user_name (), PASSWORD);
+  contents = g_strdup_printf ("%s:%s:caminito-locker\n", g_get_user_name (), PASSWORD);
   g_assert_true (g_file_set_contents (passdb, contents, -1, NULL));
 
   g_test_add_func ("/auth/the-right-password-unlocks", the_right_password_unlocks);
@@ -281,6 +295,8 @@ main (int    argc,
                    only_a_submitted_password_ends_the_conversation);
   g_test_add_func ("/auth/a-wrong-password-after-the-wait-is-one-failure",
                    a_wrong_password_after_the_wait_is_one_failure);
+  g_test_add_func ("/auth/the-service-is-found-only-where-pam-would-read-it",
+                   the_service_is_found_only_where_pam_would_read_it);
   g_test_add_func ("/auth/the-services-messages-reach-the-dialog",
                    the_services_messages_reach_the_dialog);
 

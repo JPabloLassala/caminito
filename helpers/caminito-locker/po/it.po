@@ -1,0 +1,196 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Giuseppe Pignataro (Fastbyte01) <rogepix@gmail.com>, 2018
+# Marco Bartolucci, 2018
+# l3nn4rt, 2018
+# Matteo, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+# Alessandro Volturno <alelvb@inwind.it>, 2024
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Alessandro Volturno <alelvb@inwind.it>, 2024\n"
+"Language-Team: Italian (https://app.transifex.com/mate/teams/13566/it/)\n"
+"Language: it\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? "
+"1 : 2;\n"
+
+msgid "Show debugging output"
+msgstr "Mostra le informazioni di debug"
+
+msgid "Version of this application"
+msgstr "Versione di questa applicazione"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Nome utente:"
+
+msgid "Password:"
+msgstr "Password:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"È necessario cambiare immediatamente la propria password (password scaduta)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"È necessario cambiare immediatamente la propria password (imposto da root)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Il vostro account è scaduto; contattare l'amministratore di sistema"
+
+msgid "No password supplied"
+msgstr "Nessuna password fornita"
+
+msgid "Password unchanged"
+msgstr "Password non modificata"
+
+msgid "Can not get username"
+msgstr "Impossibile ottenere il nome utente"
+
+msgid "Retype new UNIX password:"
+msgstr "Digitare di nuovo la nuova password UNIX:"
+
+msgid "Enter new UNIX password:"
+msgstr "Inserire la nuova password UNIX:"
+
+msgid "(current) UNIX password:"
+msgstr "Password UNIX (attuale):"
+
+msgid "Error while changing NIS password."
+msgstr "Errore durante la modifica della password NIS."
+
+msgid "You must choose a longer password"
+msgstr "È necessario scegliere una password più lunga."
+
+msgid "Password has been already used. Choose another."
+msgstr "La password è già stata usata. Sceglierne un'altra."
+
+msgid "You must wait longer to change your password"
+msgstr ""
+"È necessario attendere ancora prima di poter cambiare la propria password"
+
+msgid "Sorry, passwords do not match"
+msgstr "Spiacenti, le password non coincidono"
+
+msgid "Checking..."
+msgstr "Controllo..."
+
+msgid "Authentication failed."
+msgstr "Autenticazione non riuscita."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Impossibile stabilire il servizio %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Password non corretta."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Per adesso non è concesso ottenere l'accesso."
+
+msgid "No longer permitted to access the system."
+msgstr "L'accesso al sistema è stato permanentemente revocato."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %e %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "Il tasto Blocca Maiuscole è attivo."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U su %h</span>"
+
+msgid "_Switch User"
+msgstr "_Cambia utente"
+
+msgid "_Log Out"
+msgstr "_Termina sessione"
+
+msgid "_Cancel"
+msgstr "A_nnulla"
+
+msgid "_Unlock"
+msgstr "S_blocca"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Causa l'uscita non forzata del salvaschermo"
+
+msgid "Query the state of the screensaver"
+msgstr "Interroga lo stato del salvaschermo"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Interroga l'intervallo di tempo di esecuzione del salvaschermo"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Comunica al processo di salvaschermo in esecuzione di bloccare "
+"immediatamente lo schermo"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"Comunica al processo di salvaschermo in esecuzione di sbloccare "
+"immediatamente lo schermo"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Se il salvaschermo è in esecuzione passa ad un'altra dimostrazione grafica"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Avvia il salvaschermo (cancella lo schermo)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Se il salvaschermo è in esecuzione lo arresta (riattivazione dello schermo)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Invia al salvaschermo in esecuzione una segnalazione di attività dell'utente"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Inibisci l'avvio del salvaschermo. I comandi sono bloccati mentre "
+"l'inibizione è attiva."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "L'applicazione chiamante che sta inibendo il salvaschermo"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Il motivo dell'inibizione del salvaschermo"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Il salvaschermo è %s\n"
+
+msgid "active"
+msgstr "in esecuzione"
+
+msgid "inactive"
+msgstr "arrestato"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Il salvaschermo non è inibito\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Il salvaschermo è inibito da:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Il salvaschermo è stato in esecuzione per %d secondi.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "l salvaschermo non è attivo al momento.\n"

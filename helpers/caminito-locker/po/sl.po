@@ -1,0 +1,188 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Damir Jerovšek <jierro@windowslive.com>, 2019
+# Helena S <ele@tutamail.com>, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+# Martin Srebotnjak <miles@filmsi.net>, 2022
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Martin Srebotnjak <miles@filmsi.net>, 2022\n"
+"Language-Team: Slovenian (https://app.transifex.com/mate/teams/13566/sl/)\n"
+"Language: sl\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=4; plural=(n%100==1 ? 0 : n%100==2 ? 1 : n%100==3 || "
+"n%100==4 ? 2 : 3);\n"
+
+msgid "Show debugging output"
+msgstr "Pokaži izpis razhroščevanja"
+
+msgid "Version of this application"
+msgstr "Različica tega programa"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Uporabniško ime:"
+
+msgid "Password:"
+msgstr "Geslo:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Svoje geslo morate takoj spremeniti (zaradi zastaranja)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Svoje geslo morate takoj spremeniti (zahteva skrbnika)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"Vaš uporabniški račun je pretekel; obrnite se na vašega sistemskega skrbnika"
+
+msgid "No password supplied"
+msgstr "Geslo ni bilo vpisano"
+
+msgid "Password unchanged"
+msgstr "Geslo je nespremenjeno"
+
+msgid "Can not get username"
+msgstr "Ni mogoče dobiti uporabniškega imena"
+
+msgid "Retype new UNIX password:"
+msgstr "Ponovno vnesite novo geslo za UNIX:"
+
+msgid "Enter new UNIX password:"
+msgstr "Vnesite novo geslo za UNIX:"
+
+msgid "(current) UNIX password:"
+msgstr "(trenutno) geslo za UNIX:"
+
+msgid "Error while changing NIS password."
+msgstr "Napaka ob spreminjanju gesla NIS."
+
+msgid "You must choose a longer password"
+msgstr "Izbrati morate daljše geslo"
+
+msgid "Password has been already used. Choose another."
+msgstr "Geslo je bilo že uporabljeno. Izberite drugo."
+
+msgid "You must wait longer to change your password"
+msgstr "Za spremembo gesla morate počakati dlje"
+
+msgid "Sorry, passwords do not match"
+msgstr "Gesli se ne ujemata"
+
+msgid "Checking..."
+msgstr "Preverjanje ..."
+
+msgid "Authentication failed."
+msgstr "Overitev je spodletela"
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Ni mogoče vzpostaviti storitve %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Napačno geslo."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Trenutno ni dovoljeno pridobiti dostopa."
+
+msgid "No longer permitted to access the system."
+msgstr "Dostop do sistema ni več dovoljen."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %e. %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "Vključene so velike tipke"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U na %h</span>"
+
+msgid "_Switch User"
+msgstr "Pre_klopi uporabnika"
+
+msgid "_Log Out"
+msgstr "_Odjava"
+
+msgid "_Cancel"
+msgstr "_Prekliči"
+
+msgid "_Unlock"
+msgstr "_Odkleni"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Omogoča nežen izhod ohranjevalnika zaslona"
+
+msgid "Query the state of the screensaver"
+msgstr "Poizvedba stanja ohranjevalnika zaslona"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Poizvedba o trajanju ohranjevalnika zaslona"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Procesu ohranjevalnika zaslona v teku pove, da nemudoma zaklene zaslon"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr "Procesu ohranjevalnika zaslona v teku pove, da nemudoma odklene zaslon"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"V primeru, da je ohranjevalnik zaslona dejaven, preklopi na prikaz druge "
+"grafike"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Vključi ohranjevalnik zaslona (sprazni zaslon)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"V primeru, da je ohranjevalnik zaslona dejaven, ga izključi (napolni zaslon)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Zatresi ohranjevalnik zaslona za vtis navidezene dejavnosti uporabnika"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Onemogoči vključitev ohranjevalnika zaslona. Ukaz zavira, ko je "
+"ohranjevalnik dejaven."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Klicni program, ki onemogoča delovanje ohranjevalnika zaslona"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Razlog za onemogočanje ohranjevalnika zaslona"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Ohranjevalnik zaslona je %s\n"
+
+msgid "active"
+msgstr "dejaven"
+
+msgid "inactive"
+msgstr "nedejaven"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Ohranjevalnik zaslona ni onemogočen\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Ohranjevalnik zaslona onemogoča program:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Ohranjevalnik zaslona je bil dejaven %d sekund.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Ohranjevalnik zaslona trenutno ni dejaven.\n"

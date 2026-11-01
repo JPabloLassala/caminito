@@ -1,0 +1,183 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# 1763f4a4329a2376c933c5e919a36cbc_341ca53 <1f851310383599d03339229d772e1290_119292>, 2019
+# Seong-ho Cho <darkcircle.0426@gmail.com>, 2020
+# Junghee Lee <daemul72@gmail.com>, 2021
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Korean (https://app.transifex.com/mate/teams/13566/ko/)\n"
+"Language: ko\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Show debugging output"
+msgstr "디버깅 출력 보기"
+
+msgid "Version of this application"
+msgstr "이 프로그램의 버전"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "사용자 이름:"
+
+msgid "Password:"
+msgstr "암호:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "즉시 암호를 바꿔야 합니다(암호가 오래됨)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "즉시 암호를 바꿔야 합니다(루트가 강제로 지정)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "암호가 만료되었습니다. 시스템 관리자에게 연락하십시오"
+
+msgid "No password supplied"
+msgstr "암호를 입력하지 않았습니다"
+
+msgid "Password unchanged"
+msgstr "암호를 바꾸지 않았습니다"
+
+msgid "Can not get username"
+msgstr "사용자 이름을 얻을 수 없습니다"
+
+msgid "Retype new UNIX password:"
+msgstr "새 유닉스 암호를 다시 입력하십시오:"
+
+msgid "Enter new UNIX password:"
+msgstr "새 유닉스 암호를 입력하십시오:"
+
+msgid "(current) UNIX password:"
+msgstr "(현재) 유닉스 암호:"
+
+msgid "Error while changing NIS password."
+msgstr "NIS 암호를 바꾸는 데 오류가 발생했습니다."
+
+msgid "You must choose a longer password"
+msgstr "더 긴 암호를 사용해야 합니다"
+
+msgid "Password has been already used. Choose another."
+msgstr "암호를 이미 사용했습니다. 다른 암호를 사용하십시오."
+
+msgid "You must wait longer to change your password"
+msgstr "암호를 바꾸려면 좀 더 기다려야 합니다"
+
+msgid "Sorry, passwords do not match"
+msgstr "암호가 일치하지 않습니다"
+
+msgid "Checking..."
+msgstr "확인하는 중..."
+
+msgid "Authentication failed."
+msgstr "인증이 실패했습니다."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "%s 서비스를 연결하지 못했습니다: %s\n"
+
+msgid "Incorrect password."
+msgstr "암호가 올바르지 않습니다."
+
+msgid "Not permitted to gain access at this time."
+msgstr "현재는 권한을 얻을 수 없습니다."
+
+msgid "No longer permitted to access the system."
+msgstr "더 이상 시스템에 접근할 수 없습니다."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%B %e일 %A"
+
+msgid "You have the Caps Lock key on."
+msgstr "Caps Lock키가 눌려져있습니다."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%h의 %U</span>"
+
+msgid "_Switch User"
+msgstr "사용자 바꾸기(_S)"
+
+msgid "_Log Out"
+msgstr "로그아웃(_L)"
+
+msgid "_Cancel"
+msgstr "취소(_C)"
+
+msgid "_Unlock"
+msgstr "잠금 풀기(_U)"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "화면 보호기를 정상적으로 끝냅니다"
+
+msgid "Query the state of the screensaver"
+msgstr "화면 보호기의 상태를 알아봅니다"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "화면 보호기가 얼마나 오랜 시간동안 동작하고 있었는지 알아봅니다"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "실행 중인 화면 보호기 프로세스에게 바로 화면을 잠그도록 합니다"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"실행 중인 화면 보호기 프로세스에게 바로 화면 보호기를 해제하도록 합니다"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "화면 보호기가 실행중이면, 다른 화면이 시작하도록 합니다"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "화면 보호기를 켭니다(빈 화면)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "화면 보호기가 실행중이면 화면보호기를 끕니다"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "실행 중인 화면 보호기를 건드려 사용자가 동작을 흉내냅니다"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"화면 보호기 동작을 막습니다.  해당 명령이 동작하는 동안 활성화되지 않습니다."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "화면 보호기 동작을 막는 프로그램 지정"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "화면 보호기를 막는 이유"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "화면 보호기는 %s 입니다\n"
+
+msgid "active"
+msgstr "활성화"
+
+msgid "inactive"
+msgstr "비활성화"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "화면 보호기 동작을 막지 않았습니다\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "화면 보호기 동작을 다음 요소가 막고 있습니다:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "화면 보호기가 %d초 동안 동작하고 있었습니다.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "화면 보호기를 사용하지 않고 있습니다.\n"

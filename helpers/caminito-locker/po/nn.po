@@ -1,0 +1,182 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Øystein Steffensen-Alværvik, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Norwegian Nynorsk (https://app.transifex.com/mate/teams/13566/"
+"nn/)\n"
+"Language: nn\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Vis avlusingsinformasjon"
+
+msgid "Version of this application"
+msgstr "Skjermspararversjon"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Brukarnamn:"
+
+msgid "Password:"
+msgstr "Passord:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Du må endra ditt passord no (passordet er utløpt)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "Du må endra ditt passord no (bestemt av administrator)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Din konto har utgått; vennligst kontakt systemadministrator"
+
+msgid "No password supplied"
+msgstr "Inga passord oppgjeven"
+
+msgid "Password unchanged"
+msgstr "Passordet er ikkje endra"
+
+msgid "Can not get username"
+msgstr "Kan ikkje finna brukarnamn"
+
+msgid "Retype new UNIX password:"
+msgstr "Skriv inn nytt UNIX-passord på nytt:"
+
+msgid "Enter new UNIX password:"
+msgstr "Oppgje nytt UNIX-passord:"
+
+msgid "(current) UNIX password:"
+msgstr "(aktivt) UNIX-passord:"
+
+msgid "Error while changing NIS password."
+msgstr "Feil under endring av NIS-passord."
+
+msgid "You must choose a longer password"
+msgstr "Du må velja eit lenger passord"
+
+msgid "Password has been already used. Choose another."
+msgstr "Passordet er allereie brukt. Vel eit anna."
+
+msgid "You must wait longer to change your password"
+msgstr "Du må vente lenger før du endrar ditt passord"
+
+msgid "Sorry, passwords do not match"
+msgstr "Beklager, passorda er ikkje like"
+
+msgid "Checking..."
+msgstr "Sjekkar..."
+
+msgid "Authentication failed."
+msgstr "Autentisering feilet."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Kan ikkje etablere teneste %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Ugyldig passord."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Inga tillatelse til å få tilgang no."
+
+msgid "No longer permitted to access the system."
+msgstr "Tilgangen til systemet er fjerna."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "Caps-Lock tasten er aktivert."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U på %h</span>"
+
+msgid "_Switch User"
+msgstr "_Byt brukar"
+
+msgid "_Log Out"
+msgstr "_Logg av"
+
+msgid "_Cancel"
+msgstr "_Avbryt"
+
+msgid "_Unlock"
+msgstr "Lå_s opp"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Sørger for sikker avslutning av skjermspararen"
+
+msgid "Query the state of the screensaver"
+msgstr "Spør etter skjermspararstatus"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Spør kor lenge skjermspararen har vore aktiv"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Tvingar køyrande skjermsparar til å låse skjermen omgåande"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Skift til eit anna drakt om skjermspararen er aktiv"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Slå på skjermspararen (blank ut skjermen)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Deaktiver skjermspararen om den er aktiv"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Kommuniser med køyrande skjermsparar for å simulere brukaraktivitet"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Hindre skjermspararen frå å aktiverast. Kommandoen blokkerer så lenge "
+"hindringa er aktiv."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Programmet som hindrar skjermspararen"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Årsak for hinding av skjermsparar."
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Skjermsparar er %s\n"
+
+msgid "active"
+msgstr "aktiv"
+
+msgid "inactive"
+msgstr "inaktiv"
+
+msgid "The screensaver is not inhibited\n"
+msgstr ""
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr ""
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Skjermspararen har vore aktiv i %d sekund.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr ""

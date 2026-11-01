@@ -1,7 +1,7 @@
 //! The Screensaver shim (12, 62, 127): `org.mate.ScreenSaver` and
-//! `org.freedesktop.ScreenSaver`, owned so that mate-screensaver's daemon finds its name
-//! taken and exits, and so that the panel's *Lock Screen*, mate-power-manager and X11
-//! applications reach Caminito's lock and idle. `Lock` locks, `SetActive` and
+//! `org.freedesktop.ScreenSaver`, owned so that the panel's *Lock Screen*, mate-power-manager
+//! and X11 applications reach Caminito's lock and idle, and so that mate-screensaver's
+//! daemon, where its package is installed for an X11 session, finds its name taken and exits. `Lock` locks, `SetActive` and
 //! `SimulateUserActivity` drive idle's blank, the session is active while it's blanked or
 //! locked, and the inhibitors hold idle off with idle's own.
 //!
@@ -20,7 +20,7 @@ use zbus::object_server::SignalEmitter;
 use super::{Callers, caller};
 use crate::state::{Caminito, State};
 
-/// The names mate-screensaver's daemon and X11 applications look for.
+/// The names MATE's components and X11 applications look for.
 pub(crate) const NAMES: [&str; 2] = ["org.mate.ScreenSaver", "org.freedesktop.ScreenSaver"];
 /// Where `org.mate.ScreenSaver` is served.
 const MATE_PATH: &str = "/org/mate/ScreenSaver";

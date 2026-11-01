@@ -1,0 +1,183 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Alban <nofbname@gmail.com>, 2018
+# Indrit Bashkimi <indrit.bashkimi@gmail.com>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2020
+# Ardit Dani <ardit.dani@gmail.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Ardit Dani <ardit.dani@gmail.com>, 2021\n"
+"Language-Team: Albanian (https://app.transifex.com/mate/teams/13566/sq/)\n"
+"Language: sq\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Shfaq rezultatet e debug"
+
+msgid "Version of this application"
+msgstr "Versioni i këtij programi"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Emri i përdoruesit:"
+
+msgid "Password:"
+msgstr "Fjalëkalimi:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+
+msgid "No password supplied"
+msgstr ""
+
+msgid "Password unchanged"
+msgstr ""
+
+msgid "Can not get username"
+msgstr ""
+
+msgid "Retype new UNIX password:"
+msgstr ""
+
+msgid "Enter new UNIX password:"
+msgstr ""
+
+msgid "(current) UNIX password:"
+msgstr ""
+
+msgid "Error while changing NIS password."
+msgstr ""
+
+msgid "You must choose a longer password"
+msgstr ""
+
+msgid "Password has been already used. Choose another."
+msgstr ""
+
+msgid "You must wait longer to change your password"
+msgstr ""
+
+msgid "Sorry, passwords do not match"
+msgstr ""
+
+msgid "Checking..."
+msgstr ""
+
+msgid "Authentication failed."
+msgstr ""
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr ""
+
+msgid "Incorrect password."
+msgstr ""
+
+msgid "Not permitted to gain access at this time."
+msgstr ""
+
+msgid "No longer permitted to access the system."
+msgstr ""
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "Butoni Caps Lock është i shtypur."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr ""
+
+msgid "_Switch User"
+msgstr ""
+
+msgid "_Log Out"
+msgstr "_Dil jashtë"
+
+msgid "_Cancel"
+msgstr "_Anulo"
+
+msgid "_Unlock"
+msgstr "_Liro"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Shkakton daljen e plotë të ruajtësit të ekranit"
+
+msgid "Query the state of the screensaver"
+msgstr "Kontrollon gjendjen e ruajtësit të ekranit"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr ""
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "I thotë proçesit në zbatim të ruajtësit të bllokojë menjëherë ekranin"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Nëse reuajtësi është aktiv atëhere kalon tek një grafik tjetër demostrativ"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Aktivon ruajtësin e ekranit (ekrani bosh)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Nëse reujatësi është akitv atëhere e çaktivon (ekrani jo bosh)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Ngacmo ruajtësin e ekranit në ekzekutim për të simuluar aktivitet përdoruesi"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr ""
+
+msgid "The reason for inhibiting the screensaver"
+msgstr ""
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Ruajtësi i ekranit është %s\n"
+
+msgid "active"
+msgstr "aktiv"
+
+msgid "inactive"
+msgstr "jo aktiv"
+
+msgid "The screensaver is not inhibited\n"
+msgstr ""
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr ""
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr ""
+
+msgid "The screensaver is not currently active.\n"
+msgstr ""

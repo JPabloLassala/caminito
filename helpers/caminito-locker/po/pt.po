@@ -1,0 +1,198 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2018
+# 370d6bb09451526e081e1849e906bc65, 2018
+# 425fe09b3064b9f906f637fff94056ae_a00ea56 <0fa3588fa89906bfcb3a354600956e0e_308047>, 2018
+# Manuela Silva <mmsrs@sky.com>, 2018
+# Rui <xymarior@yandex.com>, 2019
+# Sérgio Marques <smarquespt@gmail.com>, 2020
+# Luis Filipe Teixeira <lufilte@gmail.com>, 2020
+# Carlos Moreira, 2021
+# José Vieira <jvieira33@sapo.pt>, 2022
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: José Vieira <jvieira33@sapo.pt>, 2022\n"
+"Language-Team: Portuguese (https://app.transifex.com/mate/teams/13566/pt/)\n"
+"Language: pt\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % "
+"1000000 == 0 ? 1 : 2;\n"
+
+msgid "Show debugging output"
+msgstr "Apresentar resultados da depuração"
+
+msgid "Version of this application"
+msgstr "Versão desta aplicação"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Utilizador:"
+
+msgid "Password:"
+msgstr "Senha:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "É obrigatório alterar a sua senha imediatamente (senha antiga)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "É obrigatório alterar a sua senha imediatamente (forçado pelo root)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "A sua conta expirou; contacte o administrador do seu sistema"
+
+msgid "No password supplied"
+msgstr "Nenhuma senha especificada"
+
+msgid "Password unchanged"
+msgstr "Senha inalterada"
+
+msgid "Can not get username"
+msgstr "Incapaz de obter o nome de utilizador"
+
+msgid "Retype new UNIX password:"
+msgstr "Reintroduza a nova senha UNIX:"
+
+msgid "Enter new UNIX password:"
+msgstr "Introduza a nova senha UNIX:"
+
+msgid "(current) UNIX password:"
+msgstr "Senha UNIX (atual):"
+
+msgid "Error while changing NIS password."
+msgstr "Erro ao alterar a senha NIS."
+
+msgid "You must choose a longer password"
+msgstr "Tem de escolher uma senha mais longa"
+
+msgid "Password has been already used. Choose another."
+msgstr "A senha já foi utilizada anteriormente. Escolha outra."
+
+msgid "You must wait longer to change your password"
+msgstr "Tem de aguardar mais tempo antes de poder alterar a sua senha"
+
+msgid "Sorry, passwords do not match"
+msgstr "As senhas não coincidem"
+
+msgid "Checking..."
+msgstr "A Verificar..."
+
+msgid "Authentication failed."
+msgstr "Autenticação falhada."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Incapaz de estabelecer o serviço %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Senha incorreta."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Não é permitido obter acesso neste momento."
+
+msgid "No longer permitted to access the system."
+msgstr "Já não é mais permitido aceder ao sistema."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "Tem a tecla Caps Lock ligada."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U em %h</span>"
+
+msgid "_Switch User"
+msgstr "_Trocar de Utilizador"
+
+msgid "_Log Out"
+msgstr "_Terminar Sessão"
+
+msgid "_Cancel"
+msgstr "_Cancelar"
+
+msgid "_Unlock"
+msgstr "_Destrancar"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Força o protetor de ecrã a terminar graciosamente"
+
+msgid "Query the state of the screensaver"
+msgstr "Consulta o estado do protetor de ecrã"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Consultar há quanto tempo o protetor de ecrã está ativo"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Indica ao processo de proteção de ecrã em execução para trancar o ecrã "
+"imediatamente"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"Diz ao processo do protetor de ecrã em execução para desbloquear o ecrã "
+"imediatamente."
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Se a proteção de ecrã estiver ativa, então alterna para outra demonstração "
+"gráfica"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Ligar o protetor de ecrã (ecrã preto)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Se a proteção de ecrã estiver ativa, desativá-la (ecrã deixa de estar preto)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Estimular o protetor de ecrã em execução para simular a atividade de "
+"utilizador"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Impedir a proteção de ecrã de se iniciar. Comando bloqueia enquanto a "
+"inibição estiver ativa."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "A aplicação chamadora que está a inibir a proteção de ecrã"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "O motivo para inibir o protetor de ecrã"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "O protetor de ecrã está %s\n"
+
+msgid "active"
+msgstr "ativo"
+
+msgid "inactive"
+msgstr "inativo"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "O protetor de ecrã não está inibido\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "O protetor de ecrã está a ser inibido por:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "O protetor de ecrã está ativo à %d segundos.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "O protetor de ecrã não está de momento ativo.\n"

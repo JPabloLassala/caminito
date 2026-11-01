@@ -89,6 +89,12 @@ arguments go to `makepkg`:
 tools/bootstrap              # or: tools/bootstrap --noconfirm --nocheck
 ```
 
+The Lock screen doesn't need the `mate-screensaver` package: `caminito-git` ships its PAM service,
+dialog, translations and settings schema
+([ADR 0056](docs/adr/0056-caminito-locker-owns-its-lock-screen-without-mate-screensaver.md)).
+Upgrading from a build that used it can take a step by hand: see
+[release-notes.md](docs/release-notes.md).
+
 To install only the compositor as a package, build `caminito-git`'s PKGBUILD. It packages the
 GitHub repo's default branch, not the checkout, as its AUR package does:
 

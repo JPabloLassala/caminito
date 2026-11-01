@@ -1,0 +1,179 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Pashto (https://app.transifex.com/mate/teams/13566/ps/)\n"
+"Language: ps\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "د کړاوتمبونې وتنی ښودل"
+
+msgid "Version of this application"
+msgstr "د دې کاريال نسخه"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr ":کارننوم"
+
+msgid "Password:"
+msgstr "تېرنويې"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"ستاسو د ګڼون مهال بشپړ شوی؛ مهرباني وکړﺉ خپل غونډال پازوال سره اړيکه ونيسئ"
+
+msgid "No password supplied"
+msgstr "تېرنويې نه ده ټاکل شوې"
+
+msgid "Password unchanged"
+msgstr "تېرنويې نه ده بدله شوې"
+
+msgid "Can not get username"
+msgstr "کارننوم نه شي اخېستلی"
+
+msgid "Retype new UNIX password:"
+msgstr ":تېرنويې بيا ليکل UNIX نوې"
+
+msgid "Enter new UNIX password:"
+msgstr ":تېرنويې ليکل UNIX نوې"
+
+msgid "(current) UNIX password:"
+msgstr ":تېرنويې UNIX (اوسنۍ)"
+
+msgid "Error while changing NIS password."
+msgstr ".تېرنويې بدلولو پر مهال تېروتنهNISد"
+
+msgid "You must choose a longer password"
+msgstr "تاسو بايد يوه اوږده تېرنويې وټاکئ"
+
+msgid "Password has been already used. Choose another."
+msgstr ".تېرنويې له مخکښې نه کارول شوې ده. له وټاکئ"
+
+msgid "You must wait longer to change your password"
+msgstr "خپلې تېرنويې بدلولو لپاره بايد تاسو ډېره تمه وکړئ"
+
+msgid "Sorry, passwords do not match"
+msgstr "بښنه غواړو، تېرنويې سره نه لګيږي"
+
+msgid "Checking..."
+msgstr "...کتل کيږي"
+
+msgid "Authentication failed."
+msgstr ".کرونه پاتې راغله"
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr ""
+
+msgid "Incorrect password."
+msgstr ".ناسمه تېرنويې"
+
+msgid "Not permitted to gain access at this time."
+msgstr ".دا مهال د لاس رسي پرېښلې نشته"
+
+msgid "No longer permitted to access the system."
+msgstr ".نور د غونډال لاس رسي ته پرېښلې نه لرﺉ"
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr ".کيلۍ مو بله ده Caps Lock"
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">کښې %h په %U</span>"
+
+msgid "_Switch User"
+msgstr "کارن ونجول_"
+
+msgid "_Log Out"
+msgstr "وتون_"
+
+msgid "_Cancel"
+msgstr "بندول_"
+
+msgid "_Unlock"
+msgstr "ناکولپول_"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "په سمه توګه پرده ساتونکی بندوي"
+
+msgid "Query the state of the screensaver"
+msgstr "د پرده ساتونکي انکړ پوښتل"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr ""
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr ""
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr ""
+
+msgid "The reason for inhibiting the screensaver"
+msgstr ""
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "دی %s پرده ساتونکی\n"
+
+msgid "active"
+msgstr "چارنده"
+
+msgid "inactive"
+msgstr "ناچارنده"
+
+msgid "The screensaver is not inhibited\n"
+msgstr ""
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr ""
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr ".سېکېنډو لپاره چارند وو %d پرده ساتونکی د\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr ""

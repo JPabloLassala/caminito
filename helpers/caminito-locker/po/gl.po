@@ -1,0 +1,191 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Miguel Anxo Bouzada <mbouzada@gmail.com>, 2021
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Galician (https://app.transifex.com/mate/teams/13566/gl/)\n"
+"Language: gl\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Amosar a saída de depuración"
+
+msgid "Version of this application"
+msgstr "Versión desta aplicación"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Nome de usuario:"
+
+msgid "Password:"
+msgstr "Constrasinal:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Debe cambiar o seu contrasinal inmediatamente (contrasinal caducado)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"Debe cambiar o seu contrasinal inmediatamente (obrigado polo superusuario)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "A súa conta caducou; contacte co administrador do sistema"
+
+msgid "No password supplied"
+msgstr "Non se indicou un contrasinal"
+
+msgid "Password unchanged"
+msgstr "Non se modificou o contrasinal"
+
+msgid "Can not get username"
+msgstr "Non é posíbel obter o nome de usuario"
+
+msgid "Retype new UNIX password:"
+msgstr "Reescriba o contrasinal UNIX novo:"
+
+msgid "Enter new UNIX password:"
+msgstr "Introduza o contrasinal UNIX novo:"
+
+msgid "(current) UNIX password:"
+msgstr "Contrasinal UNIX (actual):"
+
+msgid "Error while changing NIS password."
+msgstr "Produciuse un erro ao modificar o contrasinal NIS."
+
+msgid "You must choose a longer password"
+msgstr "Escolla un contrasinal máis longo"
+
+msgid "Password has been already used. Choose another."
+msgstr "O contrasinal xa foi usado. Escolla outro."
+
+msgid "You must wait longer to change your password"
+msgstr "Ten que agardar máis tempo para cambiar o contrasinal"
+
+msgid "Sorry, passwords do not match"
+msgstr "Os contrasinais non coinciden"
+
+msgid "Checking..."
+msgstr "Comprobando..."
+
+msgid "Authentication failed."
+msgstr "Non foi posíbel facer a autenticación."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Non é posíbel estabelecer o servizo %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Contrasinal incorrecto."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Non está permitido obter o acceso neste momento."
+
+msgid "No longer permitted to access the system."
+msgstr "Xa non se lle permite acceder máis ao sistema."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %e de %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "A tecla Bloq Maiús está activada."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U en %h</span>"
+
+msgid "_Switch User"
+msgstr "_Cambiar de usuario"
+
+msgid "_Log Out"
+msgstr "_Saír da sesión"
+
+msgid "_Cancel"
+msgstr "_Cancelar"
+
+msgid "_Unlock"
+msgstr "_Desbloquear"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Fai que o protector de pantalla termine correctamente"
+
+msgid "Query the state of the screensaver"
+msgstr "Consultar o estado do protector de pantalla"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Consultar canto tempo estivo activo o protector de pantalla"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Dille ao proceso do protector de pantalla en execución que bloquee a "
+"pantalla inmediatamente"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+"Dille ao proceso do protector de pantalla en execución que desbloquee a "
+"pantalla inmediatamente"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Se o protector de pantalla está activo entón cambia a outra demostración "
+"gráfica"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Activar o protector de pantalla (pór a pantalla en branco)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Se o protector de pantalla está activo entón desactívao (ilumina a pantalla)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Enviar mensaxes ao protector de pantalla en execución para simular a "
+"actividade do usuario"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Inhibir a activación do protector de pantalla. A orde bloquéase cando está "
+"activa a inhibición."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "A aplicación que chama e que está inhibindo o protector de pantalla"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "A razón para inhibir o protector de pantalla"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "O protector de pantalla é %s\n"
+
+msgid "active"
+msgstr "activo"
+
+msgid "inactive"
+msgstr "inactivo"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "O protector de pantalla non está inhibido\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "O protector de pantalla está sendo inhibido por:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "O protector de pantalla estivo activo durante %d segundos.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "O protector de pantalla non está activo actualmente\n"

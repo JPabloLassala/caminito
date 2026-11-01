@@ -1,0 +1,180 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Gujarati (https://app.transifex.com/mate/teams/13566/gu/)\n"
+"Language: gu\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "ડિબગીંગ આઉટપુટ બતાવો"
+
+msgid "Version of this application"
+msgstr "આ કાર્યક્રમની આવૃત્તિ"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "વપરાશકર્તાનામ:"
+
+msgid "Password:"
+msgstr "પાસવર્ડ:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "તમે તમારો પાસવર્ડ તુરંત બદલવા માટે આગ્રહ કરવામાં આવે છે (પાસવર્ડની આયુ)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr "તમે તમારો પાસવર્ડ તુરંત બદલવા માટે આગ્રહ કરવામાં આવે છે (રુટ દ્વારા દબાણ)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"તમારા ખાતાની સમયમર્યાદા સમાપ્ત થઈ ગઈ; મહેરબાની કરીને તમારા સિસ્ટમ સંચાલકનો સંપર્ક કરો"
+
+msgid "No password supplied"
+msgstr "કોઈ પાસવર્ડો પૂરા પાડવામાં આવેલ નથી"
+
+msgid "Password unchanged"
+msgstr "પાસવર્ડ બદલાયેલ નથી"
+
+msgid "Can not get username"
+msgstr "વપરાશકર્તાનામ મેળવી શકતા નથી"
+
+msgid "Retype new UNIX password:"
+msgstr "નવો UNIX પાસવર્ડ ફરી લખો:"
+
+msgid "Enter new UNIX password:"
+msgstr "નવો UNIX પાસવર્ડ દાખલ કરો:"
+
+msgid "(current) UNIX password:"
+msgstr "(વર્તમાન) UNIX પાસવર્ડ:"
+
+msgid "Error while changing NIS password."
+msgstr "NIS પાસવર્ડ બદલતી વખતે ભૂલ."
+
+msgid "You must choose a longer password"
+msgstr "તમારે લાંબો પાસવર્ડ જ પસંદ કરવો જોઈએ"
+
+msgid "Password has been already used. Choose another."
+msgstr "પાસવર્ડ પહેલાથી જ વપરાઈ ગયેલ છે. અન્ય પસંદ કરો."
+
+msgid "You must wait longer to change your password"
+msgstr "તમારે તમારો પાસવર્ડ બદલવા માટે લાંબે સુધી રાહ જોવી જ પડશે"
+
+msgid "Sorry, passwords do not match"
+msgstr "માફ કરજો, પાસવર્ડો બંધ બેસતા નથી"
+
+msgid "Checking..."
+msgstr "ચકાસી રહ્યા છીએ..."
+
+msgid "Authentication failed."
+msgstr "સત્તાધિકરણ નિષ્ફળ."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "સેવા %s અધિષ્ઠાપિત કરવામાં અસમર્થ: %s\n"
+
+msgid "Incorrect password."
+msgstr "અયોગ્ય પાસવર્ડ."
+
+msgid "Not permitted to gain access at this time."
+msgstr "આ સમયે વપરાશની પરવાનગી નથી."
+
+msgid "No longer permitted to access the system."
+msgstr "સિસ્ટમના વપરાશની લાંબા સમય સુધી પરવાનગી નથી."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr ""
+
+msgid "You have the Caps Lock key on."
+msgstr "તમારી Caps Lock કી ચાલુ છે."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U એ %h પર</span>"
+
+msgid "_Switch User"
+msgstr "વપરાશકર્તા બદલો (_S)"
+
+msgid "_Log Out"
+msgstr "બહાર નીકળો (_L)"
+
+msgid "_Cancel"
+msgstr "રદ કરો (_C)"
+
+msgid "_Unlock"
+msgstr "તાળું ખોલો (_U)"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "સ્ક્રીનસેવરને સારી રીતે બંધ કરવાનું કારણ બને છે"
+
+msgid "Query the state of the screensaver"
+msgstr "સ્ક્રીનસેવરની સ્થિતિને પ્રશ્ન પૂછે છે"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "સ્ક્રીનસેવર જેટલા સમયથી સક્રિય છે તેટલા સમયની લંબાઈનો પ્રશ્ન"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "ચાલી રહેલ સ્ક્રીનસેવર પ્રક્રિયાને સ્ક્રીન તુરંત જ તાળું મારવા માટે કહે છે"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "જો સ્ક્રીનસેવર સક્રિય હોય તો પછી અન્ય ગ્રાફિક્સ ડેમોમાં બદલાવ"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "સ્ક્રીનસેવરને ચાલુ કરો (સ્ક્રીન કોરી કરો)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "જો સ્ક્રીનસેવર સક્રિય હોય તો પછી તેને અસક્રિય કરો (સ્ક્રીનને કોરી-નહિં રાખો)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "વપરાશકર્તા ક્રિયા સિમ્યુલેટ કરવા માટે ચાલી રહેલ સ્ક્રીનસેવરને ધક્કો મારો"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"સ્ક્રીનસેવરને સક્રિય કરવાથી બચાવવું.  જ્યારે બચાવવાનું સક્રિય હોય ત્યારે આદેશો અટકાવે છે."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "બોલાવી રહેલ કાર્યક્રમ કે જે સ્ક્રીનસેવરને અટકાવી રહ્યો છે"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "સ્ક્રીનસેવરને બચાવવા માટેનું કારણ"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "સ્ક્રીનસેવર એ %s છે\n"
+
+msgid "active"
+msgstr "સક્રિય"
+
+msgid "inactive"
+msgstr "અસક્રિય"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "સ્ક્રીનસેવર એ અટકાવાયેલ છે\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "સ્ક્રીનસેવર એ અટકાવી દેવામાં આવ્યું છે:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "સ્ક્રીનસેવર %d સેકન્ડોથી સક્રિય છે.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "સ્ક્રીનસેવર એ હમણાં સક્રિય નથી.\n"

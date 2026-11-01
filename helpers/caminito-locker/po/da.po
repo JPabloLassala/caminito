@@ -1,0 +1,186 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Allan Nordhøy <epost@anotheragency.no>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+# Joe Hansen <joedalton2@yahoo.dk>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Joe Hansen <joedalton2@yahoo.dk>, 2021\n"
+"Language-Team: Danish (https://app.transifex.com/mate/teams/13566/da/)\n"
+"Language: da\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Vis fejlfindingsuddata"
+
+msgid "Version of this application"
+msgstr "Version af dette programmel"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Brugernavn:"
+
+msgid "Password:"
+msgstr "Adgangskode:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"Det er påkrævet at du ændrer din adgangskode med det samme (adgangskode er "
+"for gammelt)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"Det er påkrævet at du ændrer din adgangskode med det samme (påtvunget af "
+"administrator)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Din konto er udløbet; kontakt venligst din system-administrator"
+
+msgid "No password supplied"
+msgstr "Ingen adgangskode udleveret"
+
+msgid "Password unchanged"
+msgstr "Adgangskode er uændret"
+
+msgid "Can not get username"
+msgstr "Kan ikke hente brugernavn"
+
+msgid "Retype new UNIX password:"
+msgstr "Skriv ny UNIX-adgangskode igen:"
+
+msgid "Enter new UNIX password:"
+msgstr "Skriv ny UNIX-adgangskode:"
+
+msgid "(current) UNIX password:"
+msgstr "(nuværende) UNIX-adgangskode:"
+
+msgid "Error while changing NIS password."
+msgstr "Fejl under ændring af NIS adgangskode."
+
+msgid "You must choose a longer password"
+msgstr "Du skal vælge en længere adgangskode"
+
+msgid "Password has been already used. Choose another."
+msgstr "Adgangskoden har allerede været brugt. Vælg en anden."
+
+msgid "You must wait longer to change your password"
+msgstr "Du skal vente længere før du kan ændre din adgangskode"
+
+msgid "Sorry, passwords do not match"
+msgstr "Beklager, adgangskoderne passer ikke sammen"
+
+msgid "Checking..."
+msgstr "Kontrollerer …"
+
+msgid "Authentication failed."
+msgstr "Godkendelse fejlede."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Er ikke i stand til at etablere tjeneste %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Forkert adgangskode."
+
+msgid "Not permitted to gain access at this time."
+msgstr "Adgang er ikke tilladt på dette tidspunkt."
+
+msgid "No longer permitted to access the system."
+msgstr "Adgang til systemet er ikke længere tilladt."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %e. %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "Du har aktiveret Caps Lock-tasten."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U på %h</span>"
+
+msgid "_Switch User"
+msgstr "_Skift bruger"
+
+msgid "_Log Out"
+msgstr "_Log ud"
+
+msgid "_Cancel"
+msgstr "_Afbryd"
+
+msgid "_Unlock"
+msgstr "_Lås op"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "For pauseskærmen til at afslutte med ynde"
+
+msgid "Query the state of the screensaver"
+msgstr "Forespørg pauseskærmens tilstand"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Forespørg til hvor lang tid pauseskærmen har været aktiv"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr "Beordre den kørende pauseskærmproces at låse skærmen øjeblikkeligt"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr "Beordre den kørende pauseskærmproces at låse skærmen op øjeblikkeligt"
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr "Hvis pauseskærmen er aktiv, skift da til en anden grafik demonstration"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Slå pauseskærmen til (sorten skærmen)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr "Hvis pauseskærmen er aktiv, deaktiver den (genopret skærmen)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Prik den kørende pauseskærm for at simulere brugeraktivitet"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Forhindrer pauseskærmen i at aktiveres. Kommandoen blokerer så længe "
+"hindringen er aktiv."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "Programmet der undertrykker pauseskærmen"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "Grunden til at pauseskærmen undertrykkes"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Denne pauseskærm er %s\n"
+
+msgid "active"
+msgstr "aktiv"
+
+msgid "inactive"
+msgstr "inaktiv"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Pauseskærm er ikke undertrykt\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Pauseskærm bliver undertrykt af:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Pauseskærmen har været aktiv i %d sekunder.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "Pauseskærmen er ikke aktiv i øjeblikket.\n"

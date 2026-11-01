@@ -1,0 +1,201 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# sahwar <ve4ernik@gmail.com>, 2018
+# Georgi Georgiev (RacerBG) <g.georgiev.shumen@gmail.com>, 2019
+# Любомир Василев, 2020
+# Stefano Karapetsas <stefano@karapetsas.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Stefano Karapetsas <stefano@karapetsas.com>, 2021\n"
+"Language-Team: Bulgarian (https://app.transifex.com/mate/teams/13566/bg/)\n"
+"Language: bg\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Показване на информацията за изчистване на грешки"
+
+msgid "Version of this application"
+msgstr "Версия на програмата"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Потребител:"
+
+msgid "Password:"
+msgstr "Парола:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr "Изисква се да смените паролата си незабавно (остаряла парола)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"Необходимо е незабавно да смените паролата (администраторът ви е задължил)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr "Регистрацията ви е изтекла. Свържете се със системния администратор."
+
+msgid "No password supplied"
+msgstr "Не е предоставена парола"
+
+msgid "Password unchanged"
+msgstr "Паролата е непроменена"
+
+msgid "Can not get username"
+msgstr "Не може да се получи потребителското име"
+
+msgid "Retype new UNIX password:"
+msgstr "Въведете отново новата парола за UNIX:"
+
+msgid "Enter new UNIX password:"
+msgstr "Въведете нова парола за UNIX:"
+
+msgid "(current) UNIX password:"
+msgstr "(текуща) парола за UNIX:"
+
+msgid "Error while changing NIS password."
+msgstr "Грешка при сменяне на паролата за NIS."
+
+msgid "You must choose a longer password"
+msgstr "Трябва да изберете друга парола."
+
+msgid "Password has been already used. Choose another."
+msgstr "Паролата вече е използвана. Изберете друга."
+
+msgid "You must wait longer to change your password"
+msgstr "Трябва да изчакате по-дълго, за да смените паролата си."
+
+msgid "Sorry, passwords do not match"
+msgstr "Паролите не съвпадат."
+
+msgid "Checking..."
+msgstr "Проверка…"
+
+msgid "Authentication failed."
+msgstr "Неуспех при удостоверяването."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "Не може да се установи услугата %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Неправилна парола."
+
+msgid "Not permitted to gain access at this time."
+msgstr "В момента нямате право на достъп."
+
+msgid "No longer permitted to access the system."
+msgstr "Вече нямате право на достъп до системата."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %B %e"
+
+msgid "You have the Caps Lock key on."
+msgstr "Клавишът „Caps Lock“ е натиснат."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U на %h</span>"
+
+msgid "_Switch User"
+msgstr "_Смяна на потребител"
+
+msgid "_Log Out"
+msgstr "_Изход"
+
+msgid "_Cancel"
+msgstr "_Отказ"
+
+msgid "_Unlock"
+msgstr "_Отключване"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Кара екранният предпазител да се затвори"
+
+msgid "Query the state of the screensaver"
+msgstr "Запитване за състоянието на екранния предпазител"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr ""
+"Запитване за времето на активност на екранния\n"
+"                             предпазител"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Съобщава на стартирания екранен предпазител\n"
+"                             веднага да заключи екрана"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Ако екранният предпазител е включен, да се\n"
+"                             превключи към друга визуализация"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr ""
+"Включване на екранния предпазител (изчистване\n"
+"                             на екрана)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Ако екранният предпазител е активен — да се\n"
+"                             деактивира (включване на екрана)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr ""
+"Взаимодействане с работещия екранен предпазител за\n"
+"                             симулация на потребителска дейност"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Да не се допуска стартиране на предпазителя на\n"
+"                             екрана. Командата блокира докато забраната е\n"
+"                             активна."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr ""
+"Викащата програма, която не допуска стартирането на\n"
+"                             предпазителя на екрана"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr ""
+"Причината за недопускането на стартирането на\n"
+"                             предпазителя на екрана"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "Екранният предпазител е %s\n"
+
+msgid "active"
+msgstr "активен"
+
+msgid "inactive"
+msgstr "неактивен"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "Стартирането на екранният предпазител не се допуска\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "Стартирането на екранният предпазител не се допуска от:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Екранният предпазител се е задействал преди %d секунди.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "В момента екранният предпазител не е включен.\n"

@@ -1,0 +1,191 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR MATE Desktop Environment team
+# This file is distributed under the same license as the mate-screensaver package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+# Translators:
+# Pilar Embid <embid.mar@gmail.com>, 2018
+# Stefano Karapetsas <stefano@karapetsas.com>, 2020
+# Jose Alfredo Murcia Andrés <joamuran@gmail.com>, 2021
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mate-screensaver 1.26.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-01 02:07-0300\n"
+"PO-Revision-Date: 2018-03-11 21:02+0000\n"
+"Last-Translator: Jose Alfredo Murcia Andrés <joamuran@gmail.com>, 2021\n"
+"Language-Team: Catalan (Valencian) (https://app.transifex.com/mate/teams/"
+"13566/ca@valencia/)\n"
+"Language: ca@valencia\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Show debugging output"
+msgstr "Mostra els missatges de depuració"
+
+msgid "Version of this application"
+msgstr "Versió d'aquesta aplicació"
+
+#. login: is whacked always translate to Username:
+msgid "Username:"
+msgstr "Nom d'usuari:"
+
+msgid "Password:"
+msgstr "Contrasenya:"
+
+msgid "You are required to change your password immediately (password aged)"
+msgstr ""
+"Heu de canviar la contrasenya immediatament (la contrasenya s'ha fet vella)"
+
+msgid "You are required to change your password immediately (root enforced)"
+msgstr ""
+"Heu de canviar la contrasenya immediatament (us hi obliga el superusuari)"
+
+msgid "Your account has expired; please contact your system administrator"
+msgstr ""
+"El vostre compte ha expirat, contacteu amb l'administrador d'aquest sistema"
+
+msgid "No password supplied"
+msgstr "No s'ha proporcionat cap contrasenya"
+
+msgid "Password unchanged"
+msgstr "No s'ha canviat la contrasenya"
+
+msgid "Can not get username"
+msgstr "No s'ha pogut obtindre el nom d'usuari"
+
+msgid "Retype new UNIX password:"
+msgstr "Reescriviu la nova contrasenya UNIX:"
+
+msgid "Enter new UNIX password:"
+msgstr "Introduïu la nova contrasenya UNIX:"
+
+msgid "(current) UNIX password:"
+msgstr "Contrasenya UNIX (actual):"
+
+msgid "Error while changing NIS password."
+msgstr "S'ha produït un error en canviar la contrasenya NIS."
+
+msgid "You must choose a longer password"
+msgstr "Heu de triar una contrasenya més llarga"
+
+msgid "Password has been already used. Choose another."
+msgstr "La contrasenya ja s'ha fet servir. Trieu-ne una altra."
+
+msgid "You must wait longer to change your password"
+msgstr "Heu d'esperar més per a canviar la contrasenya"
+
+msgid "Sorry, passwords do not match"
+msgstr "Les contrasenyes no coincideixen"
+
+msgid "Checking..."
+msgstr "S'està comprovant..."
+
+msgid "Authentication failed."
+msgstr "Ha fallat l'autenticació."
+
+#, c-format
+msgid "Unable to establish service %s: %s\n"
+msgstr "No s'ha pogut establir el servei %s: %s\n"
+
+msgid "Incorrect password."
+msgstr "Contrasenya incorrecta."
+
+msgid "Not permitted to gain access at this time."
+msgstr "No podeu accedir-hi ara mateix."
+
+msgid "No longer permitted to access the system."
+msgstr "Ja no podeu accedir al sistema."
+
+#. Use locale default format
+msgid "%A, %B %e"
+msgstr "%A, %e de %B"
+
+msgid "You have the Caps Lock key on."
+msgstr "Teniu la tecla de fixació de majúscules activada."
+
+msgid "<span size=\"small\">%U on %h</span>"
+msgstr "<span size=\"small\">%U a %h</span>"
+
+msgid "_Switch User"
+msgstr "Canvia d'u_suari"
+
+msgid "_Log Out"
+msgstr "Tanca _la sessió"
+
+msgid "_Cancel"
+msgstr "_Cancel·la"
+
+msgid "_Unlock"
+msgstr "_Desbloqueja"
+
+msgid "Causes the screensaver to exit gracefully"
+msgstr "Fa que l'estalvi de pantalla isca sense errors"
+
+msgid "Query the state of the screensaver"
+msgstr "Consulta l'estat de l'estalvi de pantalla"
+
+msgid "Query the length of time the screensaver has been active"
+msgstr "Consulta quan de temps fa que l'estalvi de pantalla s'ha activat"
+
+msgid "Tells the running screensaver process to lock the screen immediately"
+msgstr ""
+"Diu al procés d'estalvi de pantalla en funcionament que bloquege la pantalla "
+"immediatament"
+
+msgid "Tells the running screensaver process to unlock the screen immediately"
+msgstr ""
+
+msgid "If the screensaver is active then switch to another graphics demo"
+msgstr ""
+"Si l'estalvi de pantalla està actiu llavors canvia a una altra demostració "
+"de gràfics"
+
+msgid "Turn the screensaver on (blank the screen)"
+msgstr "Activa l'estalvi de pantalla (enfosqueix la pantalla)"
+
+msgid "If the screensaver is active then deactivate it (un-blank the screen)"
+msgstr ""
+"Si l'estalvi de pantalla està actiu, desactiva'l (restableix la pantalla)"
+
+msgid "Poke the running screensaver to simulate user activity"
+msgstr "Burxa l'estalvi de pantalla actiu per a simular activitat de l'usuari"
+
+msgid ""
+"Inhibit the screensaver from activating.  Command blocks while inhibit is "
+"active."
+msgstr ""
+"Inhibeix l'activació de l'estalvi de pantalla. L'ordre bloqueja mentre la "
+"inhibició està activa."
+
+msgid "The calling application that is inhibiting the screensaver"
+msgstr "L'aplicació que demana inhibir l'estalvi de pantalla"
+
+msgid "The reason for inhibiting the screensaver"
+msgstr "El motiu per a inhibir l'estalvi de pantalla"
+
+#, c-format
+msgid "The screensaver is %s\n"
+msgstr "L'estalvi de pantalla està %s\n"
+
+msgid "active"
+msgstr "activat"
+
+msgid "inactive"
+msgstr "desactivat"
+
+msgid "The screensaver is not inhibited\n"
+msgstr "L'estalvi de pantalla està inhibit\n"
+
+msgid "The screensaver is being inhibited by:\n"
+msgstr "L'estalvi de pantalla l'inhibeix:\n"
+
+#, c-format
+msgid "The screensaver has been active for %d seconds.\n"
+msgstr "Fa %d segons que l'estalvi de pantalla s'ha activat.\n"
+
+msgid "The screensaver is not currently active.\n"
+msgstr "L'estalvi de pantalla no és actiu.\n"

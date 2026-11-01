@@ -42,6 +42,7 @@ BuildRequires:  cargo
 BuildRequires:  rust
 BuildRequires:  gcc
 BuildRequires:  meson
+BuildRequires:  gettext
 BuildRequires:  pkgconf-pkg-config
 BuildRequires:  libxkbcommon-devel
 BuildRequires:  glib2-devel
@@ -82,8 +83,7 @@ BuildRequires:  python3-dbusmock
 # What the binaries and helpers link rpm finds itself. The rest is what caminito-git's
 # depends names at run time, by Fedora's names: librsvg's pixbuf loader for SVG theme
 # images, Menta from mate-themes, the Xwayland it spawns, glvnd's libEGL and mesa's EGL and GBM
-# and drivers, which it dlopens, zenity for Marco's two dialogs, mate-screensaver's PAM
-# service and lock dialogs for caminito-locker, the notification daemon and polkit agent
+# and drivers, which it dlopens, zenity for Marco's two dialogs, the notification daemon and polkit agent
 # mate-session autostarts, hicolor's directory for the logo, mate-desktop's
 # org.mate.background, which caminito-wallpaperd reads on its first run, and
 # glib-networking, GIO's TLS, which it fetches a picture of the day with.
@@ -98,7 +98,6 @@ Requires:       glib-networking
 Requires:       zenity
 Requires:       gtk-session-lock
 Requires:       mate-desktop-libs
-Requires:       mate-screensaver
 Requires:       mate-notification-daemon
 Requires:       mate-polkit
 Requires:       hicolor-icon-theme
@@ -163,6 +162,8 @@ install -Dm755 target/release/caminito target/release/caminito-displays \
     target/release/caminito-wallpaper target/release/caminito-bluetooth \
     target/release/caminito-behaviour target/release/caminito-network \
     -t %{buildroot}%{_bindir}
+install -Dm644 helpers/caminito-locker/pam/system-auth %{buildroot}%{_sysconfdir}/pam.d/caminito-locker
+%find_lang caminito-locker
 
 %check
 # The meson_test macro expands to more than one line, so it cannot follow dbus-run-session.
@@ -174,7 +175,7 @@ export RUSTFLAGS="%{build_rustflags}"
 dbus-run-session -- cargo test --frozen --release
 %endif
 
-%files
+%files -f caminito-locker.lang
 %license COPYING
 %{_bindir}/caminito
 %{_bindir}/caminito-about
@@ -186,6 +187,7 @@ dbus-run-session -- cargo test --frozen --release
 %{_bindir}/caminito-wallpaperd
 %{_bindir}/caminito-gtk-palette
 %{_bindir}/caminito-locker
+%{_prefix}/lib/caminito/
 %{_libdir}/mate-panel/libcaminito-bluetooth-applet.so
 %{_libdir}/mate-panel/libcaminito-dock-applet.so
 %{_libdir}/mate-panel/libcaminito-network-applet.so
@@ -198,6 +200,7 @@ dbus-run-session -- cargo test --frozen --release
 %{_datadir}/glib-2.0/schemas/90_caminito.gschema.override
 %{_datadir}/glib-2.0/schemas/90_caminito-power-applet.gschema.override
 %{_datadir}/glib-2.0/schemas/org.mate.Caminito.gschema.xml
+%{_datadir}/glib-2.0/schemas/org.mate.screensaver.caminito.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-dock.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-power.gschema.xml
 %{_datadir}/glib-2.0/schemas/org.mate.panel.applet.caminito-thermal.gschema.xml
@@ -213,6 +216,7 @@ dbus-run-session -- cargo test --frozen --release
 %{_datadir}/mate-panel/applets/org.mate.panel.CaminitoThermalApplet.mate-panel-applet
 %{_datadir}/mate-panel/layouts/caminito.layout
 %{_datadir}/wayland-sessions/mate-caminito.desktop
+%config(noreplace) %{_sysconfdir}/pam.d/caminito-locker
 %config(noreplace) %{_sysconfdir}/xdg/autostart/caminito-bluetooth.desktop
 %config(noreplace) %{_sysconfdir}/xdg/autostart/caminito-network.desktop
 
