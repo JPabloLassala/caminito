@@ -2,7 +2,8 @@
 //! gives and `UngroupedChanged` follows, for the Notification center to leave their entries
 //! out of the groups. They're among the known apps and the apps of the history, each by its own
 //! `group` or else the default's, which are followed as they change, from the settings window
-//! or from outside the daemon.
+//! or from outside the daemon. A browser's sites aren't among them: the history keeps a site's
+//! entries under its browser, so a site's `group` is only for its bubbles.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
@@ -13,7 +14,7 @@ use gio::prelude::*;
 
 use super::{State, emit_on};
 use crate::private_api::{INTERFACE_NAME as PRIVATE_INTERFACE, PATH as PRIVATE_PATH};
-use crate::settings::GROUP;
+use crate::settings::{GROUP, site_of};
 
 /// The apps with grouping off, and the settings followed to keep them.
 #[derive(Default)]
@@ -74,7 +75,12 @@ fn queue(this: &Weak<RefCell<State>>, queued: &Rc<Cell<bool>>) {
 /// changed.
 fn refresh(state: &Rc<RefCell<State>>) {
     let mut guard = state.borrow_mut();
-    let mut apps: BTreeSet<String> = guard.settings.known_apps().into_iter().collect();
+    let mut apps: BTreeSet<String> = guard
+        .settings
+        .known_apps()
+        .into_iter()
+        .filter(|app| site_of(app).is_none())
+        .collect();
     apps.extend(guard.history.entries().map(|entry| entry.app.clone()));
     for app in &apps {
         if guard.ungrouped.followed.contains_key(app) {

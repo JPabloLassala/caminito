@@ -10,6 +10,7 @@ use gio::prelude::*;
 
 use crate::markup;
 use crate::server::{Action, Bubble, Icon, Image, Pixels, Sound};
+use crate::settings::site_key;
 
 /// The action a click on the bubble invokes, which has no button (the spec's "default").
 pub(crate) const DEFAULT_ACTION: &str = "default";
@@ -28,6 +29,9 @@ const CRITICAL: u8 = 2;
 pub(crate) struct Notification {
     /// The Notifying app's key: the `desktop-entry` hint, or else `app_name`.
     pub(crate) app: String,
+    /// Whose settings it follows, and whose bubble it groups in: its site's within `app` if
+    /// the hint names one, and otherwise `app`'s.
+    pub(crate) settings_key: String,
     pub(crate) bubble: Bubble,
     /// Whether it has the default action, which a click invokes.
     pub(crate) has_default: bool,
@@ -64,7 +68,15 @@ impl Notification {
             .map(|id| id.trim_end_matches(".desktop").to_owned())
             .filter(|id| !id.is_empty());
         let entry = entry_id.as_deref().and_then(desktop_entry);
-        let app = entry_id.unwrap_or_else(|| arguments.app_name.to_owned());
+        // A newline in a key is what parts a site from its browser.
+        let app = entry_id
+            .unwrap_or_else(|| arguments.app_name.to_owned())
+            .replace('\n', " ");
+        let site = hint::<String>(hints, "x-kde-origin-name").filter(|site| !site.is_empty());
+        let settings_key = site
+            .as_deref()
+            .map_or_else(|| app.clone(), |site| site_key(&app, site));
+        let tab = site.is_some() || entry.as_ref().is_some_and(|entry| entry.browser);
         let app_name = match (arguments.app_name, &entry) {
             ("", Some(entry)) => entry.name.clone(),
             (name, _) => name.to_owned(),
@@ -92,12 +104,15 @@ impl Notification {
             }
         }
 
+        let image = image(hints);
         let bubble = Bubble {
             app_name,
             app_icon,
             summary: arguments.summary.to_owned(),
             body: markup::sanitize(arguments.body),
-            image: image(hints),
+            leads: tab && image.is_some(),
+            image,
+            site,
             actions,
             reply,
             progress: hint::<i32>(hints, "value")
@@ -106,6 +121,7 @@ impl Notification {
         };
         Notification {
             app,
+            settings_key,
             bubble,
             has_default,
             critical,
@@ -194,23 +210,35 @@ pub(crate) fn icon(text: &str) -> Option<Icon> {
 struct DesktopEntry {
     name: String,
     icon: Option<Icon>,
+    /// Whether its categories say it's a web browser, whose notifications with an image are a
+    /// tab's: Firefox names no site, so nothing else tells them apart.
+    browser: bool,
 }
 
 /// The app of the `desktop-entry` hint, which is the entry's id without `.desktop`, from the
 /// XDG data directories' `applications/`.
 fn desktop_entry(id: &str) -> Option<DesktopEntry> {
-    const GROUP: &str = "Desktop Entry";
     let file = glib::KeyFile::new();
     file.load_from_data_dirs(
         format!("applications/{id}.desktop"),
         glib::KeyFileFlags::NONE,
     )
     .ok()?;
+    read_entry(&file)
+}
+
+/// What the desktop entry `file` tells of its app.
+fn read_entry(file: &glib::KeyFile) -> Option<DesktopEntry> {
+    const GROUP: &str = "Desktop Entry";
     let name = file.locale_string(GROUP, "Name", None).ok()?;
     let icon = file.string(GROUP, "Icon").ok().and_then(|text| icon(&text));
+    let browser = file
+        .string_list(GROUP, "Categories")
+        .is_ok_and(|categories| categories.iter().any(|category| category == "WebBrowser"));
     Some(DesktopEntry {
         name: name.to_string(),
         icon,
+        browser,
     })
 }
 
@@ -240,6 +268,22 @@ mod tests {
         );
         assert_eq!(timeout(2500, true, DEFAULT), None);
         assert_eq!(timeout(-1, true, DEFAULT), None);
+    }
+
+    #[test]
+    fn a_desktop_entry_is_a_browsers_by_its_categories() {
+        let is_browser = |text: &str| {
+            let file = glib::KeyFile::new();
+            file.load_from_data(text, glib::KeyFileFlags::NONE).unwrap();
+            read_entry(&file).unwrap().browser
+        };
+        assert!(is_browser(
+            "[Desktop Entry]\nName=Firefox\nCategories=GNOME;GTK;Network;WebBrowser;\n"
+        ));
+        assert!(!is_browser(
+            "[Desktop Entry]\nName=Signal\nCategories=Network;InstantMessaging;\n"
+        ));
+        assert!(!is_browser("[Desktop Entry]\nName=Tool\n"));
     }
 
     #[test]

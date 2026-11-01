@@ -40,6 +40,11 @@ const GAP: i32 = 10;
 const WIDTH: i32 = 360;
 const APP_ICON_SIZE: i32 = 16;
 const IMAGE_SIZE: i32 = 48;
+/// A browser tab's bubble: the icon that leads, the app's on its corner, and how far that one
+/// hangs past it.
+const LEAD_SIZE: i32 = 40;
+const CORNER_ICON_SIZE: i32 = 18;
+const CORNER_ICON_OVERHANG: i32 = 5;
 /// The notifications before the newest that a closed grouped bubble has a line of.
 const DIGEST_LINES: usize = 2;
 /// The time line's thickness, and its distance from the bubble's sides and bottom edge, inside
@@ -56,6 +61,11 @@ window.caminito-notifications { background: none; }
   padding: 10px 12px;
 }
 .caminito-notification .app-name { font-size: smaller; }
+.caminito-notification .lead { border-radius: 10px; }
+.caminito-notification .corner-icon {
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px @theme_bg_color;
+}
 .caminito-notification .close { min-width: 20px; min-height: 20px; padding: 2px; margin: 4px; }
 .caminito-notifications-header button { border-radius: 12px; min-height: 24px; padding: 0 10px; }
 .caminito-notifications-header .more.critical { color: @error_color; }
@@ -404,7 +414,12 @@ impl Bubbles for GtkBubbles {
     fn update(&self, id: u32, bubble: &Bubble) {
         let Some((root, events, open, time_line)) = self.shown.borrow().get(&id).map(|shown| {
             let area = shown.time_line.area.clone();
-            (shown.root.clone(), shown.events.clone(), shown.open.clone(), area)
+            (
+                shown.root.clone(),
+                shown.events.clone(),
+                shown.open.clone(),
+                area,
+            )
         }) else {
             return;
         };
@@ -521,9 +536,10 @@ fn accent(widget: &gtk::DrawingArea) -> gdk::RGBA {
 
 /// Puts what `bubble` shows into `root`: the app's icon and name on top, the summary in bold
 /// and the body, the image on the right, the progress bar, the actions and the reply field
-/// below, and a close button on hover. A grouped bubble has its count in the header and the
-/// notifications before the newest below, all of them while `open`. `time_line` goes along
-/// its bottom edge, out of what it showed before.
+/// below, and a close button on hover. A browser tab's has its image on the left instead, with
+/// the app's icon on its corner, and its site before the app's name. A grouped bubble has its
+/// count in the header and the notifications before the newest below, all of them while `open`.
+/// `time_line` goes along its bottom edge, out of what it showed before.
 fn fill(
     root: &gtk::Box,
     bubble: &Bubble,
@@ -546,12 +562,14 @@ fn fill(
     frame.set_size_request(WIDTH, -1);
 
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    if let Some(icon) = &bubble.app_icon {
+    if !bubble.leads
+        && let Some(icon) = &bubble.app_icon
+    {
         let icon = icon_image(icon);
         icon.set_pixel_size(APP_ICON_SIZE);
         header.append(&icon);
     }
-    let app_name = gtk::Label::new(Some(&bubble.app_name));
+    let app_name = gtk::Label::new(Some(&bubble.top_row()));
     app_name.add_css_class("app-name");
     app_name.add_css_class("dim-label");
     app_name.set_xalign(0.0);
@@ -566,6 +584,11 @@ fn fill(
     frame.append(&header);
 
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    if bubble.leads
+        && let Some(lead) = lead(bubble)
+    {
+        content.append(&lead);
+    }
     let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
     text.set_hexpand(true);
     let summary = text_label();
@@ -581,7 +604,9 @@ fn fill(
         text.append(&body);
     }
     content.append(&text);
-    if let Some(image) = bubble.image.as_ref().and_then(image) {
+    if !bubble.leads
+        && let Some(image) = bubble.image.as_ref().and_then(image)
+    {
         image.set_pixel_size(IMAGE_SIZE);
         image.set_valign(gtk::Align::Start);
         content.append(&image);
@@ -838,6 +863,35 @@ fn half_output(widget: &impl IsA<gtk::Widget>) -> Option<i32> {
     let surface = widget.native()?.surface()?;
     let monitor = widget.display().monitor_at_surface(&surface)?;
     Some(monitor.geometry().height() / 2)
+}
+
+/// What leads a browser tab's bubble: the site's icon with the app's on its top-right corner, or
+/// the app's alone while Previews hide the site's, or nothing with both hidden.
+fn lead(bubble: &Bubble) -> Option<gtk::Overlay> {
+    let site = bubble.image.as_ref().and_then(image);
+    let app = bubble.app_icon.as_ref().map(icon_image);
+    let (main, corner) = match (site, app) {
+        (Some(site), corner) => (site, corner),
+        (None, Some(app)) => (app, None),
+        (None, None) => return None,
+    };
+    main.set_pixel_size(LEAD_SIZE);
+    main.set_margin_top(CORNER_ICON_OVERHANG);
+    main.set_margin_end(CORNER_ICON_OVERHANG);
+    main.add_css_class("lead");
+    main.set_overflow(gtk::Overflow::Hidden);
+    let overlay = gtk::Overlay::new();
+    overlay.set_valign(gtk::Align::Start);
+    overlay.set_child(Some(&main));
+    if let Some(corner) = corner {
+        corner.set_pixel_size(CORNER_ICON_SIZE);
+        corner.add_css_class("corner-icon");
+        corner.set_overflow(gtk::Overflow::Hidden);
+        corner.set_halign(gtk::Align::End);
+        corner.set_valign(gtk::Align::Start);
+        overlay.add_overlay(&corner);
+    }
+    Some(overlay)
 }
 
 fn text_label() -> gtk::Label {

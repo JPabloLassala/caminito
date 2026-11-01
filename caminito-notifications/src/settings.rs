@@ -5,7 +5,9 @@
 //!
 //! Each Notifying app may have its own settings too (CMN-262), at its path of the relocatable
 //! `org.mate.Caminito.notifications.app` ([`app_path`]). [`Settings::effective`] resolves
-//! them: each key the app's path sets, and the global key of the same name for the rest.
+//! them: each key the app's path sets, and the global key of the same name for the rest. A
+//! browser's site is a Notifying app too ([`site_key`]), which follows its browser's settings
+//! before the global ones.
 
 use std::time::Duration;
 
@@ -138,9 +140,10 @@ impl Settings {
         )
     }
 
-    /// What `app`'s notifications get: each key its path sets, and the default's for the rest.
+    /// What `app`'s notifications get: each key its path sets, then its browser's if it's a
+    /// site, and the default's for the rest.
     pub fn effective(&self, app: &str) -> AppSettings {
-        self.resolve(Some(&self.app(app)))
+        self.resolve(Some(app))
     }
 
     /// What an app without its own settings gets.
@@ -148,11 +151,22 @@ impl Settings {
         self.resolve(None)
     }
 
-    /// Each key `own` sets, and the default's for the rest.
-    fn resolve(&self, own: Option<&gio::Settings>) -> AppSettings {
-        let value = |key: &str| {
-            own.and_then(|own| own.user_value(key))
-                .unwrap_or_else(|| self.global.value(key))
+    /// What `key` is for `app` if it hasn't its own: its browser's if it's a site and that sets
+    /// it, and otherwise the default's.
+    fn inherited(&self, app: &str, key: &str) -> glib::Variant {
+        site_of(app)
+            .and_then(|(browser, _)| self.app(browser).user_value(key))
+            .unwrap_or_else(|| self.global.value(key))
+    }
+
+    /// Each key `app`'s path sets, and what it inherits for the rest.
+    fn resolve(&self, app: Option<&str>) -> AppSettings {
+        let value = |key: &str| match app {
+            Some(app) => self
+                .app(app)
+                .user_value(key)
+                .unwrap_or_else(|| self.inherited(app, key)),
+            None => self.global.value(key),
         };
         let boolean = |key: &str| value(key).get::<bool>().unwrap_or_default();
         AppSettings {
@@ -182,7 +196,7 @@ impl Settings {
         own.delay();
         for key in APP_KEYS {
             if own.user_value(key).is_none()
-                && let Err(err) = own.set_value(key, &self.global.value(key))
+                && let Err(err) = own.set_value(key, &self.inherited(app, key))
             {
                 glib::g_warning!(DOMAIN, "can't set {app}'s {key}: {err}");
             }
@@ -190,7 +204,7 @@ impl Settings {
         own.apply();
     }
 
-    /// Takes `app`'s own settings away, so it follows the default.
+    /// Takes `app`'s own settings away, so it follows the default, or its browser if it's a site.
     pub fn use_default(&self, app: &str) {
         let own = self.app(app);
         own.delay();
@@ -230,6 +244,17 @@ impl Settings {
     pub(crate) fn timeout(&self) -> Duration {
         Duration::from_secs(self.global.uint(TIMEOUT).into())
     }
+}
+
+/// The Notifying app's key of the site `site` in the browser `app`. A newline, which no app's
+/// own key has, parts them.
+pub fn site_key(app: &str, site: &str) -> String {
+    format!("{app}\n{site}")
+}
+
+/// The browser and the site of a key [`site_key`] made, or `None` for any other app's.
+pub fn site_of(key: &str) -> Option<(&str, &str)> {
+    key.split_once('\n')
 }
 
 /// The path of the Notifying app `app`'s own settings: under [`APPS_PATH`], its key with each

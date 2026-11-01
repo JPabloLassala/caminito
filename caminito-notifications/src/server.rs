@@ -60,8 +60,8 @@ const VENDOR: &str = "MATE";
 const SPEC_VERSION: &str = "1.3";
 
 /// The spec's optional parts the server has (`GetCapabilities`), with KDE's inline reply
-/// (CMN-266).
-const CAPABILITIES: [&str; 8] = [
+/// (CMN-266) and its origin hint, which Chromium sends only to a server that lists it (CMN-283).
+const CAPABILITIES: [&str; 9] = [
     "actions",
     "body",
     "body-hyperlinks",
@@ -70,6 +70,7 @@ const CAPABILITIES: [&str; 8] = [
     "inline-reply",
     "persistence",
     "sound",
+    "x-kde-origin-name",
 ];
 
 const INTERFACE: &str = r#"
@@ -137,8 +138,14 @@ pub struct Bubble {
     pub summary: String,
     /// The body as Pango markup, with what the spec allows and nothing else.
     pub body: String,
-    /// The image beside the text.
+    /// The image beside the text, or in the lead of a browser tab's.
     pub image: Option<Image>,
+    /// The site a browser's tab is on, from `x-kde-origin-name`, which goes before the app's
+    /// name.
+    pub site: Option<String>,
+    /// Whether it's a browser tab's: the image leads, with the app's icon on its corner, or the
+    /// app's icon alone leads while Previews hide the image.
+    pub leads: bool,
     /// The actions that have buttons, in the app's order. The default action is a click.
     pub actions: Vec<Action>,
     /// The reply field's placeholder, if it has KDE's inline reply.
@@ -149,6 +156,16 @@ pub struct Bubble {
     /// In a grouped bubble, the notifications before this one, newest first. Empty in a
     /// bubble of one notification.
     pub earlier: Vec<Earlier>,
+}
+
+impl Bubble {
+    /// What its top row reads: the app's name, after the site's if it has one.
+    pub fn top_row(&self) -> String {
+        match &self.site {
+            Some(site) => format!("{site} · {}", self.app_name),
+            None => self.app_name.clone(),
+        }
+    }
 }
 
 /// What a grouped bubble shows of a notification before its newest.
@@ -479,7 +496,8 @@ struct Shown {
     key: u32,
     /// Its notifications, oldest first, which are never none.
     ids: Vec<u32>,
-    /// The app of its notifications, and whether they're critical.
+    /// The key its notifications' settings go by, which is their site's if they have one, and
+    /// whether they're critical.
     app: String,
     critical: bool,
     /// Whether it's a grouped bubble, which its app's next notifications join.
@@ -669,7 +687,8 @@ fn notify(state: &Rc<RefCell<State>>, replaces: u32, arguments: Arguments<'_>) -
     let notification = Notification::new(arguments, guard.settings.timeout());
     let timeout = notification.timeout;
     guard.settings.remember(&notification.app);
-    let app = guard.settings.effective(&notification.app);
+    guard.settings.remember(&notification.settings_key);
+    let app = guard.settings.effective(&notification.settings_key);
     if app.delivery == Delivery::Off {
         return guard.next_id();
     }
@@ -746,7 +765,7 @@ fn show(state: &Rc<RefCell<State>>, id: u32) -> bool {
     let shown = Shown::new(
         id,
         vec![id],
-        notification.app.clone(),
+        notification.settings_key.clone(),
         notification.critical,
         false,
     );
@@ -806,7 +825,7 @@ fn merge(state: &Rc<RefCell<State>>, id: u32, indices: Vec<usize>) {
         return;
     };
     let (app, critical, timeout) = (
-        notification.app.clone(),
+        notification.settings_key.clone(),
         notification.critical,
         notification.timeout,
     );
@@ -1237,11 +1256,11 @@ impl State {
         let Some(notification) = self.notifications.get(&id) else {
             return Place::Alone;
         };
-        if !self.settings.effective(&notification.app).group {
+        if !self.settings.effective(&notification.settings_key).group {
             return Place::Alone;
         }
         let same = |shown: &Shown| {
-            shown.app == notification.app && shown.critical == notification.critical
+            shown.app == notification.settings_key && shown.critical == notification.critical
         };
         if let Some(index) = self
             .shown
@@ -1279,15 +1298,16 @@ impl State {
         bubble
     }
 
-    /// What the bubble of `notification` shows: without its summary, body and image while
+    /// What the bubble of `notification` shows: without its summary, body, image and site while
     /// its app's Previews are off, and without its app's icon while that's off.
     fn shown_bubble(&self, notification: &Notification) -> Bubble {
-        let app = self.settings.effective(&notification.app);
+        let app = self.settings.effective(&notification.settings_key);
         let mut shown = notification.bubble.clone();
         if !app.previews {
             NO_PREVIEW.clone_into(&mut shown.summary);
             shown.body.clear();
             shown.image = None;
+            shown.site = None;
         }
         if !app.app_icon {
             shown.app_icon = None;
@@ -1371,7 +1391,9 @@ impl State {
     /// Whether `notification` gets its bubble and its sound while Do Not Disturb is on: its
     /// app's own setting says so, or it's critical and the setting for those does.
     fn breaks_through(&self, notification: &Notification) -> bool {
-        self.settings.effective(&notification.app).breaks_through
+        self.settings
+            .effective(&notification.settings_key)
+            .breaks_through
             || (notification.critical && self.settings.critical_breaks_through())
     }
 

@@ -331,10 +331,13 @@ struct Row {
     app: Option<App>,
     /// The app's own settings, for the app's row.
     own: Option<gio::Settings>,
+    /// A site's browser's settings, which a site follows until it has its own.
+    browser: Option<gio::Settings>,
     row: gtk::ListBoxRow,
     delivery: gtk::DropDown,
     checks: Vec<gtk::CheckButton>,
-    /// "Use the default", on an app's row while it has its own settings.
+    /// "Use the default", or the browser's on a site's row, on an app's row while it has its
+    /// own settings.
     reset: gtk::Button,
     /// Set while the row shows what the settings hold, when its controls' changes aren't the
     /// user's.
@@ -592,9 +595,17 @@ impl AppsPage {
         }
         let list_row = gtk::ListBoxRow::builder().child(&line).build();
         let own = app.as_ref().map(|app| self.settings.app(&app.key));
+        let browser = app
+            .as_ref()
+            .and_then(|app| settings::site_of(&app.key))
+            .map(|(browser, _)| self.settings.app(browser));
+        if browser.is_some() {
+            reset.set_tooltip_text(Some("Use the browser's settings"));
+        }
         let row = Rc::new(Row {
             app,
             own,
+            browser,
             row: list_row,
             delivery,
             checks,
@@ -639,8 +650,9 @@ impl AppsPage {
                 }
             }
         });
-        if let Some(own) = &row.own {
-            own.connect_changed(None, move |_, _| {
+        for followed in row.own.iter().chain(&row.browser) {
+            let (settings, weak) = (settings.clone(), weak.clone());
+            followed.connect_changed(None, move |_, _| {
                 if let Some(row) = weak.upgrade() {
                     row.sync(&settings);
                 }
@@ -684,9 +696,15 @@ impl Row {
             .and_then(|position| u32::try_from(position).ok())
             .unwrap_or(0);
         self.delivery.set_selected(position);
+        // A site has no Dock item: the Badge is its browser's.
+        let site = self
+            .app
+            .as_ref()
+            .is_some_and(|app| settings::site_of(&app.key).is_some());
         for ((key, _, _), check) in FLAGS.iter().zip(&self.checks) {
             check.set_active(values.flag(key).unwrap_or_default());
-            check.set_sensitive(settings::applies(values.delivery, key));
+            let badge_elsewhere = site && *key == settings::BADGE;
+            check.set_sensitive(settings::applies(values.delivery, key) && !badge_elsewhere);
         }
         let own = self
             .app

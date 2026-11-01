@@ -198,10 +198,14 @@ impl History {
 impl HistoryEntry {
     /// The entry of `notification` as `id`, which arrived at `time`.
     pub(crate) fn new(id: u32, notification: &Notification, time: u64) -> HistoryEntry {
+        // The Notification center has no place of its own for the site, which goes with the name.
+        let mut bubble = notification.bubble.clone();
+        bubble.app_name = bubble.top_row();
+        bubble.site = None;
         HistoryEntry {
             id,
             app: notification.app.clone(),
-            bubble: notification.bubble.clone(),
+            bubble,
             has_default: notification.has_default,
             resident: notification.resident,
             time,
@@ -268,6 +272,8 @@ impl HistoryEntry {
                 summary: text(4)?,
                 body: text(5)?,
                 image,
+                site: None,
+                leads: false,
                 actions: actions
                     .into_iter()
                     .map(|(key, label)| Action { key, label })
@@ -366,6 +372,8 @@ mod tests {
                 summary: format!("Summary {id}"),
                 body: "A <b>body</b>".to_owned(),
                 image: None,
+                site: None,
+                leads: false,
                 actions: vec![Action {
                     key: "reply".to_owned(),
                     label: "Reply".to_owned(),
