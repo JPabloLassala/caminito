@@ -3931,6 +3931,33 @@ They are the developer's to run.
   `work_area` in `DumpState`, and `dconf watch /org/mate/panel/toplevels/` for the `floating`
   key.
 
+### An autohide panel reserves nothing
+
+- **Milestone:** `dock-applet`, the developer's to run.
+- **Steps:**
+  1. With `mate-panel-caminito` at `pkgrel` 17 or later, log into *MATE on Caminito*. In the bottom
+     panel's *Properties*, tick *Autohide* and *Floating*.
+  2. Maximise a window. Move the pointer to the bottom edge to show the panel, leave it on the last
+     row of pixels for a second, move it up onto the panel and back down into the gap, then away.
+  3. Untick *Floating* and do the same.
+  4. Untick *Autohide* and tick *Floating*.
+- **Expected:** in steps 2 and 3 the maximised window reaches the bottom of the output and doesn't
+  change size as the panel comes and goes; the panel shows over it. In step 4 the window ends at
+  the panel's top edge. With *Floating* on, the panel stays up while the pointer is in the gap
+  or on the last row, under the panel, and hides once it leaves; beside the panel it hides too.
+- **Debug tool:** each output's `work_area` and `layer_surfaces` (`exclusive_zone`) in `DumpState`.
+
+### A panel that isn't expanded fits its applets at any scale
+
+- **Milestone:** `dock-applet`, the developer's to run.
+- **Steps:**
+  1. With `mate-panel-caminito` at `pkgrel` 18 or later and two outputs, the panel's at a scale of
+     1.5 or 2 and the other at 1, log into *MATE on Caminito*.
+  2. Put a panel that isn't expanded, with the *Dock* applet, on the scaled output.
+- **Expected:** the panel is as wide as its applets and its two handles, with no empty space on
+  the right, and nothing is cut off.
+- **Debug tool:** each output's `layer_surfaces` (`geometry`) in `DumpState`.
+
 ### Intellihide under a maximised window
 
 - **Milestone:** `dock-applet`, with the Dock applet's other items.

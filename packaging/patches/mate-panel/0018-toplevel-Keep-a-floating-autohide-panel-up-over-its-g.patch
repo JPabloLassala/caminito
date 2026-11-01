@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Sat, 31 Oct 2026 13:00:00 -0300
+Subject: [PATCH] toplevel: Keep a floating autohide panel up over its gap
+
+The gap between a floating panel and its edge belongs to no surface, so a
+pointer going there left the panel, which hid. That left the pointer on the
+hidden panel's strip, which showed it again, and so on. Revealing the panel at
+the screen's last row of pixels ended the same way.
+
+Keep the autohide strip, an input-only surface that already counts as the panel
+and reserves nothing, mapped over the gap while the panel is shown. It takes the
+clicks in the gap along the panel's length. A panel that isn't floating maps no
+strip while shown, as before.
+---
+ mate-panel/panel-toplevel.c | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/mate-panel/panel-toplevel.c b/mate-panel/panel-toplevel.c
+--- a/mate-panel/panel-toplevel.c
++++ b/mate-panel/panel-toplevel.c
+@@ -5066,12 +5066,18 @@
+ 	GdkRectangle *g;
+ 	int          auto_hide_size;
+ 	int          hit_size;
++	int          floating_margin;
+ 
+ 	if (!toplevel->priv->autohide_window)
+ 		return;
+ 
++	/* While a floating panel is shown the surface covers its gap to the
++	 * edge, so that a pointer there is still on the panel. */
++	floating_margin = panel_toplevel_get_floating_margin (toplevel);
++
+ 	if (!toplevel->priv->auto_hide ||
+-	    toplevel->priv->state != PANEL_STATE_AUTO_HIDDEN ||
++	    (toplevel->priv->state != PANEL_STATE_AUTO_HIDDEN &&
++	     (toplevel->priv->state != PANEL_STATE_NORMAL || floating_margin == 0)) ||
+ 	    toplevel->priv->geometry.width <= 0 ||
+ 	    toplevel->priv->geometry.height <= 0) {
+ 		/* reset the cache so a later show (possibly at the same
+@@ -5094,7 +5100,8 @@
+ 	 * pixel to unhide the panel. */
+ 	panel_toplevel_get_monitor_geometry (toplevel, &monitor_geom);
+ 	auto_hide_size = panel_toplevel_get_effective_auto_hide_size (toplevel);
+-	hit_size = auto_hide_size + AUTO_HIDE_HIT_MARGIN;
++	hit_size = toplevel->priv->state == PANEL_STATE_NORMAL ?
++		   floating_margin : auto_hide_size + AUTO_HIDE_HIT_MARGIN;
+ 
+ 	g = &new_g;
+ 
+@@ -5836,6 +5843,8 @@
+ 		gtk_widget_queue_draw (GTK_WIDGET (toplevel));
+ 	}
+ 
++	panel_toplevel_update_autohide_window (toplevel);
++
+ 	g_object_notify (G_OBJECT (toplevel), "floating");
+ }
+ 

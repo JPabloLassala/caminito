@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Sat, 31 Oct 2026 12:00:00 -0300
+Subject: [PATCH] toplevel: Reserve nothing for an autohide panel on Wayland
+
+While it was shown, an autohide panel kept its hidden strip as its exclusive
+zone, 1 pixel, and reserved nothing once hidden, so a maximised window changed
+size each time the panel came and went. On a floating panel it was worse: the
+compositor counts a layer surface's margin in its zone, so the shown panel
+reserved its 8 pixel gap too, and a maximised window stopped 9 pixels short of
+the edge, with empty space under it.
+
+An autohide panel comes and goes over the windows, so it reserves nothing, shown
+or hidden. A panel without Autohide keeps its edge as it did, and X11's struts
+don't change.
+---
+ mate-panel/panel-toplevel.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/mate-panel/panel-toplevel.c b/mate-panel/panel-toplevel.c
+--- a/mate-panel/panel-toplevel.c
++++ b/mate-panel/panel-toplevel.c
+@@ -1636,8 +1636,11 @@
+ 		 * reserved work area, so a reserved strip while hidden shows the
+ 		 * compositor's native background instead of the wallpaper. */
+ 		/* A panel that asks Caminito to hide it while a window overlaps
+-		 * it can't keep its edge for itself, so it reserves nothing. */
++		 * it can't keep its edge for itself, so it reserves nothing. Nor
++		 * does an autohide panel, which comes and goes over the windows:
++		 * a floating one would reserve its gap as well as its strip. */
+ 		if (strut == 0 ||
++		    toplevel->priv->auto_hide ||
+ 		    toplevel->priv->state != PANEL_STATE_NORMAL ||
+ 		    wayland_panel_toplevel_has_intellihide (toplevel))
+ 			exclusive = 0;

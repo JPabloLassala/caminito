@@ -22,7 +22,7 @@
 
 Name:          mate-panel
 Version:       1.29.0~%{commitdate}git%{shortcommit}
-Release:       0.caminito3%{?dist}
+Release:       0.caminito6%{?dist}
 Summary:       MATE Desktop panel and applets
 #libs are LGPL-2.0-or-later
 #applications GPL-2.0-or-later
@@ -54,6 +54,9 @@ Patch113:      0013-wayland-workspace-Press-the-button-of-the-group-s-ac.patch
 Patch114:      0014-wayland-workspace-Take-the-scroll-wheel-over-the-but.patch
 Patch115:      0015-toplevel-Float-a-panel-off-its-edge-under-Caminito.patch
 Patch116:      0016-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch
+Patch117:      0017-toplevel-Reserve-nothing-for-an-autohide-panel-on-Way.patch
+Patch118:      0018-toplevel-Keep-a-floating-autohide-panel-up-over-its-g.patch
+Patch119:      0019-toplevel-Size-a-packed-panel-by-its-surface-s-scale.patch
 
 Requires:      %{name}-libs%{?_isa} = %{version}-%{release}
 #for fish
@@ -207,6 +210,17 @@ install -D -m 0644 %{SOURCE2} %{buildroot}%{_datadir}/mate-panel/layouts/rhel.la
 
 
 %changelog
+* Sat Oct 31 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito6
+- Carry 0019: a panel that isn't expanded is no wider than its applets on an output of a higher
+  scale than it started with
+
+* Sat Oct 31 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito5
+- Carry 0018: a floating autohide panel stays up while the pointer is in its gap to the edge
+
+* Sat Oct 31 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito4
+- Carry 0017: an autohide panel reserves nothing on Wayland, so a maximised window reaches the edge
+  under a floating one
+
 * Sat Oct 24 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito3
 - Carry 0016: Intellihide in a panel's Properties, which asks Caminito to hide the panel while a
   window overlaps it (CMN-224)

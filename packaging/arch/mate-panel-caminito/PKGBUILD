@@ -26,7 +26,7 @@ _basever=1.28.7
 # weekly job knows this source by its -stock name, and leaves it at the tag.
 _stocktag=v1.28.7
 pkgver=1.28.7.r111.g58ac6c1
-pkgrel=15
+pkgrel=18
 pkgdesc="The MATE Panel, with Caminito's patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
@@ -94,7 +94,10 @@ source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         "0013-wayland-workspace-Press-the-button-of-the-group-s-ac.patch"
         "0014-wayland-workspace-Take-the-scroll-wheel-over-the-but.patch"
         "0015-toplevel-Float-a-panel-off-its-edge-under-Caminito.patch"
-        "0016-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch")
+        "0016-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch"
+        "0017-toplevel-Reserve-nothing-for-an-autohide-panel-on-Way.patch"
+        "0018-toplevel-Keep-a-floating-autohide-panel-up-over-its-g.patch"
+        "0019-toplevel-Size-a-packed-panel-by-its-surface-s-scale.patch")
 sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '030f76e59b0aa2880167968770a319e14bb91e38d77873f8ceab9718873da5ce'
             'SKIP'
@@ -113,7 +116,10 @@ sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             'f0d9f14c12a8b85f7065bd24a7808365abf53a6b17fe818e5b72c9db9f02309b'
             '2be33d3f7f79e14b5d96e3a72ceff13d2f94b1f9da50aab503284a03247dd04f'
             'e91e262b4441cc80af0c9c63f4b75b95e959736e7d30175b0acb35658c77d1e9'
-            'ac39ccd0903a025787f59004bbae2e79d16efb21b514055f74d438cceb9c2c37')
+            'ac39ccd0903a025787f59004bbae2e79d16efb21b514055f74d438cceb9c2c37'
+            '6a40987dc10f8b7e1f432749599527c201be2f6ea57c634736045ab960bfa12f'
+            '0e49c74d35c190a5a3490666dce57741a1a77ce5b3654cdc5005f16c73996066'
+            '051b614061c58a55d87b0b2d52ca3f3b5aa7e6c1834f91ff56712b6704465367')
 
 pkgver() {
     cd "${_pkgname}"
