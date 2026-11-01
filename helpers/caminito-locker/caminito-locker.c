@@ -28,7 +28,7 @@
  * derived from MATE's, on the monitor under the pointer (CMN-298, ADR 0056). The right
  * password unlocks and the locker exits; nothing else ends the lock. While the dialog shows,
  * Esmeril blurs the wallpaper on every monitor, and the locker never blurs anything itself: the
- * sharp wallpaper is in a subsurface under each window (gs-backdrop.c), and the window fades its
+ * sharp wallpaper is in a subsurface under each window (gs-wallpaper-layer.c), and the window fades its
  * own copy of it out over Esmeril (CMN-301, ADR 0056).
  *
  * Ported from mate-screensaver 60b2db3's src/mate-screensaver-dialog.c, which mate-screensaver
@@ -78,7 +78,7 @@
 #define MATE_DESKTOP_USE_UNSTABLE_API
 #include <libmate-desktop/mate-bg.h>
 
-#include "gs-backdrop.h"
+#include "gs-wallpaper-layer.h"
 #include "gs-lock-plug.h"
 #include "gs-notifications.h"
 #include "gs-prefs.h"
@@ -97,7 +97,7 @@
 
 /* How long Esmeril takes to fade in and out behind the Unlock dialog. The amount follows the
  * clock, so a slow repaint at 4K means fewer frames and not a longer fade (CMN-301). */
-#define BLUR_FADE_MSEC 200
+#define ESMERIL_FADE_MSEC 200
 
 /* How far the notifications are from their corner, and the dialog's width until it has been
  * shown and measured. */
@@ -145,10 +145,10 @@ static int dialog_width = DIALOG_WIDTH_GUESS;
 
 /* Whether Esmeril is wanted behind the dialog, and how far a fade has come: how much of it showed
  * when the fade started, at what time, and over how long. */
-static gboolean blur_wanted = FALSE;
-static double blur_from = 0.0;
-static gint64 blur_fade_start = 0;
-static gint64 blur_fade_usec = 0;
+static gboolean esmeril_wanted = FALSE;
+static double esmeril_from = 0.0;
+static gint64 esmeril_fade_start = 0;
+static gint64 esmeril_fade_usec = 0;
 static GSettings* interface_settings = NULL;
 
 static char* request_response(GSLockPlug* plug, const char* prompt, gboolean visible)
@@ -674,10 +674,10 @@ out:
 /* gs-manager.c's apply_background_to_window, for a lock window at its size: MateBG's
  * background, read again for each, with picture-filename in its place when that file
  * exists. The desktop's is the window's monitor's in the wallpaper file, if it's there. The
- * picture is also under the window, in its backdrop (CMN-301), if it has one. */
+ * picture is also under the window, in its layer (CMN-301), if it has one. */
 static Background* apply_background_to_window(GtkWidget* window, int width, int height, int scale)
 {
-	GSBackdrop      *backdrop = g_object_get_data(G_OBJECT(window), "backdrop");
+	GSWallpaperLayer      *layer = g_object_get_data(G_OBJECT(window), "layer");
 	GSettings       *settings;
 	char            *filename;
 	Background      *background;
@@ -710,15 +710,22 @@ static Background* apply_background_to_window(GtkWidget* window, int width, int 
 	background->width = width;
 	background->height = height;
 	background->scale = scale;
-	if (backdrop != NULL)
+	if (layer != NULL)
 	{
-		cairo_surface_t *shown = gs_backdrop_set_picture(backdrop, background->surface, width, height, scale);
+		cairo_surface_t *shown = gs_wallpaper_layer_set_picture(layer, background->surface, width, height, scale);
 
-		/* The backdrop's pixels last as long as this does, or until the next. */
+		/* The layer's pixels last as long as this does, or until the next. With no picture
+		 * in it, the window is the wallpaper as if it had no layer. */
 		if (shown != NULL)
 		{
 			cairo_surface_destroy(background->surface);
 			background->surface = cairo_surface_reference(shown);
+		}
+		else
+		{
+			g_object_set_data(G_OBJECT(window), "layer", NULL);
+			g_object_set_data(G_OBJECT(window), "no-layer", GINT_TO_POINTER(TRUE));
+			gs_wallpaper_layer_free(layer);
 		}
 	}
 	g_object_set_data_full(G_OBJECT(window), "background", background, (GDestroyNotify) background_free);
@@ -727,29 +734,29 @@ static Background* apply_background_to_window(GtkWidget* window, int width, int 
 }
 
 /* How much of Esmeril shows now, from none to all of it. */
-static double blur_amount(void)
+static double esmeril_amount(void)
 {
-	double target = blur_wanted ? 1.0 : 0.0;
+	double target = esmeril_wanted ? 1.0 : 0.0;
 	double done;
 
-	if (blur_fade_usec == 0)
+	if (esmeril_fade_usec == 0)
 	{
 		return target;
 	}
 
-	done = (double) (g_get_monotonic_time() - blur_fade_start) / (double) blur_fade_usec;
-	return done >= 1.0 ? target : blur_from + (target - blur_from) * done;
+	done = (double) (g_get_monotonic_time() - esmeril_fade_start) / (double) esmeril_fade_usec;
+	return done >= 1.0 ? target : esmeril_from + (target - esmeril_from) * done;
 }
 
 /* Each frame of a fade, on each window. The draw after the last ends the window's asking. */
-static gboolean blur_fade_tick(GtkWidget* window, GdkFrameClock* clock G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+static gboolean esmeril_fade_tick(GtkWidget* window, GdkFrameClock* clock G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
 {
-	gboolean going = g_get_monotonic_time() - blur_fade_start < blur_fade_usec;
+	gboolean going = g_get_monotonic_time() - esmeril_fade_start < esmeril_fade_usec;
 
 	gtk_widget_queue_draw(window);
 	if (!going)
 	{
-		g_object_set_data(G_OBJECT(window), "blur-tick", NULL);
+		g_object_set_data(G_OBJECT(window), "esmeril-tick", NULL);
 	}
 
 	return going ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
@@ -758,34 +765,34 @@ static gboolean blur_fade_tick(GtkWidget* window, GdkFrameClock* clock G_GNUC_UN
 static void fade_window(GtkWidget* window)
 {
 	gtk_widget_queue_draw(window);
-	if (blur_fade_usec != 0 && g_object_get_data(G_OBJECT(window), "blur-tick") == NULL)
+	if (esmeril_fade_usec != 0 && g_object_get_data(G_OBJECT(window), "esmeril-tick") == NULL)
 	{
-		g_object_set_data(G_OBJECT(window), "blur-tick", GINT_TO_POINTER(1));
-		gtk_widget_add_tick_callback(window, blur_fade_tick, NULL, NULL);
+		g_object_set_data(G_OBJECT(window), "esmeril-tick", GINT_TO_POINTER(1));
+		gtk_widget_add_tick_callback(window, esmeril_fade_tick, NULL, NULL);
 	}
 }
 
 /* The dialog showed or hid, or Caminito's offer changed: Esmeril fades in or out on every lock
  * window, or switches at once with enable-animations off. */
-static void update_blur(void)
+static void update_esmeril(void)
 {
-	gboolean wanted = gs_backdrop_can_blur() && gs_lock_plug_is_open(GS_LOCK_PLUG(plug));
+	gboolean wanted = gs_wallpaper_layer_can_blur() && gs_lock_plug_is_open(GS_LOCK_PLUG(plug));
 	gboolean animate = interface_settings == NULL || g_settings_get_boolean(interface_settings, "enable-animations");
 	GHashTableIter iter;
 	gpointer window;
 	guint64 fade_msec;
 
-	if (wanted == blur_wanted)
+	if (wanted == esmeril_wanted)
 	{
 		return;
 	}
 
-	blur_from = blur_amount();
-	blur_wanted = wanted;
-	blur_fade_start = g_get_monotonic_time();
+	esmeril_from = esmeril_amount();
+	esmeril_wanted = wanted;
+	esmeril_fade_start = g_get_monotonic_time();
 	/* The environment's is for the tests, which catch a fade under way. */
-	fade_msec = g_ascii_strtoull(g_getenv("CAMINITO_LOCKER_BLUR_FADE_MSEC") ?: "", NULL, 10);
-	blur_fade_usec = animate ? (gint64) (fade_msec != 0 ? fade_msec : BLUR_FADE_MSEC) * 1000 : 0;
+	fade_msec = g_ascii_strtoull(g_getenv("CAMINITO_LOCKER_ESMERIL_FADE_MSEC") ?: "", NULL, 10);
+	esmeril_fade_usec = animate ? (gint64) (fade_msec != 0 ? fade_msec : ESMERIL_FADE_MSEC) * 1000 : 0;
 	gs_debug("Esmeril goes %s %s", wanted ? "on" : "off", animate ? "with a fade" : "at once");
 
 	g_hash_table_iter_init(&iter, lock_windows);
@@ -821,28 +828,31 @@ static void follow_animations(void)
 static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_GNUC_UNUSED)
 {
 	Background *background;
-	GSBackdrop *backdrop;
+	GSWallpaperLayer *layer;
 	int width = gtk_widget_get_allocated_width(window);
 	int height = gtk_widget_get_allocated_height(window);
 	int scale = gtk_widget_get_scale_factor(window);
-	double amount = blur_amount();
+	double amount;
 
-	backdrop = g_object_get_data(G_OBJECT(window), "backdrop");
-	if (backdrop == NULL && !GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "no-backdrop")))
+	layer = g_object_get_data(G_OBJECT(window), "layer");
+	if (layer == NULL && !GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "no-layer")))
 	{
-		backdrop = gs_backdrop_new(window);
-		g_object_set_data(G_OBJECT(window), "backdrop", backdrop);
-		g_object_set_data(G_OBJECT(window), "no-backdrop", GINT_TO_POINTER(backdrop == NULL));
+		layer = gs_wallpaper_layer_new(window);
+		g_object_set_data(G_OBJECT(window), "layer", layer);
+		g_object_set_data(G_OBJECT(window), "no-layer", GINT_TO_POINTER(layer == NULL));
 	}
 
 	background = g_object_get_data(G_OBJECT(window), "background");
 	if (background == NULL || background->width != width || background->height != height || background->scale != scale)
 	{
 		background = apply_background_to_window(window, width, height, scale);
+		layer = g_object_get_data(G_OBJECT(window), "layer");
 	}
-	if (backdrop != NULL)
+	/* With no layer there's nothing for the window to fade down to. */
+	amount = layer != NULL ? esmeril_amount() : 0.0;
+	if (layer != NULL)
 	{
-		gs_backdrop_set_blurred(backdrop, blur_wanted || amount > 0.0);
+		gs_wallpaper_layer_set_blurred(layer, esmeril_wanted || amount > 0.0);
 	}
 
 	cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
@@ -852,9 +862,9 @@ static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_
 	{
 		cairo_set_source_surface (cr, background->surface, 0, 0);
 		/* MateBG makes a solid colour's surface 1x1, which X tiled as the window's
-		 * background pixmap, and which cairo has to be told to. A backdrop's picture is
+		 * background pixmap, and which cairo has to be told to. A layer's picture is
 		 * already whole, and tiling takes a third longer at each frame of the fade. */
-		if (backdrop == NULL)
+		if (layer == NULL)
 		{
 			cairo_pattern_set_extend (cairo_get_source (cr), CAIRO_EXTEND_REPEAT);
 		}
@@ -871,13 +881,13 @@ static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_
 /* Before its wl_surface goes. */
 static void window_unrealized(GtkWidget* window, gpointer data G_GNUC_UNUSED)
 {
-	GSBackdrop* backdrop = g_object_get_data(G_OBJECT(window), "backdrop");
+	GSWallpaperLayer* layer = g_object_get_data(G_OBJECT(window), "layer");
 
-	if (backdrop != NULL)
+	if (layer != NULL)
 	{
 		g_object_set_data(G_OBJECT(window), "background", NULL);
-		g_object_set_data(G_OBJECT(window), "backdrop", NULL);
-		gs_backdrop_free(backdrop);
+		g_object_set_data(G_OBJECT(window), "layer", NULL);
+		gs_wallpaper_layer_free(layer);
 	}
 }
 
@@ -1291,6 +1301,8 @@ static void add_lock_window(GdkMonitor* monitor)
 	}
 
 	gtk_widget_show_all(window);
+	/* It may come in the middle of a fade. */
+	fade_window(window);
 }
 
 static void monitor_added_cb(GdkDisplay* display G_GNUC_UNUSED, GdkMonitor* monitor, gpointer data G_GNUC_UNUSED)
@@ -1451,7 +1463,7 @@ int main(int argc, char** argv)
 		exit(1);
 	}
 
-	gs_backdrop_start(gdk_display_get_default());
+	gs_wallpaper_layer_start(gdk_display_get_default());
 
 	lock = gtk_session_lock_prepare_lock();
 	g_signal_connect(lock, "locked", G_CALLBACK(locked_cb), NULL);
@@ -1487,9 +1499,9 @@ int main(int argc, char** argv)
 	g_signal_connect_swapped(plug, "size-allocate", G_CALLBACK(queue_place_notifications), NULL);
 	g_signal_connect_swapped(plug, "show", G_CALLBACK(queue_place_notifications), NULL);
 	g_signal_connect_swapped(plug, "hide", G_CALLBACK(queue_place_notifications), NULL);
-	gs_backdrop_follow_can_blur(update_blur);
-	g_signal_connect_swapped(plug, "show", G_CALLBACK(update_blur), NULL);
-	g_signal_connect_swapped(plug, "hide", G_CALLBACK(update_blur), NULL);
+	gs_wallpaper_layer_follow_can_blur(update_esmeril);
+	g_signal_connect_swapped(plug, "show", G_CALLBACK(update_esmeril), NULL);
+	g_signal_connect_swapped(plug, "hide", G_CALLBACK(update_esmeril), NULL);
 	follow_notification_corner();
 	follow_animations();
 

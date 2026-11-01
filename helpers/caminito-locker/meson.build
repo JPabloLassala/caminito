@@ -60,7 +60,7 @@ background_effect_code = custom_target(
 executable(
   'caminito-locker',
   'caminito-locker.c',
-  'gs-backdrop.c',
+  'gs-wallpaper-layer.c',
   background_effect_header,
   background_effect_code,
   'gs-lock-plug.c',

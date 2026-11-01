@@ -627,7 +627,7 @@ fn lock_surface_elements<R>(
             );
             match element {
                 Ok(element) => elements.extend(element.map(SceneElement::Window)),
-                Err(err) => tracing::warn!("can't import a surface: {err:?}"),
+                Err(err) => tracing::debug!("can't import a surface: {err:?}"),
             }
             let esmeril = place.and_then(|place| {
                 Esmeril::in_region(&esmeril::asked_region(states)?, states, location, &place)

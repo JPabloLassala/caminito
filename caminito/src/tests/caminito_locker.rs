@@ -1958,7 +1958,7 @@ fn a_new_output_and_a_new_scale_keep_esmeril_and_the_wallpaper_under_the_dialog(
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn a_locker_that_dies_mid_fade_leaves_the_session_locked_and_comes_back_to_the_idle_view() {
-    let fade = vec![("CAMINITO_LOCKER_BLUR_FADE_MSEC", LONG_FADE_MSEC.to_string())];
+    let fade = vec![("CAMINITO_LOCKER_ESMERIL_FADE_MSEC", LONG_FADE_MSEC.to_string())];
     let (mut f, locker) = idle_with(&[(1920, 1080)], Vec::new(), "", fade);
     f.state.caminito.locker.policy = quick_restarts();
     let outputs = f.state.caminito.outputs.clone();

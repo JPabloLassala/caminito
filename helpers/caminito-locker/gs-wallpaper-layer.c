@@ -10,7 +10,7 @@
 
 #include "config.h"
 
-#include "gs-backdrop.h"
+#include "gs-wallpaper-layer.h"
 
 #include <errno.h>
 #include <string.h>
@@ -29,13 +29,13 @@ typedef struct
 	void             *data;
 	gsize             size;
 	cairo_surface_t  *surface;
-	GSBackdrop       *backdrop;
-	/* Whether Caminito is done with it, and whether the backdrop is. It goes with both. */
+	GSWallpaperLayer       *layer;
+	/* Whether Caminito is done with it, and whether the layer is. It goes with both. */
 	gboolean          released;
 	gboolean          retired;
 } Picture;
 
-struct GSBackdrop
+struct GSWallpaperLayer
 {
 	struct wl_surface                       *window_surface;
 	struct wl_surface                       *surface;
@@ -100,12 +100,12 @@ static const struct wl_registry_listener registry_listener = {
 	.global_remove = registry_global_remove,
 };
 
-void gs_backdrop_follow_can_blur(void (*changed)(void))
+void gs_wallpaper_layer_follow_can_blur(void (*changed)(void))
 {
 	on_can_blur_changed = changed;
 }
 
-void gs_backdrop_start(GdkDisplay* display)
+void gs_wallpaper_layer_start(GdkDisplay* display)
 {
 	struct wl_display* wl_display;
 	struct wl_display* wrapper;
@@ -144,35 +144,35 @@ void gs_backdrop_start(GdkDisplay* display)
 	wl_event_queue_destroy(queue);
 }
 
-gboolean gs_backdrop_can_blur(void)
+gboolean gs_wallpaper_layer_can_blur(void)
 {
 	return can_blur;
 }
 
-GSBackdrop* gs_backdrop_new(GtkWidget* window)
+GSWallpaperLayer* gs_wallpaper_layer_new(GtkWidget* window)
 {
 	GdkWindow* gdk_window = gtk_widget_get_window(window);
 	struct wl_compositor* compositor = gdk_wayland_display_get_wl_compositor(gdk_window_get_display(gdk_window));
 	struct wl_region* input;
-	GSBackdrop* backdrop;
+	GSWallpaperLayer* layer;
 
 	if (shm == NULL || subcompositor == NULL || manager == NULL)
 	{
 		return NULL;
 	}
 
-	backdrop = g_new0(GSBackdrop, 1);
-	backdrop->window_surface = gdk_wayland_window_get_wl_surface(gdk_window);
-	backdrop->surface = wl_compositor_create_surface(compositor);
-	backdrop->subsurface = wl_subcompositor_get_subsurface(subcompositor, backdrop->surface, backdrop->window_surface);
-	wl_subsurface_place_below(backdrop->subsurface, backdrop->window_surface);
+	layer = g_new0(GSWallpaperLayer, 1);
+	layer->window_surface = gdk_wayland_window_get_wl_surface(gdk_window);
+	layer->surface = wl_compositor_create_surface(compositor);
+	layer->subsurface = wl_subcompositor_get_subsurface(subcompositor, layer->surface, layer->window_surface);
+	wl_subsurface_place_below(layer->subsurface, layer->window_surface);
 	/* The window takes the pointer: GDK knows nothing of this surface. */
 	input = wl_compositor_create_region(compositor);
-	wl_surface_set_input_region(backdrop->surface, input);
+	wl_surface_set_input_region(layer->surface, input);
 	wl_region_destroy(input);
-	backdrop->effect = ext_background_effect_manager_v1_get_background_effect(manager, backdrop->window_surface);
+	layer->effect = ext_background_effect_manager_v1_get_background_effect(manager, layer->window_surface);
 
-	return backdrop;
+	return layer;
 }
 
 static void picture_free(Picture* picture)
@@ -190,7 +190,7 @@ static void buffer_release(void* data, struct wl_buffer* buffer G_GNUC_UNUSED)
 	picture->released = TRUE;
 	if (picture->retired)
 	{
-		picture->backdrop->retired = g_list_remove(picture->backdrop->retired, picture);
+		picture->layer->retired = g_list_remove(picture->layer->retired, picture);
 		picture_free(picture);
 	}
 }
@@ -200,7 +200,7 @@ static const struct wl_buffer_listener buffer_listener = {
 };
 
 /* A new picture of `width` by `height` buffer pixels, or NULL. */
-static Picture* picture_new(GSBackdrop* backdrop, int width, int height, int scale)
+static Picture* picture_new(GSWallpaperLayer* layer, int width, int height, int scale)
 {
 	Picture* picture;
 	struct wl_shm_pool* pool;
@@ -229,7 +229,7 @@ static Picture* picture_new(GSBackdrop* backdrop, int width, int height, int sca
 	}
 
 	picture = g_new0(Picture, 1);
-	picture->backdrop = backdrop;
+	picture->layer = layer;
 	picture->data = data;
 	picture->size = size;
 	pool = wl_shm_create_pool(shm, fd, size);
@@ -243,9 +243,9 @@ static Picture* picture_new(GSBackdrop* backdrop, int width, int height, int sca
 	return picture;
 }
 
-cairo_surface_t* gs_backdrop_set_picture(GSBackdrop* backdrop, cairo_surface_t* source, int width, int height, int scale)
+cairo_surface_t* gs_wallpaper_layer_set_picture(GSWallpaperLayer* layer, cairo_surface_t* source, int width, int height, int scale)
 {
-	Picture* picture = picture_new(backdrop, width * scale, height * scale, scale);
+	Picture* picture = picture_new(layer, width * scale, height * scale, scale);
 	cairo_t* cr;
 
 	if (picture == NULL)
@@ -269,15 +269,15 @@ cairo_surface_t* gs_backdrop_set_picture(GSBackdrop* backdrop, cairo_surface_t* 
 	cairo_destroy(cr);
 	cairo_surface_flush(picture->surface);
 
-	wl_surface_set_buffer_scale(backdrop->surface, scale);
-	wl_surface_attach(backdrop->surface, picture->buffer, 0, 0);
+	wl_surface_set_buffer_scale(layer->surface, scale);
+	wl_surface_attach(layer->surface, picture->buffer, 0, 0);
 	/* GDK binds the compositor at version 3, which has no damage_buffer. */
-	wl_surface_damage(backdrop->surface, 0, 0, width, height);
-	wl_surface_commit(backdrop->surface);
+	wl_surface_damage(layer->surface, 0, 0, width, height);
+	wl_surface_commit(layer->surface);
 
-	if (backdrop->picture != NULL)
+	if (layer->picture != NULL)
 	{
-		Picture* old = backdrop->picture;
+		Picture* old = layer->picture;
 
 		old->retired = TRUE;
 		if (old->released)
@@ -286,55 +286,55 @@ cairo_surface_t* gs_backdrop_set_picture(GSBackdrop* backdrop, cairo_surface_t* 
 		}
 		else
 		{
-			backdrop->retired = g_list_prepend(backdrop->retired, old);
+			layer->retired = g_list_prepend(layer->retired, old);
 		}
 	}
-	backdrop->picture = picture;
-	backdrop->width = width;
-	backdrop->height = height;
+	layer->picture = picture;
+	layer->width = width;
+	layer->height = height;
 	/* It asks again for the new size. */
-	if (backdrop->blurred)
+	if (layer->blurred)
 	{
-		backdrop->blurred = FALSE;
-		gs_backdrop_set_blurred(backdrop, TRUE);
+		layer->blurred = FALSE;
+		gs_wallpaper_layer_set_blurred(layer, TRUE);
 	}
 
 	return picture->surface;
 }
 
-void gs_backdrop_set_blurred(GSBackdrop* backdrop, gboolean blurred)
+void gs_wallpaper_layer_set_blurred(GSWallpaperLayer* layer, gboolean blurred)
 {
 	struct wl_region* region = NULL;
 
-	if (blurred == backdrop->blurred)
+	if (blurred == layer->blurred)
 	{
 		return;
 	}
-	backdrop->blurred = blurred;
+	layer->blurred = blurred;
 
 	if (blurred)
 	{
 		GdkDisplay* display = gdk_display_get_default();
 
 		region = wl_compositor_create_region(gdk_wayland_display_get_wl_compositor(display));
-		wl_region_add(region, 0, 0, backdrop->width, backdrop->height);
+		wl_region_add(region, 0, 0, layer->width, layer->height);
 	}
-	ext_background_effect_surface_v1_set_blur_region(backdrop->effect, region);
+	ext_background_effect_surface_v1_set_blur_region(layer->effect, region);
 	if (region != NULL)
 	{
 		wl_region_destroy(region);
 	}
 }
 
-void gs_backdrop_free(GSBackdrop* backdrop)
+void gs_wallpaper_layer_free(GSWallpaperLayer* layer)
 {
-	g_list_free_full(backdrop->retired, (GDestroyNotify) picture_free);
-	ext_background_effect_surface_v1_destroy(backdrop->effect);
-	wl_subsurface_destroy(backdrop->subsurface);
-	wl_surface_destroy(backdrop->surface);
-	if (backdrop->picture != NULL)
+	g_list_free_full(layer->retired, (GDestroyNotify) picture_free);
+	ext_background_effect_surface_v1_destroy(layer->effect);
+	wl_subsurface_destroy(layer->subsurface);
+	wl_surface_destroy(layer->surface);
+	if (layer->picture != NULL)
 	{
-		picture_free(backdrop->picture);
+		picture_free(layer->picture);
 	}
-	g_free(backdrop);
+	g_free(layer);
 }
