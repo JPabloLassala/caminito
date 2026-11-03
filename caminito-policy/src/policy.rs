@@ -712,8 +712,8 @@ pub struct Policy<W: PolicyWindow> {
     /// The focused window, and its Main output, that each seat's Active output last
     /// followed. A press on another output stays the Active output until they change.
     followed_focus: BTreeMap<SeatId, (WindowId, OutputId)>,
-    /// The window last focused on each output, by the output it shows by, which decides
-    /// whether a fullscreen window there covers the panel (ADR 0057).
+    /// The window last focused on each output, keyed by the output that shows it, which
+    /// decides whether a fullscreen window there covers the panel (ADR 0057).
     last_focused_on: BTreeMap<OutputId, WindowId>,
     /// When each seat's focus last changed on user input, to drop stale focus requests as
     /// Marco does.
@@ -2586,12 +2586,11 @@ impl<W: PolicyWindow> Policy<W> {
         let managed = self.windows.get(&id)?;
         // Marco's `get_standalone_layer` (stack.c:272-315): kept below wins over
         // fullscreen, which wins over kept above, and a dock kept below goes down too.
-        // Whether a fullscreen window is up goes by its output's focus, not Marco's.
         let own = match managed.window_type {
             WindowType::Desktop => Layer::Desktop,
             _ if managed.below => Layer::Bottom,
             WindowType::Dock => Layer::Top,
-            _ if managed.fullscreen && self.covers_its_output(id) => Layer::Fullscreen,
+            _ if managed.fullscreen && self.covers_its_panel(id) => Layer::Fullscreen,
             _ if managed.above => Layer::Top,
             _ => Layer::Normal,
         };
@@ -3338,6 +3337,8 @@ impl<W: PolicyWindow> Policy<W> {
                         self.last_focused_on.insert(output, *id);
                     }
                 }
+                // As on a switch to an empty workspace, which lowers a fullscreen window
+                // sliding out, so the panel shows over it.
                 None => {
                     if let Some(output) = self.active_output(*seat) {
                         self.last_focused_on.remove(&output);
@@ -3347,10 +3348,10 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
-    /// Whether a fullscreen window is in the fullscreen layer: while it or a transient of it
+    /// Whether a fullscreen window covers its output's panel: while it or a transient of it
     /// was the last window focused on its output (ADR 0057). Marco goes by the focus on any
     /// output instead (`get_standalone_layer`, stack.c:272-315).
-    fn covers_its_output(&self, id: WindowId) -> bool {
+    fn covers_its_panel(&self, id: WindowId) -> bool {
         self.output_showing(id)
             .and_then(|output| self.last_focused_on.get(&output))
             .is_some_and(|last| self.is_ancestor(id, *last))

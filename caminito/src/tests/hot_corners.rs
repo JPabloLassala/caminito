@@ -1,10 +1,10 @@
 //! Hot corners (CMN-183): a corner whose key is set fires its action once the pointer has
 //! rested in it the Activation delay, 150 ms by default (CMN-191), fires again only once
 //! the pointer has left and 350 ms have passed, is a corner only where the Output layout
-//! stops the pointer both ways, and is off with a button held, during another Interaction, while locked, on an output
-//! whose panel a fullscreen window covers, focused or not, and with the pointer locked or
-//! confined. Each test stops Caminito's clock,
-//! so only `advance_clock` moves it, and a corner that mustn't fire is given 500 ms of it,
+//! stops the pointer both ways, and is off with a button held, during another
+//! Interaction, while locked, on an output whose panel a fullscreen window covers, focused
+//! or not, and with the pointer locked or confined. Each test stops Caminito's clock, so
+//! only `advance_clock` moves it, and a corner that mustn't fire is given 500 ms of it,
 //! past both the rest and the 350 ms.
 //!
 //! The windows are xdg toplevels only: a corner fires whatever is under the pointer, and

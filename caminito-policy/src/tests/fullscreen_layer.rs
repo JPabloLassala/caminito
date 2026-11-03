@@ -36,7 +36,7 @@ fn a_fullscreen_window_stays_over_the_panel_when_another_output_takes_the_focus(
 }
 
 #[test]
-fn a_window_focused_on_its_output_lowers_it_until_it_has_the_focus_again() {
+fn a_window_focused_on_its_output_lowers_a_fullscreen_window_until_it_has_the_focus_again() {
     let mut policy = fullscreen_on_the_left();
 
     policy.click(SEAT, id(4), ms(6));
@@ -53,7 +53,7 @@ fn a_window_focused_on_its_output_lowers_it_until_it_has_the_focus_again() {
 }
 
 #[test]
-fn a_focused_transient_keeps_it_over_the_panel() {
+fn a_focused_transient_keeps_a_fullscreen_window_over_the_panel() {
     let mut policy = fullscreen_on_the_left();
     policy.map_window(
         TestWindow::new(5, 200, 100)
@@ -70,7 +70,7 @@ fn a_focused_transient_keeps_it_over_the_panel() {
 }
 
 #[test]
-fn a_switch_to_an_empty_workspace_lowers_it_as_nothing_has_the_focus() {
+fn a_switch_to_an_empty_workspace_lowers_a_fullscreen_window_as_nothing_has_the_focus() {
     let mut policy = fullscreen_on_the_left();
 
     policy.switch_workspace(1);

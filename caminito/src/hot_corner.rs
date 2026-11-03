@@ -251,14 +251,10 @@ impl State {
             Some(Interaction::Overview) => !own_overview,
             interaction => interaction.is_some(),
         };
-        let fullscreen = top_layer_is_covered(caminito, &at.output);
+        let covered = top_layer_is_covered(caminito, &at.output);
         // A press that ran a binding, or that the Overview took, reached no client.
         let held = self.pointer_is_held() || !caminito.suppressed_buttons.is_empty();
-        caminito.lock.is_locked()
-            || held
-            || interaction
-            || fullscreen
-            || self.pointer_is_constrained()
+        caminito.lock.is_locked() || held || interaction || covered || self.pointer_is_constrained()
     }
 }
 
