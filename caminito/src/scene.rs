@@ -166,9 +166,9 @@ pub(crate) enum SceneLayer {
     /// X's override-redirect windows, its menus and tooltips, in X's stacking order and on
     /// no workspace (36).
     OverrideRedirect,
-    /// The current workspace's windows in Marco's fullscreen layer: a fullscreen window
-    /// that has the focus, and its transients. They cover the top layer, as Marco puts
-    /// them above docks (63).
+    /// The current workspace's windows in the fullscreen layer: a fullscreen window that,
+    /// or a transient of which, was the last window focused on its output, and its
+    /// transients (ADR 0057). They cover the top layer, as Marco puts them above docks (63).
     FullscreenWindows,
     /// While the Overview is open on the output (241), all of it: its bar of workspaces
     /// (244), over each listed window at its place in the layout, over its label, over the
@@ -182,7 +182,7 @@ pub(crate) enum SceneLayer {
     Top,
     /// The popups of the bottom and background layers' surfaces. They're above the windows,
     /// as sway and niri draw them, so no window cuts off the menu of caja's desktop, and
-    /// below the top layer, so a panel covers them. A fullscreen window that has the focus
+    /// below the top layer, so a panel covers them. A fullscreen window in the fullscreen layer
     /// covers them as it covers the panel (80).
     LayerPopups,
     /// The windows shrinking into their buttons as they're minimised (172), or growing out

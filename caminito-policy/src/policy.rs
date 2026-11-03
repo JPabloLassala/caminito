@@ -712,6 +712,9 @@ pub struct Policy<W: PolicyWindow> {
     /// The focused window, and its Main output, that each seat's Active output last
     /// followed. A press on another output stays the Active output until they change.
     followed_focus: BTreeMap<SeatId, (WindowId, OutputId)>,
+    /// The window last focused on each output, by the output it shows by, which decides
+    /// whether a fullscreen window there covers the panel (ADR 0057).
+    last_focused_on: BTreeMap<OutputId, WindowId>,
     /// When each seat's focus last changed on user input, to drop stale focus requests as
     /// Marco does.
     focus_time: BTreeMap<SeatId, Duration>,
@@ -766,6 +769,7 @@ impl<W: PolicyWindow> Policy<W> {
             focus: BTreeMap::new(),
             active_outputs: BTreeMap::new(),
             followed_focus: BTreeMap::new(),
+            last_focused_on: BTreeMap::new(),
             focus_time: BTreeMap::new(),
             last_seat: SeatId(0),
             grabs: BTreeMap::new(),
@@ -2582,13 +2586,12 @@ impl<W: PolicyWindow> Policy<W> {
         let managed = self.windows.get(&id)?;
         // Marco's `get_standalone_layer` (stack.c:272-315): kept below wins over
         // fullscreen, which wins over kept above, and a dock kept below goes down too.
+        // Whether a fullscreen window is up goes by its output's focus, not Marco's.
         let own = match managed.window_type {
             WindowType::Desktop => Layer::Desktop,
             _ if managed.below => Layer::Bottom,
             WindowType::Dock => Layer::Top,
-            _ if managed.fullscreen && self.focus.values().any(|f| self.is_ancestor(id, *f)) => {
-                Layer::Fullscreen
-            }
+            _ if managed.fullscreen && self.covers_its_output(id) => Layer::Fullscreen,
             _ if managed.above => Layer::Top,
             _ => Layer::Normal,
         };
@@ -3321,6 +3324,38 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// Notes each seat's focused window as the last focused on the output it shows by, and
+    /// a seat that focuses nothing as focusing nothing on its Active output. Forgets the
+    /// windows and outputs that have gone.
+    fn note_last_focused(&mut self) {
+        self.last_focused_on.retain(|output, id| {
+            self.windows.contains_key(id) && self.outputs.iter().any(|o| o.id == *output)
+        });
+        for seat in &self.seats {
+            match self.focus.get(seat) {
+                Some(id) => {
+                    if let Some(output) = self.output_showing(*id) {
+                        self.last_focused_on.insert(output, *id);
+                    }
+                }
+                None => {
+                    if let Some(output) = self.active_output(*seat) {
+                        self.last_focused_on.remove(&output);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether a fullscreen window is in the fullscreen layer: while it or a transient of it
+    /// was the last window focused on its output (ADR 0057). Marco goes by the focus on any
+    /// output instead (`get_standalone_layer`, stack.c:272-315).
+    fn covers_its_output(&self, id: WindowId) -> bool {
+        self.output_showing(id)
+            .and_then(|output| self.last_focused_on.get(&output))
+            .is_some_and(|last| self.is_ancestor(id, *last))
+    }
+
     /// Raises a window as Marco does: its transient root first, then the window itself.
     fn raise_family(&mut self, id: WindowId) {
         self.move_to_top(self.root(id));
@@ -3350,6 +3385,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.refresh_overview();
         self.fix_focus();
         self.note_active_outputs();
+        self.note_last_focused();
         self.mru.retain(|id| self.windows.contains_key(id));
         if let Some(focused) = self.focus(self.last_seat) {
             self.mru.retain(|id| *id != focused);
