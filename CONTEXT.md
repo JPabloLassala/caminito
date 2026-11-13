@@ -493,7 +493,7 @@ What a Notifying app's notifications get: a bubble and a place in the Notificati
 _Avoid_: alert style (macOS's), banners and alerts, mode
 
 **Do Not Disturb**:
-A state in which notifications get no bubble and no sound but still go to the Notification history. The user turns it on for an hour, four hours, until tomorrow morning or until they turn it off, and it also comes on during its daily schedule, while a window is fullscreen and while the screen is shared or recorded. Critical notifications, and those of apps allowed to, break through it.
+A state in which notifications get no bubble and no sound but still go to the Notification history. The user turns it on for an hour, four hours, until tomorrow morning or until they turn it off, and it also comes on during its daily schedule, while the output under the pointer shows a fullscreen window (not while that window's workspace is switched away from) and while the screen is shared or recorded. Critical notifications, and those of apps allowed to, break through it.
 _Avoid_: focus, focus mode (macOS's), quiet mode, silent mode, DND alone (in the UI)
 
 **Previews**:
