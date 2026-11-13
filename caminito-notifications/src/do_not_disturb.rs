@@ -4,7 +4,7 @@
 //! the daemon keeps it. It takes the time as an argument, so tests don't wait for an hour.
 //!
 //! It's also on (CMN-264) during its daily [`Schedule`], and while Caminito says the output
-//! under the pointer has a fullscreen window or a screencast is running, each behind its
+//! under the pointer shows a fullscreen window or a screencast is running, each behind its
 //! setting, the [`Triggers`]. [`Sources`] holds them all, and says whether it's on and the
 //! first [`Reason`] it's on for. Turning it off by hand holds each automatic reason that's on
 //! off: the schedule until its next start, a trigger until Caminito says it ended, and the
@@ -144,7 +144,7 @@ pub(crate) enum Reason {
     Manual,
     /// Its daily schedule.
     Schedule,
-    /// The output under the pointer has a fullscreen window.
+    /// The output under the pointer shows a fullscreen window.
     Fullscreen,
     /// A screencast is running.
     Screencast,
@@ -222,7 +222,7 @@ impl ScheduleHold {
 pub(crate) struct Triggers {
     /// The schedule, while it's on.
     pub(crate) schedule: Option<Schedule>,
-    /// Whether it's on while the output under the pointer has a fullscreen window.
+    /// Whether it's on while the output under the pointer shows a fullscreen window.
     pub(crate) while_fullscreen: bool,
     /// Whether it's on while a screencast runs.
     pub(crate) while_screencasting: bool,
@@ -318,7 +318,7 @@ impl FullscreenTrigger {
 pub(crate) struct Sources {
     /// The user's.
     pub(crate) manual: DoNotDisturb,
-    /// Whether the output under the pointer has a fullscreen window.
+    /// Whether the output under the pointer shows a fullscreen window.
     fullscreen: FullscreenTrigger,
     /// Whether a screencast is running.
     screencast: Trigger,
