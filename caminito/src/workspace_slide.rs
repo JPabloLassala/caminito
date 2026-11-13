@@ -73,9 +73,11 @@ pub(crate) struct Slide {
     pub(crate) from: usize,
     /// The one whose windows arrive.
     pub(crate) to: usize,
-    /// The window whose Fullscreen workspace, after `from`, the last switch left in its
-    /// place, and the one whose Fullscreen workspace arrives in `to`'s (ADR 0057).
+    /// The window whose Fullscreen workspace the last switch left, in the place of `from`,
+    /// its Home workspace (ADR 0057).
     pub(crate) from_fullscreen: Option<WindowId>,
+    /// The window whose Fullscreen workspace arrives, in the place of `to`, its Home
+    /// workspace.
     pub(crate) to_fullscreen: Option<WindowId>,
     /// How far the arriving windows were from their own places at `start`: the whole way
     /// from the old workspace's place, or from where a slide that this one retargets had

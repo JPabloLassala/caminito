@@ -1462,13 +1462,12 @@ impl<W: PolicyWindow> Policy<W> {
     fn switch_workspace_towards(&mut self, seat: SeatId, direction: Direction) {
         let shown = self.active_shown(seat);
         if let Some(output) = self.active_output(seat) {
-            let fullscreen = match (shown.fullscreen, direction) {
-                (Some(_), Direction::Left) => Some(None),
-                (None, Direction::Right) => self.fullscreen_workspace_after(output).map(Some),
-                _ => None,
-            };
-            if let Some(fullscreen) = fullscreen {
-                self.show_fullscreen_workspace(output, fullscreen);
+            let back_home = shown.fullscreen.is_some() && direction == Direction::Left;
+            let after_home = (shown.fullscreen.is_none() && direction == Direction::Right)
+                .then(|| self.fullscreen_workspace_after(output))
+                .flatten();
+            if back_home || after_home.is_some() {
+                self.show_fullscreen_workspace(output, after_home);
                 self.apply();
                 return;
             }
@@ -1604,12 +1603,7 @@ impl<W: PolicyWindow> Policy<W> {
                 }
                 Some(output) => {
                     self.active_workspaces.of_mut(output).map(switch);
-                    let seats: Vec<SeatId> = self
-                        .seats
-                        .iter()
-                        .copied()
-                        .filter(|seat| self.active_output(*seat) == Some(output))
-                        .collect();
+                    let seats = self.seats_on(output);
                     let default = self.default_focus_on(output);
                     for seat in seats {
                         match default {
@@ -1675,6 +1669,12 @@ impl<W: PolicyWindow> Policy<W> {
         // `meta_window_activate` then stays on (window.c:3246-3258).
         if !self.is_on_shown_workspace(id) {
             self.switch_shown(self.output_switched_for(id), workspace, None);
+            // Its Home workspace, then the Fullscreen workspace after it (ADR 0057).
+            if let Some(fullscreen) = self.fullscreen_workspace_of(id)
+                && let Some(output) = self.output_showing(fullscreen)
+            {
+                self.show_fullscreen_workspace(output, Some(fullscreen));
+            }
         }
         // Marco drops an activation older than the user's last input before it looks at
         // the desktop (window.c:3179-3201), so a stale one hides nothing.

@@ -188,10 +188,7 @@ impl<W: PolicyWindow> Policy<W> {
             cells: towards.step(),
         });
         let default = self.default_focus_on(output);
-        let seats: Vec<SeatId> = (self.seats.iter().copied())
-            .filter(|seat| self.active_output(*seat) == Some(output))
-            .collect();
-        for seat in seats {
+        for seat in self.seats_on(output) {
             match default {
                 Some(id) => self.focus.insert(seat, id),
                 None => self.focus.remove(&seat),
@@ -235,14 +232,18 @@ impl<W: PolicyWindow> Policy<W> {
         for (output, window) in gone {
             self.show_fullscreen_workspace(output, None);
             if self.windows.contains_key(&window) {
-                let seats: Vec<SeatId> = (self.seats.iter().copied())
-                    .filter(|seat| self.active_output(*seat) == Some(output))
-                    .collect();
-                for seat in seats {
+                for seat in self.seats_on(output) {
                     self.focus.insert(seat, window);
                 }
             }
         }
+    }
+
+    /// The seats whose Active output `output` is, which a switch of it alone refocuses.
+    pub(super) fn seats_on(&self, output: OutputId) -> Vec<SeatId> {
+        (self.seats.iter().copied())
+            .filter(|seat| self.active_output(*seat) == Some(output))
+            .collect()
     }
 
     /// Every output takes the active and previous workspace of the Active output, that of

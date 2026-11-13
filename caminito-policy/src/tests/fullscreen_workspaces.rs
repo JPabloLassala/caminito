@@ -206,3 +206,46 @@ fn with_the_key_off_a_fullscreen_window_stays_on_its_workspace() {
     policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(10));
     assert_eq!(active(&policy), (1, 0));
 }
+
+#[test]
+fn activating_a_window_on_its_fullscreen_workspace_switches_its_output_there() {
+    let mut policy = on_a_fullscreen_workspace();
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(10));
+    policy.take_output_switches();
+
+    policy.activate(SEAT, id(1), ms(11));
+
+    assert_eq!(active(&policy), (0, 0));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+    assert!(policy.is_showing(id(1)));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+}
+
+#[test]
+fn under_spanning_workspaces_only_the_windows_output_shows_its_fullscreen_workspace() {
+    let mut policy = Policy::new(Config {
+        fullscreen_workspaces: true,
+        ..Config::default()
+    });
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    policy.add_output(output(2, 1920, 0, 1280, 1024));
+    policy.map_window(
+        TestWindow::new(2, 400, 300).with_requested_position(2100, 100),
+        ms(1),
+    );
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_position(100, 100),
+        ms(2),
+    );
+
+    policy.set_fullscreen(id(1), true, None);
+
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(2)), None);
+    assert!(policy.is_showing(id(2)));
+
+    // A switch to a numbered workspace moves every output, away from it too.
+    policy.switch_workspace(1);
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+    assert_eq!(active(&policy), (1, 1));
+}

@@ -219,10 +219,11 @@ struct WorkspaceSlideDump {
     /// The workspace the last switch left, and the one whose windows arrive.
     from: usize,
     to: usize,
-    /// The windows, by id, whose Fullscreen workspaces after `from` and `to` it goes from
-    /// and to in their places (ADR 0057).
+    /// The window, by id, whose Fullscreen workspace the last switch left, in the place of
+    /// `from`, its Home workspace (ADR 0057).
     #[serde(skip_serializing_if = "Option::is_none")]
     from_fullscreen: Option<u64>,
+    /// The window, by id, whose Fullscreen workspace arrives, in the place of `to`.
     #[serde(skip_serializing_if = "Option::is_none")]
     to_fullscreen: Option<u64>,
     /// How far the arriving windows are from their own places now. Those of a workspace
