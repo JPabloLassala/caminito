@@ -181,6 +181,10 @@ pub struct Config {
     /// `org.mate.Caminito`'s `workspaces-per-output` (ADR 0032): each output switches its
     /// own active workspace. Off, every switch switches them all: Spanning workspaces.
     pub workspaces_per_output: bool,
+    /// `org.mate.Caminito`'s `fullscreen-workspaces` (ADR 0057): a window that goes
+    /// fullscreen gets a Fullscreen workspace of its own. It's read as a window goes
+    /// fullscreen.
+    pub fullscreen_workspaces: bool,
 }
 
 impl Default for Config {
@@ -218,6 +222,7 @@ impl Default for Config {
             // Spanning workspaces, as Marco has them: the tests were written for them,
             // before 230. The schema's default is on.
             workspaces_per_output: false,
+            fullscreen_workspaces: false,
         }
     }
 }
@@ -273,6 +278,9 @@ struct Managed<W> {
     fullscreen: bool,
     /// The output a client asked to be fullscreen on.
     fullscreen_output: Option<OutputId>,
+    /// On a Fullscreen workspace of its own, after its Home workspace, `workspace` (ADR
+    /// 0057), while it's fullscreen.
+    fullscreen_workspace: bool,
     minimized: bool,
     /// Kept above the windows of the normal layer (155).
     above: bool,
@@ -1078,6 +1086,7 @@ impl<W: PolicyWindow> Policy<W> {
                 shaded: false,
                 fullscreen: false,
                 fullscreen_output: None,
+                fullscreen_workspace: false,
                 minimized: false,
                 above: false,
                 below: false,
@@ -1446,8 +1455,25 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Switches `seat`'s Active output to the workspace beside its active one in the grid,
     /// if there is one.
+    ///
+    /// The Fullscreen workspace of a window is to the right of its Home workspace, and the
+    /// grid's next to the right of it; left from it goes back to the Home workspace (ADR
+    /// 0057).
     fn switch_workspace_towards(&mut self, seat: SeatId, direction: Direction) {
-        let active = self.active_shown(seat).active;
+        let shown = self.active_shown(seat);
+        if let Some(output) = self.active_output(seat) {
+            let fullscreen = match (shown.fullscreen, direction) {
+                (Some(_), Direction::Left) => Some(None),
+                (None, Direction::Right) => self.fullscreen_workspace_after(output).map(Some),
+                _ => None,
+            };
+            if let Some(fullscreen) = fullscreen {
+                self.show_fullscreen_workspace(output, fullscreen);
+                self.apply();
+                return;
+            }
+        }
+        let active = shown.active;
         if let Some(workspace) = self.workspace_towards(active, direction) {
             self.switch_active_output(seat, workspace, Some(direction));
         }
@@ -1527,12 +1553,13 @@ impl<W: PolicyWindow> Policy<W> {
             Some(output) => self.active_workspaces.of(Some(output)).active,
             None => self.active_shown(self.last_seat).active,
         };
+        // An output on a Fullscreen workspace leaves it, also for its Home workspace.
+        let leaves = |shown: active_workspaces::Shown| {
+            shown.active != workspace || shown.fullscreen.is_some()
+        };
         let switches = match only {
-            Some(_) => from != workspace,
-            None => self
-                .active_workspaces
-                .each()
-                .any(|shown| shown.active != workspace),
+            Some(output) => leaves(self.active_workspaces.of(Some(output))),
+            None => self.active_workspaces.each().any(leaves),
         };
         if switches {
             // The workspace changing under an open switcher closes it (ruling 9 of 108).
@@ -1559,6 +1586,7 @@ impl<W: PolicyWindow> Policy<W> {
                 self.move_tree(root, workspace);
             }
             let switch = |shown: &mut active_workspaces::Shown| {
+                shown.fullscreen = None;
                 if shown.active != workspace {
                     shown.previous = Some(shown.active);
                     shown.active = workspace;
@@ -1754,7 +1782,26 @@ impl<W: PolicyWindow> Policy<W> {
         // Marco unshades a window it makes fullscreen.
         managed.shaded &= !fullscreen;
         managed.fullscreen_output = output.filter(|_| fullscreen);
+        // A transient goes fullscreen on its family's workspace.
+        let gets_workspace = fullscreen
+            && self.config.fullscreen_workspaces
+            && managed.parent.is_none()
+            && !managed.fullscreen_workspace;
+        managed.fullscreen_workspace =
+            fullscreen && (managed.fullscreen_workspace || gets_workspace);
         self.relayout(id);
+        // A focused window's output switches to it (ADR 0057). One that leaves it is
+        // `apply`'s.
+        let focused = self
+            .focus
+            .values()
+            .any(|focus| self.is_ancestor(id, *focus));
+        if gets_workspace
+            && focused
+            && let Some(output) = self.output_showing(id)
+        {
+            self.show_fullscreen_workspace(output, Some(id));
+        }
         self.apply();
     }
 
@@ -2314,6 +2361,12 @@ impl<W: PolicyWindow> Policy<W> {
     /// mostly have one output or none, ask this.
     pub fn active_workspace(&self) -> usize {
         self.primary_shown().active
+    }
+
+    /// The window whose Fullscreen workspace `output` shows, after its active workspace,
+    /// if it shows one (ADR 0057).
+    pub fn fullscreen_workspace_on(&self, output: OutputId) -> Option<WindowId> {
+        self.active_workspaces.of(Some(output)).fullscreen
     }
 
     /// Whether each output switches its own active workspace: `workspaces-per-output` (230).
@@ -3379,6 +3432,8 @@ impl<W: PolicyWindow> Policy<W> {
         // A window dragged across joins what the other output shows, before anything goes
         // by what's showing.
         self.follow_main_outputs();
+        // Before the focus is fixed, which the window that left fullscreen keeps.
+        self.leave_gone_fullscreen_workspaces();
         // First, as Marco runs it once the windows have moved (screen.c:1360-1371).
         self.update_dynamic_workspaces();
         self.end_stale_grabs();

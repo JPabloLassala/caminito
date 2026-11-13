@@ -85,6 +85,11 @@
       <summary>Each monitor has its own workspaces</summary>
       <description>When true, each monitor has its own active workspace, and switching the workspace of one leaves the others as they are. Every monitor has the same number of workspaces, with the same names in the same grid. When false, switching the workspace switches every monitor, as Marco does.</description>
     </key>
+    <key name="fullscreen-workspaces" type="b">
+      <default>false</default>
+      <summary>Give each fullscreen window a workspace of its own</summary>
+      <description>When true, a window that goes fullscreen, or opens fullscreen, is on a workspace of its own, right after the workspace it was on, and the monitor switches to it if the window has the focus. Switching left goes back to the workspace it came from, and the workspace goes when the window leaves fullscreen or closes. The numbered workspaces don't change. When false, a fullscreen window stays on its workspace.</description>
+    </key>
     <key name="workspace-slide" type="b">
       <default>true</default>
       <summary>Slide the windows when the workspace changes</summary>

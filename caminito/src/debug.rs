@@ -219,6 +219,12 @@ struct WorkspaceSlideDump {
     /// The workspace the last switch left, and the one whose windows arrive.
     from: usize,
     to: usize,
+    /// The windows, by id, whose Fullscreen workspaces after `from` and `to` it goes from
+    /// and to in their places (ADR 0057).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from_fullscreen: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to_fullscreen: Option<u64>,
     /// How far the arriving windows are from their own places now. Those of a workspace
     /// the slide left are that far from where their workspace ends up, off the output.
     offset: OffsetDump,
@@ -700,6 +706,10 @@ struct OutputDump {
     scale: f64,
     /// Its active workspace, which is every output's with Spanning workspaces (ADR 0032).
     active_workspace: usize,
+    /// The window, by id, whose Fullscreen workspace it shows after its active workspace,
+    /// that window's Home workspace (ADR 0057).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fullscreen_workspace: Option<u64>,
     /// The output less what layer surfaces' exclusive zones and XWayland windows' struts
     /// reserve along its edges (64).
     work_area: RectDump,
@@ -897,6 +907,9 @@ impl Caminito {
                 geometry: output_geometry(output).into(),
                 scale: output.current_scale().fractional_scale(),
                 active_workspace: policy.active_workspace_on(output_id(output)),
+                fullscreen_workspace: policy
+                    .fullscreen_workspace_on(output_id(output))
+                    .map(|id| id.0),
                 work_area: work_area(output).into(),
                 layer_surfaces: self
                     .layer_surfaces(output)
@@ -1125,6 +1138,8 @@ impl Caminito {
                     output: output.name(),
                     from: slide.from,
                     to: slide.to,
+                    from_fullscreen: slide.from_fullscreen.map(|id| id.0),
+                    to_fullscreen: slide.to_fullscreen.map(|id| id.0),
                     offset: OffsetDump {
                         x: offset.x,
                         y: offset.y,

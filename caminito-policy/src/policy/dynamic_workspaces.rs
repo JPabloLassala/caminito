@@ -106,6 +106,8 @@ impl<W: PolicyWindow> Policy<W> {
                     output: output.id,
                     from,
                     to: 0,
+                    from_fullscreen: None,
+                    to_fullscreen: None,
                     cells: grid.cells_between(from, 0),
                 });
             }

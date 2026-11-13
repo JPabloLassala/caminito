@@ -61,7 +61,7 @@ fn num_workspaces(f: &Fixture) -> usize {
 }
 
 /// Has a window's client destroy it, and waits until Caminito no longer manages it.
-fn destroy(f: &mut Fixture, window: ClientWindow) {
+pub(super) fn destroy(f: &mut Fixture, window: ClientWindow) {
     match window {
         ClientWindow::Xdg(id, xdg) => {
             f.client(id).destroy_window(xdg);

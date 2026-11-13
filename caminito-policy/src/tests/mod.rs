@@ -9,6 +9,7 @@ mod edge_resistance;
 mod focus;
 mod focus_stealing;
 mod fullscreen_layer;
+mod fullscreen_workspaces;
 mod functions;
 mod grid;
 mod intellihide;

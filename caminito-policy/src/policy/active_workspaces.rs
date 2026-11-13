@@ -14,6 +14,10 @@ pub(super) struct Shown {
     /// (150). Every switch sets it, as Marco's `meta_workspace_activate_with_focus` does
     /// (workspace.c:399-400), and it's forgotten when its workspace is removed.
     pub(super) previous: Option<usize>,
+    /// The window whose Fullscreen workspace the output shows, which comes right after
+    /// `active`, its Home workspace (ADR 0057). `active` stays the Home workspace's number,
+    /// so what asks for a number keeps working.
+    pub(super) fullscreen: Option<WindowId>,
 }
 
 /// One output's change of active workspace, as a switch made it (233), or as
@@ -28,6 +32,11 @@ pub struct OutputSwitch {
     pub from: usize,
     /// The one that is.
     pub to: usize,
+    /// The window whose Fullscreen workspace, after `from`, the output showed in its place
+    /// (ADR 0057).
+    pub from_fullscreen: Option<WindowId>,
+    /// The window whose Fullscreen workspace, after `to`, the output shows in its place.
+    pub to_fullscreen: Option<WindowId>,
     /// How far the switch goes in the Workspace grid, in columns to the right and in rows
     /// down: from the old workspace's cell to the new one's, or one cell the way a binding
     /// asked to go, which a switch that wraps past the grid's edge keeps to.
@@ -124,8 +133,10 @@ impl<W: PolicyWindow> Policy<W> {
     ) {
         let grid = self.workspace_grid();
         for output in &self.outputs {
-            let from = self.active_workspaces.of(Some(output.id)).active;
-            if from == workspace || only.is_some_and(|only| only != output.id) {
+            let shown = self.active_workspaces.of(Some(output.id));
+            let from = shown.active;
+            let stays = from == workspace && shown.fullscreen.is_none();
+            if stays || only.is_some_and(|only| only != output.id) {
                 continue;
             }
             let cells = match towards {
@@ -136,8 +147,101 @@ impl<W: PolicyWindow> Policy<W> {
                 output: output.id,
                 from,
                 to: workspace,
+                from_fullscreen: shown.fullscreen,
+                to_fullscreen: None,
                 cells,
             });
+        }
+    }
+
+    /// Switches `output` from its active workspace to the Fullscreen workspace of
+    /// `fullscreen` after it, or back from one for none, as a switch does: the switcher and
+    /// the window menu close, and the seats whose Active output it is take its default
+    /// focus. Its Fullscreen workspace is to the right of the Home workspace (ADR 0057).
+    pub(super) fn show_fullscreen_workspace(
+        &mut self,
+        output: OutputId,
+        fullscreen: Option<WindowId>,
+    ) {
+        let Some(shown) = self.active_workspaces.of_mut(output) else {
+            return;
+        };
+        let from = shown.fullscreen;
+        if from == fullscreen {
+            return;
+        }
+        shown.fullscreen = fullscreen;
+        let workspace = shown.active;
+        self.close_switcher(switcher::Close::Dropped);
+        self.window_menu = None;
+        let towards = match fullscreen {
+            Some(_) => Direction::Right,
+            None => Direction::Left,
+        };
+        self.switches.push(towards);
+        self.output_switches.push(OutputSwitch {
+            output,
+            from: workspace,
+            to: workspace,
+            from_fullscreen: from,
+            to_fullscreen: fullscreen,
+            cells: towards.step(),
+        });
+        let default = self.default_focus_on(output);
+        let seats: Vec<SeatId> = (self.seats.iter().copied())
+            .filter(|seat| self.active_output(*seat) == Some(output))
+            .collect();
+        for seat in seats {
+            match default {
+                Some(id) => self.focus.insert(seat, id),
+                None => self.focus.remove(&seat),
+            };
+        }
+    }
+
+    /// The window whose Fullscreen workspace `id` is on: its transient family's root, if
+    /// that has one (ADR 0057).
+    pub(super) fn fullscreen_workspace_of(&self, id: WindowId) -> Option<WindowId> {
+        let root = self.root(id);
+        self.windows[&root].fullscreen_workspace.then_some(root)
+    }
+
+    /// The window whose Fullscreen workspace comes right after `output`'s active workspace,
+    /// its Home workspace, if one does.
+    pub(super) fn fullscreen_workspace_after(&self, output: OutputId) -> Option<WindowId> {
+        let home = self.active_workspaces.of(Some(output)).active;
+        (self.stack.iter().rev().copied()).find(|id| {
+            let managed = &self.windows[id];
+            managed.fullscreen_workspace
+                && managed.workspace == home
+                && self.output_showing(*id) == Some(output)
+        })
+    }
+
+    /// Each output that shows the Fullscreen workspace of a window that has none any more,
+    /// because it left fullscreen or closed, switches back to the Home workspace, with the
+    /// window focused there if it's still open (ADR 0057).
+    pub(super) fn leave_gone_fullscreen_workspaces(&mut self) {
+        let gone: Vec<(OutputId, WindowId)> = (self.outputs.iter())
+            .filter_map(|output| {
+                let fullscreen = self.active_workspaces.of(Some(output.id)).fullscreen?;
+                let has_one = self
+                    .windows
+                    .get(&fullscreen)
+                    .is_some_and(|managed| managed.fullscreen_workspace);
+                (!has_one).then_some((output.id, fullscreen))
+            })
+            .collect();
+        for (output, window) in gone {
+            self.show_fullscreen_workspace(output, None);
+            if self.windows.contains_key(&window) {
+                let seats: Vec<SeatId> = (self.seats.iter().copied())
+                    .filter(|seat| self.active_output(*seat) == Some(output))
+                    .collect();
+                for seat in seats {
+                    self.focus.insert(seat, window);
+                }
+            }
         }
     }
 
@@ -293,8 +397,18 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Whether a managed window is on the workspace the output it shows by has active:
     /// it's sticky, or that's its workspace.
+    ///
+    /// While the output shows a Fullscreen workspace, only what's on it is (ADR 0057).
     pub(super) fn is_on_shown_workspace(&self, id: WindowId) -> bool {
-        self.is_on_workspace(id, self.active_workspace_of(id))
+        if !self.windows.contains_key(&id) {
+            return false;
+        }
+        let shown = self.active_workspaces.of(self.output_showing(id));
+        let own = self.fullscreen_workspace_of(id);
+        match shown.fullscreen {
+            Some(fullscreen) => own == Some(fullscreen),
+            None => own.is_none() && self.is_on_workspace(id, shown.active),
+        }
     }
 
     /// Every output's active workspace, as the one that shows its desktop for itself: an

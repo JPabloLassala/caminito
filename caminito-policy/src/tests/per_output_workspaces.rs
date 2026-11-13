@@ -734,6 +734,8 @@ fn switch(output: u64, from: usize, to: usize, cells: (i32, i32)) -> OutputSwitc
         output: OutputId(output),
         from,
         to,
+        from_fullscreen: None,
+        to_fullscreen: None,
         cells,
     }
 }

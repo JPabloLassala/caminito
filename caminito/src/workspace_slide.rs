@@ -73,6 +73,10 @@ pub(crate) struct Slide {
     pub(crate) from: usize,
     /// The one whose windows arrive.
     pub(crate) to: usize,
+    /// The window whose Fullscreen workspace, after `from`, the last switch left in its
+    /// place, and the one whose Fullscreen workspace arrives in `to`'s (ADR 0057).
+    pub(crate) from_fullscreen: Option<WindowId>,
+    pub(crate) to_fullscreen: Option<WindowId>,
     /// How far the arriving windows were from their own places at `start`: the whole way
     /// from the old workspace's place, or from where a slide that this one retargets had
     /// them (235).
@@ -104,6 +108,8 @@ impl Slide {
             output: switch.output,
             from: switch.from,
             to: switch.to,
+            from_fullscreen: switch.from_fullscreen,
+            to_fullscreen: switch.to_fullscreen,
             way: distance,
             start: now,
             left: vec![Left {
@@ -265,7 +271,8 @@ impl WorkspaceSlides {
     ) {
         let mut running = self.running.iter_mut();
         let slide = running.find(|slide| slide.output == output && !slide.is_over(now));
-        if let Some(slide) = slide.filter(|slide| slide.to == workspace) {
+        let brings = |slide: &&mut Slide| slide.to == workspace && slide.to_fullscreen.is_none();
+        if let Some(slide) = slide.filter(brings) {
             slide.arriving.insert(window);
         }
     }
@@ -285,13 +292,16 @@ fn whole_switches(switches: Vec<OutputSwitch>) -> Vec<OutputSwitch> {
         match whole.iter_mut().find(|first| first.output == switch.output) {
             Some(first) => {
                 first.to = switch.to;
+                first.to_fullscreen = switch.to_fullscreen;
                 first.cells.0 += switch.cells.0;
                 first.cells.1 += switch.cells.1;
             }
             None => whole.push(switch),
         }
     }
-    whole.retain(|switch| switch.from != switch.to);
+    whole.retain(|switch| {
+        (switch.from, switch.from_fullscreen) != (switch.to, switch.to_fullscreen)
+    });
     whole
 }
 
@@ -350,7 +360,10 @@ impl Caminito {
                 .map(|index| running.swap_remove(index))
                 // One that's over, or that a switch with no slide took the output from,
                 // has nothing to go on from.
-                .filter(|slide| !slide.is_over(now) && slide.to == switch.from);
+                .filter(|slide| {
+                    !slide.is_over(now)
+                        && (slide.to, slide.to_fullscreen) == (switch.from, switch.from_fullscreen)
+                });
             let mut outputs = self.outputs.iter();
             let Some(output) = outputs.find(|output| output_id(output) == switch.output) else {
                 continue;
@@ -562,6 +575,8 @@ mod tests {
             output: OutputId(output),
             from,
             to,
+            from_fullscreen: None,
+            to_fullscreen: None,
             cells,
         }
     }

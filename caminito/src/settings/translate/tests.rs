@@ -177,6 +177,7 @@ fn defaults() -> Reading {
     put(CAMINITO, "workspace-layout-orientation", s("horizontal"));
     put(CAMINITO, "workspace-layout-rows", Value::Int(1));
     put(CAMINITO, "workspaces-per-output", Value::Bool(true));
+    put(CAMINITO, "fullscreen-workspaces", Value::Bool(false));
     put(CAMINITO, "workspace-slide", Value::Bool(true));
     put(CAMINITO, "overview", s("<Super>w"));
     put(CAMINITO, "workspace-layout-columns", Value::Int(0));
@@ -307,6 +308,14 @@ fn each_output_has_its_own_workspaces_unless_the_key_is_off() {
     assert!(settings(&defaults()).policy.workspaces_per_output);
     let reading = with(CAMINITO, "workspaces-per-output", Value::Bool(false));
     assert!(!settings(&reading).policy.workspaces_per_output);
+}
+
+#[test]
+fn a_fullscreen_window_gets_a_workspace_of_its_own_only_with_the_key_on() {
+    // Off by default (ADR 0057).
+    assert!(!settings(&defaults()).policy.fullscreen_workspaces);
+    let reading = with(CAMINITO, "fullscreen-workspaces", Value::Bool(true));
+    assert!(settings(&reading).policy.fullscreen_workspaces);
 }
 
 #[test]
