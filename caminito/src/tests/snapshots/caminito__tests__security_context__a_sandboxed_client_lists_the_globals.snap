@@ -2,6 +2,7 @@
 source: caminito/src/tests/security_context.rs
 expression: format_globals(&f.client_state(sandboxed).globals)
 ---
+ext_background_effect_manager_v1 v1
 ext_idle_notifier_v1 v2
 gtk_shell1 v1
 org_kde_kwin_server_decoration_manager v1
