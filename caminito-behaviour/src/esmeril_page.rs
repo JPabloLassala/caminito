@@ -25,6 +25,11 @@ struct Page {
     esmeril: Esmeril,
     /// The app ids of the windows open when the page opened.
     open: Vec<String>,
+    /// Every app id the list has shown since the page opened, sorted, so that one unchecked
+    /// stays to be checked again.
+    known: RefCell<Vec<String>>,
+    /// The list's check buttons, in `known`'s order.
+    checks: RefCell<Vec<gtk::CheckButton>>,
     switch: gtk::Switch,
     strength: gtk::Scale,
     reduced: gtk::Label,
@@ -40,6 +45,8 @@ pub fn build(esmeril: Esmeril) -> gtk::Widget {
     let page = Rc::new(Page {
         esmeril,
         open,
+        known: RefCell::default(),
+        checks: RefCell::default(),
         switch: gtk::Switch::builder()
             .halign(gtk::Align::End)
             .valign(gtk::Align::Center)
@@ -205,21 +212,34 @@ impl Page {
         self.reduced.set_visible(reduced);
     }
 
-    /// The list: the listed app ids and the open windows', each a check button
-    /// that lists the app id or takes it off the list.
+    /// The list: the app ids listed, open or seen, each a check button that lists the app id
+    /// or takes it off the list. The buttons are made again only for a new app id, so that a
+    /// toggle keeps the focus and the scroll where they are.
     fn redraw_apps(self: &Rc<Self>) {
         let listed = self.esmeril.applications();
-        let mut app_ids: Vec<String> = listed.iter().chain(&self.open).cloned().collect();
-        app_ids.sort_by_key(|app_id| app_id.to_lowercase());
-        app_ids.dedup();
+        let mut known = self.known.borrow_mut();
+        let before = known.len();
+        known.extend(listed.iter().chain(&self.open).cloned());
+        known.sort_by_key(|app_id| app_id.to_lowercase());
+        known.dedup();
+        if known.len() != before {
+            self.rebuild_checks(&known);
+        }
+        for (check, app_id) in self.checks.borrow().iter().zip(known.iter()) {
+            check.set_active(listed.contains(app_id));
+        }
+    }
 
+    /// A check button for each of `app_ids`.
+    fn rebuild_checks(self: &Rc<Self>, app_ids: &[String]) {
         while let Some(child) = self.apps.first_child() {
             self.apps.remove(&child);
         }
+        let mut checks = self.checks.borrow_mut();
+        checks.clear();
         for app_id in app_ids {
             let check = gtk::CheckButton::builder()
-                .label(&app_id)
-                .active(listed.contains(&app_id))
+                .label(app_id)
                 .margin_top(SPACING / 6)
                 .margin_bottom(SPACING / 6)
                 .margin_start(SPACING / 3)
@@ -231,6 +251,8 @@ impl Page {
                         return;
                     };
                     let app_id = check.label().unwrap_or_default();
+                    // A change heard from the key sets the button too, and needs no writing
+                    // back.
                     if page.esmeril.is_listed(&app_id) == check.is_active() {
                         return;
                     }
@@ -241,6 +263,7 @@ impl Page {
                 }
             });
             self.apps.append(&check);
+            checks.push(check);
         }
     }
 }
@@ -273,7 +296,6 @@ async fn add_app_id(page: Rc<Page>) {
         }
         _ => {}
     }
-    page.redraw_apps();
 }
 
 #[cfg(test)]

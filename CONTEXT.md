@@ -237,7 +237,7 @@ How long the pointer rests in a Hot corner before the corner fires, the same for
 _Avoid_: threshold (it could be a distance or a pressure), rest (that's what the pointer does, not how long), reactivation delay (that's the fixed time before a corner fires again)
 
 **caminito-behaviour**:
-Caminito's settings program for how Caminito itself behaves, beyond what MATE's capplets set: the Hot corners and the animations now, and later Per-output workspaces. The user reads it as Workspace Behaviour, Plasma's name for the section that holds these.
+Caminito's settings program for how Caminito itself behaves, beyond what MATE's capplets set: the Hot corners, the animations and Esmeril's settings now, and later Per-output workspaces. The user reads it as Workspace Behaviour, Plasma's name for the section that holds these.
 _Avoid_: Caminito settings, desktop effects (hot corners aren't an effect), the Windows dialog (that's MATE's, for Marco's keys)
 
 **Workspace slide**:

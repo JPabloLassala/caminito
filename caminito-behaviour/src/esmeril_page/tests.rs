@@ -94,8 +94,58 @@ fn the_controls_write_their_keys_and_follow_them() {
     assert!(!switch.is_active());
     assert!(!strength.is_sensitive());
     assert_eq!(strength.value(), 2.0);
+    // The app id that was listed stays, unchecked, beside the new one.
+    let apps = check_buttons(&descendants(&page));
+    let state: Vec<_> = apps
+        .iter()
+        .map(|check| (check.label().unwrap().to_string(), check.is_active()))
+        .collect();
+    assert_eq!(
+        state,
+        [
+            ("Code".to_owned(), true),
+            ("mate-terminal".to_owned(), false)
+        ]
+    );
+}
+
+#[test]
+fn an_application_unchecked_stays_in_the_list_to_be_checked_again() {
+    if gtk::init().is_err() {
+        return;
+    }
+    let (_dir, settings) = settings();
+    let outside = settings.clone();
+    let page = build(Esmeril::new(settings, None));
     let apps = check_buttons(&descendants(&page));
     assert_eq!(apps.len(), 1);
-    assert_eq!(apps[0].label().unwrap(), "Code");
+
+    apps[0].set_active(false);
+    let after = check_buttons(&descendants(&page));
+    assert_eq!(after, apps, "a toggle keeps the same buttons");
+    assert!(!after[0].is_active());
+
+    after[0].set_active(true);
+    assert_eq!(outside.strv("esmeril-applications")[..], ["mate-terminal"]);
+}
+
+#[test]
+fn the_page_opens_on_the_keys_as_they_are() {
+    if gtk::init().is_err() {
+        return;
+    }
+    let (_dir, settings) = settings();
+    settings.set_boolean("esmeril", false).unwrap();
+    settings.set_uint("esmeril-strength", 7).unwrap();
+    settings.set_strv("esmeril-applications", ["Code"]).unwrap();
+    let page = build(Esmeril::new(settings, None));
+    let widgets = descendants(&page);
+    let switch: gtk::Switch = find(&widgets);
+    let strength: gtk::Scale = find(&widgets);
+    assert!(!switch.is_active());
+    assert!(!strength.is_sensitive());
+    assert_eq!(strength.value(), 7.0);
+    let apps = check_buttons(&widgets);
+    assert_eq!(apps.len(), 1);
     assert!(apps[0].is_active());
 }
