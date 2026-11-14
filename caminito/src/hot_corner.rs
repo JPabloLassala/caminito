@@ -5,8 +5,8 @@
 //! A corner fires whatever is under the pointer, the panel included, and shows nothing. It
 //! is off while a button is held, while the seat has an Interaction other than the
 //! Overview or the Application overview for a corner of either, while the session is
-//! locked, while a fullscreen window is focused
-//! on its output and while a client has locked or confined the pointer.
+//! locked, while a fullscreen window covers its output's panel (ADR 0057) and while a
+//! client has locked or confined the pointer.
 
 use std::time::Duration;
 
@@ -16,6 +16,7 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use crate::output::{output_geometry, output_id};
+use crate::scene::top_layer_is_covered;
 use crate::settings::translate::HotCornerAction;
 use crate::state::{Caminito, SEAT, State};
 
@@ -250,16 +251,10 @@ impl State {
             Some(Interaction::Overview) => !own_overview,
             interaction => interaction.is_some(),
         };
-        let fullscreen = policy.focus(SEAT).is_some_and(|id| {
-            policy.is_fullscreen(id) && policy.output_showing(id) == Some(output_id(&at.output))
-        });
+        let covered = top_layer_is_covered(caminito, &at.output);
         // A press that ran a binding, or that the Overview took, reached no client.
         let held = self.pointer_is_held() || !caminito.suppressed_buttons.is_empty();
-        caminito.lock.is_locked()
-            || held
-            || interaction
-            || fullscreen
-            || self.pointer_is_constrained()
+        caminito.lock.is_locked() || held || interaction || covered || self.pointer_is_constrained()
     }
 }
 

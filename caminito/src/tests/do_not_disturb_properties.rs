@@ -1,8 +1,12 @@
 //! What caminito-notifications turns Do Not Disturb on for (ADR 0051, CMN-264), which
 //! Caminito publishes on `org.mate.Caminito` and decides nothing about: whether the output
-//! under the pointer has a fullscreen window and which it is, which windows are fullscreen on
-//! any output (CMN-290), and whether a screencast is running, which is while any
-//! ext-image-copy-capture session is open, a screenshot's included.
+//! under the pointer shows a fullscreen window, one on its shown workspace (CMN-303), and
+//! which it is, which windows are fullscreen on any output (CMN-290), and whether a screencast
+//! is running, which is while any ext-image-copy-capture session is open, a screenshot's
+//! included.
+//!
+//! The tests map xdg windows only: the properties read Policy's window state, the same for
+//! both kinds, and a fullscreen request is each kind's own, tested with its windows.
 
 use std::sync::mpsc;
 use std::thread;
@@ -10,7 +14,7 @@ use std::thread;
 use caminito_test_client::dbus::caminito_proxy;
 
 use super::fixture::{Fixture, Kind, WindowSpec};
-use super::per_output_workspaces::two_outputs_with;
+use super::per_output_workspaces::{switch_on, two_outputs_with};
 use crate::dbus::caminito::PATH;
 
 fn screencasting(f: &mut Fixture, bus: &str) -> bool {
@@ -229,4 +233,41 @@ fn a_fullscreen_window_is_listed_while_it_is_minimised() {
     // It isn't on the pointer's output any more, but it is fullscreen still.
     assert_eq!(fullscreen_window(&mut f, &bus), "");
     assert_eq!(fullscreen_windows(&mut f, &bus), [identifier]);
+}
+
+/// A switch of the pointer's output away from the fullscreen window's workspace turns
+/// `PointerOutputFullscreen` false, and a switch back turns it true (CMN-303), under
+/// Per-output and Spanning workspaces. The window is fullscreen all along.
+fn a_fullscreen_window_counts_only_while_its_workspace_shows(per_output: bool) {
+    let (mut f, client, left, _right) = two_outputs_with(Kind::Xdg, per_output, vec![]);
+    let window = f.map(client, WindowSpec::plain((400, 300)));
+    let id = f.pid(window);
+    let identifier = f.state.caminito.toplevel_identifier(id).unwrap();
+    // On the left output, with the window.
+    f.pointer_move(100., 100.);
+    let bus = f.start_dbus();
+    f.client(client).set_fullscreen(window.xdg(), None);
+    f.dispatch_until(|f| f.state.caminito.policy.is_fullscreen(id));
+    assert!(fullscreen(&mut f, &bus));
+    let listener = listen(&mut f, &bus, "PointerOutputFullscreen", 2);
+
+    switch_on(&mut f, &bus, &left, 1);
+    assert!(!fullscreen(&mut f, &bus));
+    assert_eq!(fullscreen_window(&mut f, &bus), "");
+    assert_eq!(fullscreen_windows(&mut f, &bus), [identifier.clone()]);
+    switch_on(&mut f, &bus, &left, 0);
+
+    assert!(fullscreen(&mut f, &bus));
+    assert_eq!(fullscreen_window(&mut f, &bus), identifier);
+    assert_eq!(heard(&mut f, listener), [false, true]);
+}
+
+#[test]
+fn a_fullscreen_window_counts_only_while_its_workspace_shows_per_output() {
+    a_fullscreen_window_counts_only_while_its_workspace_shows(true);
+}
+
+#[test]
+fn a_fullscreen_window_counts_only_while_its_workspace_shows_spanning() {
+    a_fullscreen_window_counts_only_while_its_workspace_shows(false);
 }

@@ -1,9 +1,10 @@
 //! Hot corners (CMN-183): a corner whose key is set fires its action once the pointer has
 //! rested in it the Activation delay, 150 ms by default (CMN-191), fires again only once
 //! the pointer has left and 350 ms have passed, is a corner only where the Output layout
-//! stops the pointer both ways, and is off with a button held, during another Interaction, while locked, over a focused fullscreen window
-//! on its output and with the pointer locked or confined. Each test stops Caminito's clock,
-//! so only `advance_clock` moves it, and a corner that mustn't fire is given 500 ms of it,
+//! stops the pointer both ways, and is off with a button held, during another
+//! Interaction, while locked, on an output whose panel a fullscreen window covers, focused
+//! or not, and with the pointer locked or confined. Each test stops Caminito's clock, so
+//! only `advance_clock` moves it, and a corner that mustn't fire is given 500 ms of it,
 //! past both the rest and the 350 ms.
 //!
 //! The windows are xdg toplevels only: a corner fires whatever is under the pointer, and
@@ -325,6 +326,7 @@ fn a_corner_doesnt_fire_over_a_focused_fullscreen_window_on_its_output() {
     let id = f.pid(window);
     f.client(client).set_fullscreen(window.xdg(), None);
     f.dispatch_until(|f| f.state.caminito.policy.is_fullscreen(id));
+    f.draw_at_asked_size(window, (1920, 1080));
     assert_eq!(f.state.caminito.policy.focus(SEAT), Some(id));
     assert_eq!(output_geometry(&left).loc, (0, 0).into());
     f.stop_clock();
@@ -337,6 +339,29 @@ fn a_corner_doesnt_fire_over_a_focused_fullscreen_window_on_its_output() {
     f.pointer_move(3839., 0.);
     f.advance_clock(ms(150));
     assert!(showing_desktop(&f));
+}
+
+#[test]
+fn a_corner_stays_off_over_a_fullscreen_window_that_lost_the_focus_to_another_output() {
+    let settings = vec![corner("top-left", "show-desktop")];
+    let (mut f, client, _, _) = two_outputs_with(Kind::Xdg, true, settings);
+    let fullscreen = f.map(client, WindowSpec::plain((400, 300)));
+    let id = f.pid(fullscreen);
+    let other = f.map(client, WindowSpec::plain((400, 300)));
+    put_at(&mut f, other, (2100, 100), 0);
+    f.client(client).set_fullscreen(fullscreen.xdg(), None);
+    f.dispatch_until(|f| f.state.caminito.policy.is_fullscreen(id));
+    f.draw_at_asked_size(fullscreen, (1920, 1080));
+    f.stop_clock();
+    f.click(500., 500.);
+    assert_eq!(f.state.caminito.policy.focus(SEAT), Some(id));
+
+    f.click(2200., 200.);
+    assert_eq!(f.state.caminito.policy.focus(SEAT), Some(f.pid(other)));
+
+    f.pointer_move(0., 0.);
+    f.advance_clock(ms(500));
+    assert!(!showing_desktop(&f));
 }
 
 /// One output with `top-left` set to Show desktop, and a window of its own decoration

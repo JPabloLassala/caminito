@@ -229,7 +229,7 @@ The Overview opened for the focused window's Application: each output's active w
 _Avoid_: app exposé (macOS's), present windows for the current application (KWin's older name), application switcher (that's `switch-group`'s Window switcher)
 
 **Hot corner**:
-A corner of an output where the Output layout stops the pointer both ways, which runs its action, the Overview, the Application overview, Show desktop or the lock, when the pointer rests in it for the Activation delay. The four corners' actions are the same on every output, and a corner is off while a pointer button is held, an Interaction other than the Overview or the Application overview is open, a fullscreen window is focused on its output, or a client has locked or confined the pointer. It's Plasma's screen edges, without the edges.
+A corner of an output where the Output layout stops the pointer both ways, which runs its action, the Overview, the Application overview, Show desktop or the lock, when the pointer rests in it for the Activation delay. The four corners' actions are the same on every output, and a corner is off while a pointer button is held, an Interaction other than the Overview or the Application overview is open, a fullscreen window covers its output's panel, focused or not, or a client has locked or confined the pointer. It's Plasma's screen edges, without the edges.
 _Avoid_: screen edge (Plasma's term, which covers the edges too), active corner, hot spot
 
 **Activation delay**:
@@ -329,7 +329,7 @@ Caminito's extension for VS Code and the forks that share its extension API, whi
 _Avoid_: Caminito integration (the working name, for an extension that would do more), plugin, VS Code extension alone (any extension is one)
 
 **Scene**:
-The order in which Caminito draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a focused fullscreen window with its transients, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order with the tile preview beneath the window being moved, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
+The order in which Caminito draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a fullscreen window with its transients while it or one of them was the last window focused on its output, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order with the tile preview beneath the window being moved, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
 _Avoid_: scene graph (Caminito has no retained one), space (Smithay's `desktop::Space`, which Caminito doesn't use)
 
 **Wallpaper**:
@@ -493,7 +493,7 @@ What a Notifying app's notifications get: a bubble and a place in the Notificati
 _Avoid_: alert style (macOS's), banners and alerts, mode
 
 **Do Not Disturb**:
-A state in which notifications get no bubble and no sound but still go to the Notification history. The user turns it on for an hour, four hours, until tomorrow morning or until they turn it off, and it also comes on during its daily schedule, while a window is fullscreen and while the screen is shared or recorded. Critical notifications, and those of apps allowed to, break through it.
+A state in which notifications get no bubble and no sound but still go to the Notification history. The user turns it on for an hour, four hours, until tomorrow morning or until they turn it off, and it also comes on during its daily schedule, while the output under the pointer shows a fullscreen window, one on its workspace that's shown and not minimised, and while the screen is shared or recorded. Critical notifications, and those of apps allowed to, break through it.
 _Avoid_: focus, focus mode (macOS's), quiet mode, silent mode, DND alone (in the UI)
 
 **Previews**:

@@ -1224,6 +1224,8 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         workspace_count,
         // Caminito's default, unlike Marco's (ADR 0032).
         workspaces_per_output: r.bool(CAMINITO, "workspaces-per-output", true),
+        // Off by default (ADR 0057).
+        fullscreen_workspaces: r.bool(CAMINITO, "fullscreen-workspaces", false),
         workspace_names,
         dynamic_workspaces,
         workspace_layout,

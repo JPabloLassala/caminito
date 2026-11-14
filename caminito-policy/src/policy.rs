@@ -181,6 +181,10 @@ pub struct Config {
     /// `org.mate.Caminito`'s `workspaces-per-output` (ADR 0032): each output switches its
     /// own active workspace. Off, every switch switches them all: Spanning workspaces.
     pub workspaces_per_output: bool,
+    /// `org.mate.Caminito`'s `fullscreen-workspaces` (ADR 0057): a window that goes
+    /// fullscreen gets a Fullscreen workspace of its own. It's read as a window goes
+    /// fullscreen.
+    pub fullscreen_workspaces: bool,
 }
 
 impl Default for Config {
@@ -218,6 +222,7 @@ impl Default for Config {
             // Spanning workspaces, as Marco has them: the tests were written for them,
             // before 230. The schema's default is on.
             workspaces_per_output: false,
+            fullscreen_workspaces: false,
         }
     }
 }
@@ -273,6 +278,9 @@ struct Managed<W> {
     fullscreen: bool,
     /// The output a client asked to be fullscreen on.
     fullscreen_output: Option<OutputId>,
+    /// On a Fullscreen workspace of its own, after its Home workspace, `workspace` (ADR
+    /// 0057), while it's fullscreen.
+    fullscreen_workspace: bool,
     minimized: bool,
     /// Kept above the windows of the normal layer (155).
     above: bool,
@@ -712,6 +720,9 @@ pub struct Policy<W: PolicyWindow> {
     /// The focused window, and its Main output, that each seat's Active output last
     /// followed. A press on another output stays the Active output until they change.
     followed_focus: BTreeMap<SeatId, (WindowId, OutputId)>,
+    /// The window last focused on each output, keyed by the output that shows it, which
+    /// decides whether a fullscreen window there covers the panel (ADR 0057).
+    last_focused_on: BTreeMap<OutputId, WindowId>,
     /// When each seat's focus last changed on user input, to drop stale focus requests as
     /// Marco does.
     focus_time: BTreeMap<SeatId, Duration>,
@@ -766,6 +777,7 @@ impl<W: PolicyWindow> Policy<W> {
             focus: BTreeMap::new(),
             active_outputs: BTreeMap::new(),
             followed_focus: BTreeMap::new(),
+            last_focused_on: BTreeMap::new(),
             focus_time: BTreeMap::new(),
             last_seat: SeatId(0),
             grabs: BTreeMap::new(),
@@ -1074,6 +1086,7 @@ impl<W: PolicyWindow> Policy<W> {
                 shaded: false,
                 fullscreen: false,
                 fullscreen_output: None,
+                fullscreen_workspace: false,
                 minimized: false,
                 above: false,
                 below: false,
@@ -1442,8 +1455,24 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Switches `seat`'s Active output to the workspace beside its active one in the grid,
     /// if there is one.
+    ///
+    /// The Fullscreen workspace of a window is to the right of its Home workspace, and the
+    /// grid's next to the right of it; left from it goes back to the Home workspace (ADR
+    /// 0057).
     fn switch_workspace_towards(&mut self, seat: SeatId, direction: Direction) {
-        let active = self.active_shown(seat).active;
+        let shown = self.active_shown(seat);
+        if let Some(output) = self.active_output(seat) {
+            let back_home = shown.fullscreen.is_some() && direction == Direction::Left;
+            let after_home = (shown.fullscreen.is_none() && direction == Direction::Right)
+                .then(|| self.fullscreen_workspace_after(output))
+                .flatten();
+            if back_home || after_home.is_some() {
+                self.show_fullscreen_workspace(output, after_home);
+                self.apply();
+                return;
+            }
+        }
+        let active = shown.active;
         if let Some(workspace) = self.workspace_towards(active, direction) {
             self.switch_active_output(seat, workspace, Some(direction));
         }
@@ -1523,12 +1552,13 @@ impl<W: PolicyWindow> Policy<W> {
             Some(output) => self.active_workspaces.of(Some(output)).active,
             None => self.active_shown(self.last_seat).active,
         };
+        // An output on a Fullscreen workspace leaves it, also for its Home workspace.
+        let leaves = |shown: active_workspaces::Shown| {
+            shown.active != workspace || shown.fullscreen.is_some()
+        };
         let switches = match only {
-            Some(_) => from != workspace,
-            None => self
-                .active_workspaces
-                .each()
-                .any(|shown| shown.active != workspace),
+            Some(output) => leaves(self.active_workspaces.of(Some(output))),
+            None => self.active_workspaces.each().any(leaves),
         };
         if switches {
             // The workspace changing under an open switcher closes it (ruling 9 of 108).
@@ -1555,6 +1585,7 @@ impl<W: PolicyWindow> Policy<W> {
                 self.move_tree(root, workspace);
             }
             let switch = |shown: &mut active_workspaces::Shown| {
+                shown.fullscreen = None;
                 if shown.active != workspace {
                     shown.previous = Some(shown.active);
                     shown.active = workspace;
@@ -1572,12 +1603,7 @@ impl<W: PolicyWindow> Policy<W> {
                 }
                 Some(output) => {
                     self.active_workspaces.of_mut(output).map(switch);
-                    let seats: Vec<SeatId> = self
-                        .seats
-                        .iter()
-                        .copied()
-                        .filter(|seat| self.active_output(*seat) == Some(output))
-                        .collect();
+                    let seats = self.seats_on(output);
                     let default = self.default_focus_on(output);
                     for seat in seats {
                         match default {
@@ -1643,6 +1669,12 @@ impl<W: PolicyWindow> Policy<W> {
         // `meta_window_activate` then stays on (window.c:3246-3258).
         if !self.is_on_shown_workspace(id) {
             self.switch_shown(self.output_switched_for(id), workspace, None);
+            // Its Home workspace, then the Fullscreen workspace after it (ADR 0057).
+            if let Some(fullscreen) = self.fullscreen_workspace_of(id)
+                && let Some(output) = self.output_showing(fullscreen)
+            {
+                self.show_fullscreen_workspace(output, Some(fullscreen));
+            }
         }
         // Marco drops an activation older than the user's last input before it looks at
         // the desktop (window.c:3179-3201), so a stale one hides nothing.
@@ -1750,7 +1782,26 @@ impl<W: PolicyWindow> Policy<W> {
         // Marco unshades a window it makes fullscreen.
         managed.shaded &= !fullscreen;
         managed.fullscreen_output = output.filter(|_| fullscreen);
+        // A transient goes fullscreen on its family's workspace.
+        let gets_workspace = fullscreen
+            && self.config.fullscreen_workspaces
+            && managed.parent.is_none()
+            && !managed.fullscreen_workspace;
+        managed.fullscreen_workspace =
+            fullscreen && (managed.fullscreen_workspace || gets_workspace);
         self.relayout(id);
+        // A focused window's output switches to it (ADR 0057). One that leaves it is
+        // `apply`'s.
+        let focused = self
+            .focus
+            .values()
+            .any(|focus| self.is_ancestor(id, *focus));
+        if gets_workspace
+            && focused
+            && let Some(output) = self.output_showing(id)
+        {
+            self.show_fullscreen_workspace(output, Some(id));
+        }
         self.apply();
     }
 
@@ -2312,6 +2363,12 @@ impl<W: PolicyWindow> Policy<W> {
         self.primary_shown().active
     }
 
+    /// The window whose Fullscreen workspace `output` shows, after its active workspace,
+    /// if it shows one (ADR 0057).
+    pub fn fullscreen_workspace_on(&self, output: OutputId) -> Option<WindowId> {
+        self.active_workspaces.of(Some(output)).fullscreen
+    }
+
     /// Whether each output switches its own active workspace: `workspaces-per-output` (230).
     pub fn workspaces_per_output(&self) -> bool {
         self.config.workspaces_per_output
@@ -2586,9 +2643,7 @@ impl<W: PolicyWindow> Policy<W> {
             WindowType::Desktop => Layer::Desktop,
             _ if managed.below => Layer::Bottom,
             WindowType::Dock => Layer::Top,
-            _ if managed.fullscreen && self.focus.values().any(|f| self.is_ancestor(id, *f)) => {
-                Layer::Fullscreen
-            }
+            _ if managed.fullscreen && self.covers_its_panel(id) => Layer::Fullscreen,
             _ if managed.above => Layer::Top,
             _ => Layer::Normal,
         };
@@ -3321,6 +3376,40 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// Notes each seat's focused window as the last focused on the output it shows by, and
+    /// a seat that focuses nothing as focusing nothing on its Active output. Forgets the
+    /// windows and outputs that have gone.
+    fn note_last_focused(&mut self) {
+        self.last_focused_on.retain(|output, id| {
+            self.windows.contains_key(id) && self.outputs.iter().any(|o| o.id == *output)
+        });
+        for seat in &self.seats {
+            match self.focus.get(seat) {
+                Some(id) => {
+                    if let Some(output) = self.output_showing(*id) {
+                        self.last_focused_on.insert(output, *id);
+                    }
+                }
+                // As on a switch to an empty workspace, which lowers a fullscreen window
+                // sliding out, so the panel shows over it.
+                None => {
+                    if let Some(output) = self.active_output(*seat) {
+                        self.last_focused_on.remove(&output);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether a fullscreen window covers its output's panel: while it or a transient of it
+    /// was the last window focused on its output (ADR 0057). Marco goes by the focus on any
+    /// output instead (`get_standalone_layer`, stack.c:272-315).
+    fn covers_its_panel(&self, id: WindowId) -> bool {
+        self.output_showing(id)
+            .and_then(|output| self.last_focused_on.get(&output))
+            .is_some_and(|last| self.is_ancestor(id, *last))
+    }
+
     /// Raises a window as Marco does: its transient root first, then the window itself.
     fn raise_family(&mut self, id: WindowId) {
         self.move_to_top(self.root(id));
@@ -3343,6 +3432,8 @@ impl<W: PolicyWindow> Policy<W> {
         // A window dragged across joins what the other output shows, before anything goes
         // by what's showing.
         self.follow_main_outputs();
+        // Before the focus is fixed, which the window that left fullscreen keeps.
+        self.leave_gone_fullscreen_workspaces();
         // First, as Marco runs it once the windows have moved (screen.c:1360-1371).
         self.update_dynamic_workspaces();
         self.end_stale_grabs();
@@ -3350,6 +3441,7 @@ impl<W: PolicyWindow> Policy<W> {
         self.refresh_overview();
         self.fix_focus();
         self.note_active_outputs();
+        self.note_last_focused();
         self.mru.retain(|id| self.windows.contains_key(id));
         if let Some(focused) = self.focus(self.last_seat) {
             self.mru.retain(|id| *id != focused);

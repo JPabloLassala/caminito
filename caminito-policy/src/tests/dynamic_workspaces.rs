@@ -147,6 +147,8 @@ fn the_active_workspace_removed_is_noted_for_its_output_as_a_switch_to_the_first
         output: OutputId(1),
         from: 2,
         to: 0,
+        from_fullscreen: None,
+        to_fullscreen: None,
         cells: (-2, 0),
     };
     assert_eq!(policy.take_output_switches(), [to_the_first]);
@@ -191,6 +193,8 @@ fn a_workspace_removed_is_noted_for_the_output_that_showed_it_alone() {
         output: OutputId(2),
         from: 2,
         to: 0,
+        from_fullscreen: None,
+        to_fullscreen: None,
         cells: (-2, 0),
     };
     assert_eq!(policy.take_output_switches(), [to_the_first]);

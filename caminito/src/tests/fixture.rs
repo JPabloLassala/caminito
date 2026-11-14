@@ -389,6 +389,9 @@ pub struct WindowSpec {
     /// Whether it asks to be maximised before it maps: xdg's `set_maximized`, or
     /// `_NET_WM_STATE`'s two atoms.
     pub maximized: bool,
+    /// Whether it asks to be fullscreen before it maps: xdg's `set_fullscreen`, or
+    /// `_NET_WM_STATE_FULLSCREEN`.
+    pub fullscreen: bool,
 }
 
 impl Default for WindowSpec {
@@ -411,6 +414,7 @@ impl Default for WindowSpec {
             sync_request: false,
             fixed_size: false,
             maximized: false,
+            fullscreen: false,
         }
     }
 }
@@ -852,6 +856,9 @@ impl Fixture {
         if spec.maximized {
             client.set_maximized(window);
         }
+        if spec.fullscreen {
+            client.set_fullscreen(window, None);
+        }
         match spec.decoration {
             Decoration::Server => {
                 client.request_decoration(window, Some(DecorationMode::ServerSide));
@@ -890,6 +897,9 @@ impl Fixture {
                 "_NET_WM_STATE_MAXIMIZED_VERT",
                 "_NET_WM_STATE_MAXIMIZED_HORZ",
             ]);
+        }
+        if spec.fullscreen {
+            states.push("_NET_WM_STATE_FULLSCREEN");
         }
         let x_spec = XWindowSpec {
             size: (
