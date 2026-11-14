@@ -19,7 +19,8 @@ Plasma does it with KWin's Blur effect, for the surfaces that ask through `org_k
   - the windows of the applications in `esmeril-applications`, matched by app id as `wheel-glide-exceptions` is (ADR 0039), behind their own surfaces but not their popups;
   - the wallpaper while the Overview or the Application overview is open, under the dimming and fading with it, at a fixed strength.
 - **Each pixel's alpha weights it**, so an opaque pixel shows none and a wholly clear one shows none either: rounded corners and the clear outer band of a `-border` theme stay clear. The theme supplies the tint.
-- **It fades with a window's alpha** in the animations. The Overview's thumbnails, the Window switcher's previews and a capture of one window don't get it; a capture of an output does.
+- **It goes with a window where an animation draws it** (CMN-236). Through the Opening and Maximise animations and a Workspace slide, a window's own Esmeril, its frame's, its surfaces' as a listed application and a region it asks for, is drawn where the live window is, scaled and faded as it is; a Popup slide leaves the window's as it is. A closing window's picture is taken without it, and the frame strips' masks are kept with the picture, so the frame's Esmeril shrinks and fades behind it. Its surfaces' Esmeril goes as the closing starts, as they have no buffer left to read their alpha from.
+- **None in a thumbnail or a window's capture.** The Overview's thumbnails, the Window switcher's previews, the minimise animation and a capture of one window don't get it, so a window's see-through pixels stay see-through there; a capture of an output does, as the output shows it.
 - **The shaders are Caminito's own**, written from the published dual Kawase algorithm, and take from KWin its numbers: the passes and offsets of each strength step, and the colour transform with the saturation of Plasma's default. The contrast of 1.2 is Caminito's own, as Plasma's default contrasts are below 1 and go with an intensity that makes up for them (CMN-231). As in ADRs 0033 to 0037, KWin's behaviour is taken and its code isn't.
 - **Settings in `org.mate.Caminito`**: `esmeril`, on by default; `esmeril-strength`, 1 to 15 as KWin's, at KWin's default; and `esmeril-applications`, by default `mate-terminal`. caminito-behaviour shows them with the effects. Esmeril isn't drawn while `org.mate.Marco.general reduced-resources` is on; `enable-animations` doesn't touch it, as it doesn't move.
 - **Tests**: the in-process tests on Pixman check where Esmeril goes, its mask and its damage, with the element drawing nothing there. A headless GLES backend, on surfaceless EGL, runs the few tests of the blur's pixels, and they're skipped where EGL isn't there.
@@ -31,7 +32,7 @@ Plasma does it with KWin's Blur effect, for the surfaces that ask through `org_k
 - In the region, Esmeril goes under every pixel, a wholly clear one too, as the protocol has the region alone say where the blur goes. The surface is drawn over it as usual. The alpha rule above stays for the places Caminito chooses.
 - `esmeril` off and `reduced-resources` win over a client that asks. `capabilities` then has no `blur`, and is sent again when that changes. It follows the settings alone, not the renderer.
 - A window's or a layer surface's Esmeril for its own surfaces goes under all of them, so a subsurface below its parent hides the Esmeril of its parent's region, and an opaque parent hides the Esmeril of its subsurface's region. A popup's goes just under the popup. Only a lock surface's tree has it between its layers, right under the surface that asks (CMN-301).
-- As for a listed window, a region has no Esmeril in the animations, and a closing popup's picture has none as it slides. An empty region asks for none, and so removes a listed surface's.
+- A region goes with its window through the animations as a listed window's surfaces do, and goes as the window starts to close. A closing popup's picture has none as it slides. An empty region asks for none, and so removes a listed surface's.
 
 ## Consequences
 
@@ -40,6 +41,7 @@ Plasma does it with KWin's Blur effect, for the surfaces that ask through `org_k
 - Every see-through pixel of a listed application gets Esmeril, wanted or not. Listing an opaque application costs GPU time and changes nothing on screen.
 - A client that wants Esmeril can ask for it through `ext-background-effect-v1` (CMN-238, above).
 - Rejected:
+  - masking a closing window's Esmeril by its picture's alpha, as the ticket first had it (the picture has the shadow and a client's see-through pixels too, and would show a blurred halo that isn't there at rest);
   - blurring every see-through pixel of every client, as Compiz's blur could (drag icons, client-side shadows and tooltips get it too);
   - carried patches to mate-panel and mate-terminal so they ask through `ext-background-effect-v1` (GTK3 has no API for it, so each would speak the protocol itself);
   - a Caminito addition to the Marco theme format saying where glass goes (no theme would use it);

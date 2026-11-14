@@ -838,9 +838,10 @@ fn overview_layout_elements<R>(
 
 /// Window `id` with its frame at `alpha`, as a thumbnail draws it, from its own surfaces:
 /// scaled to fill the target that `place` gives for its frame rect, and cut off at the
-/// edge of the other rectangle it gives, if they meet. A `whole` window has its shadow too,
-/// and it and its popups reach past the target, cut off only at that other rectangle's
-/// edge, as the Opening animation draws a window (251).
+/// edge of the other rectangle it gives, if they meet. A `whole` window has its shadow and
+/// its Esmeril too (CMN-236), and it and its popups reach past the target, cut off only at
+/// that other rectangle's edge, which is then the output's, as the Opening animation draws a
+/// window (251).
 #[expect(
     clippy::too_many_arguments,
     reason = "the window, where it goes, and how it's drawn there"
@@ -883,13 +884,19 @@ fn scaled_window_elements<R>(
     one_window_elements(
         renderer, mapped, origin, shown, scale, alpha, None, &mut parts,
     );
-    if whole {
-        let shadow = mapped.frame().shadow();
-        parts.extend(buffer_elements(
-            renderer, shadow, origin, shown, scale, alpha, "shadow",
-        ));
-    }
     scaled_elements_in(parts, frame.size, target, crop, scale, elements);
+    if whole {
+        // Over the shadow, as at rest.
+        let esmeril = window_esmeril(caminito, mapped, origin, unbounded(), scale);
+        let size = frame.size;
+        zoomed_esmeril(
+            esmeril, size, target, crop, crop.size, scale, alpha, elements,
+        );
+        let shadow = mapped.frame().shadow();
+        let shadow: Vec<WindowPart<R>> =
+            buffer_elements(renderer, shadow, origin, shown, scale, alpha, "shadow");
+        scaled_elements_in(shadow, frame.size, target, crop, scale, elements);
+    }
 }
 
 /// Where `area` is in something of `size` from its corner, once that's scaled to fill
@@ -1959,30 +1966,9 @@ fn window_elements<R>(
                 elements,
             );
             // Behind the strips and a listed window's surfaces, and only on the output (ADR
-            // 0048): a capture of the window and a thumbnail are the window with its frame, and
-            // the animations leave it out.
-            if let Some(strength) = caminito.settings.esmeril {
-                for (mut rect, mask) in mapped.frame().esmeril() {
-                    rect.loc += origin;
-                    elements.extend(
-                        rect.overlaps(shown)
-                            .then(|| {
-                                Esmeril::new(mask, rect, output_geometry.size, scale, strength)
-                            })
-                            .flatten()
-                            .map(SceneElement::Esmeril),
-                    );
-                }
-                surface_esmeril_elements(
-                    caminito,
-                    mapped,
-                    origin,
-                    output_geometry.size,
-                    scale,
-                    strength,
-                    elements,
-                );
-            }
+            // 0048): a capture of the window and a thumbnail are the window with its frame.
+            let esmeril = window_esmeril(caminito, mapped, origin, output_geometry.size, scale);
+            elements.extend(esmeril.into_iter().map(SceneElement::Esmeril));
             // The shadow is the output's alone: a capture of the window and its thumbnail
             // are the window with its frame (103, 171).
             let shadow = mapped.frame().shadow();
@@ -1999,23 +1985,53 @@ fn window_elements<R>(
     }
 }
 
+/// The Esmeril of `mapped` at rest, with the window geometry's origin at `origin` on an output of
+/// `output`'s size, front to back: behind its frame's see-through strips, and its own surfaces'
+/// (ADR 0048). None while Esmeril is off.
+fn window_esmeril(
+    caminito: &Caminito,
+    mapped: &Mapped,
+    origin: Point<i32, Logical>,
+    output: Size<i32, Logical>,
+    scale: f64,
+) -> Vec<Esmeril> {
+    let mut esmeril = Vec::new();
+    let Some(strength) = caminito.settings.esmeril else {
+        return esmeril;
+    };
+    let shown = Rectangle::from_size(output);
+    for (mut rect, mask) in mapped.frame().esmeril() {
+        rect.loc += origin;
+        if rect.overlaps(shown) {
+            esmeril.extend(Esmeril::new(mask, rect, output, scale, strength));
+        }
+    }
+    surface_esmeril(
+        caminito,
+        mapped,
+        origin,
+        output,
+        scale,
+        strength,
+        &mut esmeril,
+    );
+    esmeril
+}
+
 /// Esmeril behind each of `mapped`'s own surfaces if its app id is listed, front to back, with
 /// the window geometry's origin at `origin` (ADR 0048): the toplevel and its subsurfaces, under
 /// all of them, and not its popups, which aren't in its surface tree. Where a see-through
 /// subsurface is over a see-through toplevel, the two blurs add up. A surface that asks, listed
 /// or not, has it in its region alone (CMN-238), and under all of them too.
-fn surface_esmeril_elements<R>(
+fn surface_esmeril(
     caminito: &Caminito,
     mapped: &Mapped,
     origin: Point<i32, Logical>,
     output: Size<i32, Logical>,
     scale: f64,
     strength: u32,
-    elements: &mut Vec<SceneElement<R>>,
-) where
-    R: Renderer + ImportAll + ImportMem,
-    R::TextureId: Send + Clone + 'static,
-{
+    esmeril: &mut Vec<Esmeril>,
+) {
     let applications = &caminito.settings.esmeril_applications;
     if mapped.is_shaded() {
         return;
@@ -2034,13 +2050,75 @@ fn surface_esmeril_elements<R>(
         cut: None,
     };
     for_each_surface_in_tree(&root, location, scale, |surface, states, location| {
-        let esmeril = match esmeril::asked_region(states) {
+        esmeril.extend(match esmeril::asked_region(states) {
             Some(region) => Esmeril::in_region(&region, states, location, &place),
             None if listed => Esmeril::behind_surface(surface, states, location, &place),
             None => None,
-        };
-        elements.extend(esmeril.map(SceneElement::Esmeril));
+        });
     });
+}
+
+/// Where a window's Esmeril is made before an animation scales it: big enough for none of it to
+/// be off it, from the frame's corner at the origin (CMN-236).
+fn unbounded() -> Size<i32, Logical> {
+    Size::from((1 << 15, 1 << 15))
+}
+
+/// `esmeril`, made with the frame's corner at the origin on `unbounded`, as an animation draws
+/// a window of `size`: scaled to fill `target`, cut off at `crop`, both from `output`'s corner,
+/// and at `alpha`, as `scaled_elements_in` draws the window's own elements (CMN-236).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "scaled_elements_in's own, and the output and the alpha"
+)]
+fn zoomed_esmeril<R>(
+    esmeril: impl IntoIterator<Item = Esmeril>,
+    size: Size<i32, Logical>,
+    target: Rectangle<i32, Logical>,
+    crop: Rectangle<i32, Logical>,
+    output: Size<i32, Logical>,
+    scale: f64,
+    alpha: f32,
+    elements: &mut Vec<SceneElement<R>>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
+    let factor = Scale::from((
+        f64::from(target.size.w) / f64::from(size.w),
+        f64::from(target.size.h) / f64::from(size.h),
+    ));
+    let by = target.loc.to_physical_precise_round(scale);
+    let crop = crop.to_physical_precise_round(scale);
+    let output = output.to_f64().to_physical_precise_round(scale);
+    elements.extend(
+        esmeril
+            .into_iter()
+            .filter_map(|esmeril| esmeril.zoomed(factor, by, crop, alpha, output))
+            .map(SceneElement::Esmeril),
+    );
+}
+
+/// The masks of window `id`'s see-through strips, with their places from its frame's corner, for
+/// its closing picture to keep (CMN-236).
+pub(crate) fn picture_esmeril(
+    caminito: &Caminito,
+    id: WindowId,
+) -> Vec<(Rectangle<i32, Logical>, esmeril::Mask)> {
+    let policy = &caminito.policy;
+    let (Some(mapped), Some(geometry), Some(frame)) = (
+        policy.window(id),
+        policy.geometry(id),
+        policy.frame_rect(id),
+    ) else {
+        return Vec::new();
+    };
+    let origin = geometry.loc - frame.loc;
+    mapped
+        .frame()
+        .esmeril()
+        .map(|(rect, mask)| (Rectangle::new(rect.loc + origin, rect.size), mask.clone()))
+        .collect()
 }
 
 /// A closed popup's picture as it slides back into its edge (ADR 0037), drawn as `slid`
@@ -2136,6 +2214,21 @@ fn closing_elements<R>(
             output,
             elements,
         );
+        // Behind the picture, which was taken without it (CMN-236).
+        if let Some(strength) = caminito.settings.esmeril {
+            let output_geometry = output_geometry(output);
+            let scale = output.current_scale().fractional_scale();
+            let esmeril =
+                closing.picture.esmeril.iter().filter_map(|(rect, mask)| {
+                    Esmeril::new(mask, *rect, unbounded(), scale, strength)
+                });
+            let target = Rectangle::new(shifted.loc - output_geometry.loc, shifted.size);
+            let whole = Rectangle::from_size(output_geometry.size);
+            let size = closing.frame.size;
+            zoomed_esmeril(
+                esmeril, size, target, whole, whole.size, scale, alpha, elements,
+            );
+        }
     }
 }
 

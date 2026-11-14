@@ -21,6 +21,9 @@
 //! shows and is a window the animation is for (`animates`), and the scene draws it at the
 //! size and opacity it has reached, at every frame of its outputs, until it's over.
 //!
+//! The picture is taken without Esmeril, and keeps the masks of the frame's see-through strips,
+//! whose Esmeril the scene draws behind it as it shrinks and fades (CMN-236).
+//!
 //! An animation that's interrupted hands over from what's on screen (253), where Plasma
 //! starts again from the animation's own start (ADR 0034). An opening `done` of the way and
 //! a closing `1 - done` of the way are drawn at the same size and opacity, so one that takes
@@ -55,7 +58,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
-use crate::esmeril::DrawsEsmeril;
+use crate::esmeril::{DrawsEsmeril, Mask};
 use crate::maximize_animation::scaled_into;
 use crate::output::{output_geometry, output_id};
 use crate::scene::{self, SceneElement, SceneLayer};
@@ -184,6 +187,10 @@ pub(crate) struct Picture {
     pub area: Rectangle<i32, Logical>,
     /// The element the scene draws it as, which keeps its id from frame to frame.
     pub id: Id,
+    /// The masks of a window's see-through strips, each with its place from the frame's
+    /// corner, which the picture is drawn over: it's taken without Esmeril (CMN-236). None for
+    /// a popup's.
+    pub esmeril: Vec<(Rectangle<i32, Logical>, Mask)>,
 }
 
 impl std::fmt::Debug for Picture {
@@ -217,7 +224,9 @@ where
     let main = caminito.policy.window(id)?.main_output();
     let scale = main.map_or(1.0, |main| main.current_scale().fractional_scale());
     let (elements, area) = scene::picture_elements(renderer, caminito, id, scale)?;
-    draw_picture(renderer, &elements, area, scale)
+    let mut picture = draw_picture(renderer, &elements, area, scale)?;
+    picture.esmeril = scene::picture_esmeril(caminito, id);
+    Some(picture)
 }
 
 /// Draws the picture of the popup whose surface is `surface`, with its subsurfaces, into a
@@ -277,6 +286,7 @@ where
         texture: Box::new((context, texture)),
         area,
         id: Id::new(),
+        esmeril: Vec::new(),
     })
 }
 

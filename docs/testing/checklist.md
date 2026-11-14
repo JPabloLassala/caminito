@@ -4157,6 +4157,26 @@ They are the developer's to run.
   picture beneath, at once. Rounded corners stay clear. Moving a window drops no frames. On
   the turned output the blur still lines up with what's beneath.
 
+### Esmeril goes with a window through the animations
+
+- **Milestone:** esmeril
+- **Steps:**
+  1. Start a Nested run with `tools/dev-nested`, on a Marco theme whose titlebar is part
+     see-through, with `open-close-animation`, `maximize-animation` and `workspace-slide` on in
+     `org.mate.Caminito`. Open a window over a busy one.
+  2. Open a new window, maximise it and restore it, switch to the next workspace and back, and
+     close it. Open mate-terminal with a transparent background and do the same.
+  3. Open the Overview, then the Window switcher with Alt+Tab, then minimise a window.
+  4. Take a screenshot of the screen and one of the window alone with `grim`, or a tool that
+     uses `ext-image-copy-capture-v1`.
+- **Expected:** In step 2 the blur behind the titlebar, and behind the terminal's text area,
+  grows, shrinks, moves and fades with the window, with no blurred band where the window isn't
+  and no step when an animation ends. A closing window's titlebar keeps its blur to the end;
+  the terminal's text area goes sharp as it starts to close. In step 3 the thumbnails and the
+  window on its way into its button have no blur of their own. In step 4 the screen's
+  screenshot has the blur as the screen shows it, and the window's has none: its see-through
+  parts are see-through.
+
 ### A client can ask for Esmeril through ext-background-effect-v1
 
 - **Milestone:** esmeril
