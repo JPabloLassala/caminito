@@ -428,6 +428,8 @@ on_both_kinds! {
     }
 }
 
+// An xdg window's: a frame's strips are drawn from its theme alone, whichever kind of window
+// there is, and the animation draws both kinds alike.
 #[test]
 fn a_window_on_its_way_into_its_button_has_none_of_its_esmeril() {
     let theme = Setting::Str("EsmerilSeeThrough".into());

@@ -889,9 +889,7 @@ fn scaled_window_elements<R>(
         // Over the shadow, as at rest.
         let esmeril = window_esmeril(caminito, mapped, origin, unbounded(), scale);
         let size = frame.size;
-        zoomed_esmeril(
-            esmeril, size, target, crop, crop.size, scale, alpha, elements,
-        );
+        zoomed_esmeril(esmeril, size, target, crop, scale, alpha, elements);
         let shadow = mapped.frame().shadow();
         let shadow: Vec<WindowPart<R>> =
             buffer_elements(renderer, shadow, origin, shown, scale, alpha, "shadow");
@@ -1442,10 +1440,7 @@ fn scaled_elements_in<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let factor = Scale::from((
-        f64::from(target.size.w) / f64::from(size.w),
-        f64::from(target.size.h) / f64::from(size.h),
-    ));
+    let factor = zoom(size, target);
     let location: Point<i32, Physical> = target.loc.to_physical_precise_round(scale);
     // A window's popups and subsurfaces can reach past its frame.
     let crop: Rectangle<i32, Physical> = crop.to_physical_precise_round(scale);
@@ -1456,6 +1451,14 @@ fn scaled_elements_in<R>(
             elements.push(SceneElement::Thumbnail(part));
         }
     }
+}
+
+/// How much something of `size` is scaled each way to fill `target`.
+fn zoom(size: Size<i32, Logical>, target: Rectangle<i32, Logical>) -> Scale<f64> {
+    Scale::from((
+        f64::from(target.size.w) / f64::from(size.w),
+        f64::from(target.size.h) / f64::from(size.h),
+    ))
 }
 
 /// The layer-shell layer a scene layer shows the surfaces of.
@@ -2065,18 +2068,18 @@ fn unbounded() -> Size<i32, Logical> {
 }
 
 /// `esmeril`, made with the frame's corner at the origin on `unbounded`, as an animation draws
-/// a window of `size`: scaled to fill `target`, cut off at `crop`, both from `output`'s corner,
-/// and at `alpha`, as `scaled_elements_in` draws the window's own elements (CMN-236).
+/// a window of `size`: scaled to fill `target`, cut off at `crop`, which is the whole output
+/// both are from the corner of, and at `alpha`, as `scaled_elements_in` draws the window's own
+/// elements (CMN-236).
 #[expect(
     clippy::too_many_arguments,
-    reason = "scaled_elements_in's own, and the output and the alpha"
+    reason = "scaled_elements_in's own, and the alpha"
 )]
 fn zoomed_esmeril<R>(
     esmeril: impl IntoIterator<Item = Esmeril>,
     size: Size<i32, Logical>,
     target: Rectangle<i32, Logical>,
     crop: Rectangle<i32, Logical>,
-    output: Size<i32, Logical>,
     scale: f64,
     alpha: f32,
     elements: &mut Vec<SceneElement<R>>,
@@ -2084,13 +2087,10 @@ fn zoomed_esmeril<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
-    let factor = Scale::from((
-        f64::from(target.size.w) / f64::from(size.w),
-        f64::from(target.size.h) / f64::from(size.h),
-    ));
+    let factor = zoom(size, target);
     let by = target.loc.to_physical_precise_round(scale);
+    let output = crop.size.to_f64().to_physical_precise_round(scale);
     let crop = crop.to_physical_precise_round(scale);
-    let output = output.to_f64().to_physical_precise_round(scale);
     elements.extend(
         esmeril
             .into_iter()
@@ -2225,9 +2225,7 @@ fn closing_elements<R>(
             let target = Rectangle::new(shifted.loc - output_geometry.loc, shifted.size);
             let whole = Rectangle::from_size(output_geometry.size);
             let size = closing.frame.size;
-            zoomed_esmeril(
-                esmeril, size, target, whole, whole.size, scale, alpha, elements,
-            );
+            zoomed_esmeril(esmeril, size, target, whole, scale, alpha, elements);
         }
     }
 }

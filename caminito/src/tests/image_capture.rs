@@ -697,6 +697,8 @@ fn captured_over_a_see_through_strip(esmeril: bool) -> Option<[u32; 3]> {
     Some([screen.at(on_x, on_y), alone.at(x, y), shown.at(on_x, on_y)])
 }
 
+// An xdg window's: a frame's strips are drawn from its theme alone, whichever kind of window
+// there is, and the tests above capture both kinds alike.
 #[test]
 fn an_output_capture_has_esmeril_and_a_window_capture_of_the_same_window_doesnt() {
     let (Some(on), Some(off)) = (

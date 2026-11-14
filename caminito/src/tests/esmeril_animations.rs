@@ -54,8 +54,13 @@ fn themed(theme: &str, key: &str) -> Vec<(&'static str, String, Value)> {
 
 /// One output and a client, with `key` on and the clock stopped.
 fn desk(key: &str) -> (Fixture, ClientId, Output) {
+    desk_at(key, 1.0)
+}
+
+/// As `desk`, with the output at `scale`.
+fn desk_at(key: &str, scale: f64) -> (Fixture, ClientId, Output) {
     let mut f = Fixture::with_settings(settings(key));
-    let output = f.add_output(OUTPUT, 1.0);
+    let output = f.add_output(OUTPUT, scale);
     let id = f.connect(Kind::Xdg);
     f.stop_clock();
     (f, id, output)
@@ -85,14 +90,26 @@ fn scaled(
     frame: Rectangle<i32, Logical>,
     drawn: Rectangle<i32, Logical>,
 ) -> Rectangle<f64, Physical> {
+    scaled_at(strip, frame, drawn, 1.0)
+}
+
+/// As `scaled`, on an output at `scale`.
+fn scaled_at(
+    strip: Rectangle<i32, Physical>,
+    frame: Rectangle<i32, Logical>,
+    drawn: Rectangle<i32, Logical>,
+    scale: f64,
+) -> Rectangle<f64, Physical> {
     let (x, y) = (
         f64::from(drawn.size.w) / f64::from(frame.size.w),
         f64::from(drawn.size.h) / f64::from(frame.size.h),
     );
+    let frame = frame.to_f64().to_physical(scale);
+    let drawn = drawn.to_f64().to_physical(scale);
     Rectangle::new(
         (
-            f64::from(drawn.loc.x) + f64::from(strip.loc.x - frame.loc.x) * x,
-            f64::from(drawn.loc.y) + f64::from(strip.loc.y - frame.loc.y) * y,
+            drawn.loc.x + (f64::from(strip.loc.x) - frame.loc.x) * x,
+            drawn.loc.y + (f64::from(strip.loc.y) - frame.loc.y) * y,
         )
             .into(),
         (f64::from(strip.size.w) * x, f64::from(strip.size.h) * y).into(),
@@ -145,6 +162,31 @@ fn a_strips_esmeril_grows_and_fades_in_with_its_opening_window() {
     assert_near(part_way.strip(), scaled(rest.strip(), frame, drawn));
     assert_alpha(&part_way, alpha);
     assert_alpha(&rest, 1.0);
+}
+
+#[test]
+fn at_an_output_scale_of_1_5_a_strips_esmeril_opens_where_its_strip_is_drawn() {
+    let (mut f, id, output) = desk_at("open-close-animation", 1.5);
+    let window = f.map(id, spec());
+    f.advance_clock(PART_WAY);
+    let [(_, drawn, _)] = opening(&f)[..] else {
+        panic!("it opens: {:?}", opening(&f));
+    };
+    let part_way = the_esmeril(&mut f, &output);
+
+    f.advance_clock(LENGTH);
+    let (rest, frame) = at_rest(&mut f, &output, window);
+    // The opening rounds its rectangle to a logical pixel, which is 1.5 physical ones.
+    let want = scaled_at(rest.strip(), frame, drawn, 1.5);
+    let near = |got: i32, want: f64| (f64::from(got) - want).abs() <= 1.5;
+    let got = part_way.strip();
+    assert!(
+        near(got.loc.x, want.loc.x)
+            && near(got.loc.y, want.loc.y)
+            && near(got.size.w, want.size.w)
+            && near(got.size.h, want.size.h),
+        "{got:?} and not {want:?}"
+    );
 }
 
 #[test]
