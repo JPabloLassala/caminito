@@ -28,6 +28,7 @@ mod drag_icons;
 mod dynamic_workspaces;
 mod edge_resistance;
 mod esmeril;
+mod esmeril_animations;
 mod ext_workspace;
 mod fixture;
 mod flash_probe;

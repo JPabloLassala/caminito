@@ -9,6 +9,7 @@ use caminito_test_client::layer_shell::{
     KeyboardInteractivity, Layer, LayerAnchor, LayerId, LayerSpec,
 };
 use caminito_theme::ButtonFunction;
+use smithay::backend::renderer::element::Element;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
@@ -425,4 +426,29 @@ on_both_kinds! {
         desk.f.advance_clock(LENGTH - PART_WAY);
         assert_eq!(pixel(&mut desk.f, on_the_way), clear());
     }
+}
+
+// An xdg window's: a frame's strips are drawn from its theme alone, whichever kind of window
+// there is, and the animation draws both kinds alike.
+#[test]
+fn a_window_on_its_way_into_its_button_has_none_of_its_esmeril() {
+    let theme = Setting::Str("EsmerilSeeThrough".into());
+    let mut desk = desk_with_button(Kind::Xdg, vec![(MARCO_GENERAL, "theme".into(), theme)]);
+    let output = desk.f.state.caminito.outputs[0].clone();
+    desk.f.draw(&output);
+    let at_rest = super::esmeril::esmerils(&mut desk.f, &output);
+    let [frame_s] = at_rest.as_slice() else {
+        panic!("its frame's see-through strip has one: {at_rest:?}");
+    };
+    let frame_s = frame_s.id().clone();
+
+    minimise(&mut desk, Way::Binding);
+    desk.f.advance_clock(PART_WAY);
+    let between = spot_between(&desk, button());
+    assert_eq!(pixel(&mut desk.f, between), WINDOW, "it's on its way");
+    let elements = super::esmeril::esmerils(&mut desk.f, &output);
+    assert!(
+        elements.iter().all(|esmeril| *esmeril.id() != frame_s),
+        "{elements:?}"
+    );
 }

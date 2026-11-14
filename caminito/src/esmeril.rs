@@ -23,6 +23,11 @@
 //! what's beneath with no Esmeril. A surface's alpha is read from its texture as it's drawn, so
 //! it follows the client's commits, whose damage redraws the element where they changed it.
 //!
+//! A window's Esmeril goes with it where an animation draws it (CMN-236): made as if the window
+//! were at rest with its frame's corner at the origin, then scaled and moved as the window's
+//! elements are, so it matches them. A closing window's picture keeps its frame's masks, and is
+//! drawn over them so.
+//!
 //! A layer surface and its popups (CMN-232) get it by the same road, once their buffer is known
 //! to have see-through pixels, and fade and slide as they do.
 //!
@@ -498,6 +503,41 @@ impl Esmeril {
         let mut esmeril = Self::at(id, behind, strip, strip, alpha, output, strength)?;
         esmeril.beneath = Some(beneath);
         Some(esmeril)
+    }
+
+    /// This Esmeril behind what it's behind once that's scaled by `factor` from the origin and
+    /// moved by `by`, as Smithay's `RescaleRenderElement` and `RelocateRenderElement` place it,
+    /// cut off at `crop`, and at `alpha` of itself, on an output of `output`'s physical size: as
+    /// an animation draws a window (CMN-236). `None` if none of it shows. The blur is read
+    /// again around where it's drawn, so it can be made where nothing bounds it.
+    pub(crate) fn zoomed(
+        &self,
+        factor: Scale<f64>,
+        by: Point<i32, Physical>,
+        crop: Rectangle<i32, Physical>,
+        alpha: f32,
+        output: Size<i32, Physical>,
+    ) -> Option<Self> {
+        let scaled = |rect: Rectangle<i32, Physical>| rect.to_f64().upscale(factor).to_i32_round();
+        let placed = |rect| {
+            let mut rect = scaled(rect);
+            rect.loc += by;
+            rect
+        };
+        let behind = match &self.behind {
+            // From the strip's corner, which is scaled with them.
+            Behind::Region(rects) => Behind::Region(rects.iter().copied().map(scaled).collect()),
+            behind => behind.clone(),
+        };
+        Self::at(
+            self.id.clone(),
+            behind,
+            placed(self.strip),
+            placed(self.shown).intersection(crop)?,
+            self.alpha * alpha,
+            output,
+            self.strength,
+        )
     }
 
     /// The rectangle of the strip or the surface, on the output.

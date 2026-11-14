@@ -5,6 +5,7 @@
 use caminito_test_client::image_capture::{
     Constraints, FailureReason, Format, Image, Outcome, SessionId,
 };
+use caminito_test_client::layer_shell::{Layer, LayerSpec};
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::fixture::{
@@ -14,7 +15,7 @@ use super::fixture::{
 use crate::backend::headless::argb8888;
 use crate::scene::{CLEAR_COLOR, LOCK_BACKGROUND};
 use crate::settings::Value;
-use crate::settings::translate::MARCO_GENERAL;
+use crate::settings::translate::{CAMINITO, MARCO_GENERAL};
 
 const RED: u32 = 0xffff0000;
 const WHITE: u32 = 0xffffffff;
@@ -642,4 +643,77 @@ on_both_kinds! {
         assert!(frame(&mut f, tool, of_output).pixels.contains(&WINDOW_COLOR));
         assert!(frame(&mut f, tool, of_window).pixels.contains(&WINDOW_COLOR));
     }
+}
+
+/// What a capture of the output and one of the window show, and the output itself, at a
+/// see-through pixel of a window's frame, with `esmeril` on or off (ADR 0048, CMN-236). `None` where
+/// surfaceless EGL can't be created.
+fn captured_over_a_see_through_strip(esmeril: bool) -> Option<[u32; 3]> {
+    let settings = vec![
+        (
+            MARCO_GENERAL,
+            "theme".into(),
+            Value::Str("EsmerilSeeThrough".into()),
+        ),
+        (
+            MARCO_GENERAL,
+            "center-new-windows".into(),
+            Value::Bool(true),
+        ),
+        (CAMINITO, "esmeril".into(), Value::Bool(esmeril)),
+        (CAMINITO, "esmeril-strength".into(), Value::Uint(1)),
+    ];
+    let mut f = Fixture::on_gles_with(settings)?;
+    let output = f.add_output((400, 300), 1.0);
+    let id = f.connect(Kind::Xdg);
+    // A mid colour, which Esmeril's saturation and contrast change.
+    f.map_layer(
+        id,
+        LayerSpec::covering(Layer::Background, "test"),
+        0xff_80_60_40,
+    );
+    let client = f.connect(Kind::Xdg);
+    let window = f.map(
+        client,
+        WindowSpec {
+            size: (200, 100),
+            ..WindowSpec::default()
+        },
+    );
+    f.pointer_move(399., 299.);
+    f.draw(&output);
+    let frame = f.visible_frame(window);
+    let tool = screenshot_tool(&mut f);
+    let screen = capture_output(&mut f, tool, false);
+    let alone = capture_window(&mut f, tool, window, false);
+    let shown = output_pixels(&mut f);
+    // The first part see-through pixel of the frame, which is in the theme's see-through strip.
+    let (width, height) = alone.size;
+    let (x, y) = (0..height)
+        .flat_map(|y| (0..width).map(move |x| (x, y)))
+        .find(|&(x, y)| !matches!(alone.at(x, y) >> 24, 0 | 0xff))
+        .expect("the frame has see-through pixels");
+    let (on_x, on_y) = (frame.loc.x + x, frame.loc.y + y);
+    Some([screen.at(on_x, on_y), alone.at(x, y), shown.at(on_x, on_y)])
+}
+
+// An xdg window's: a frame's strips are drawn from its theme alone, whichever kind of window
+// there is, and the tests above capture both kinds alike.
+#[test]
+fn an_output_capture_has_esmeril_and_a_window_capture_of_the_same_window_doesnt() {
+    let (Some(on), Some(off)) = (
+        captured_over_a_see_through_strip(true),
+        captured_over_a_see_through_strip(false),
+    ) else {
+        return;
+    };
+    let [screen, alone, shown] = on;
+    assert_eq!(screen, shown, "the output's capture is what it shows");
+    assert_ne!(screen, off[0], "with Esmeril in it");
+    assert_eq!(alone, off[1], "the window's has none");
+    assert_ne!(
+        alone >> 24,
+        0xff,
+        "and stays see-through there: {alone:#010x}"
+    );
 }
