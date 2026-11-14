@@ -8,7 +8,9 @@
 //! depend on the kind. A layer surface is a Wayland client's, and the window that hides an
 //! Intellihide panel only has to overlap it. A client's region (CMN-238) is asked for through
 //! ext-background-effect-v1, whichever kind of Wayland surface has it. A lock surface's goes between
-//! the layers of its tree (CMN-301); caminito_locker.rs has the real Locker's.
+//! the layers of its tree (CMN-301); caminito_locker.rs has the real Locker's. The wallpaper's in
+//! the Overview (CMN-235) is a Wayland client's layer surface, and the window that the Application
+//! overview lists only has to be focused.
 
 use std::time::Duration;
 
@@ -1588,7 +1590,10 @@ fn the_overview_has_esmeril_over_all_of_the_wallpaper_and_under_the_desktop() {
     });
     // Front to back: the desktop as it fades, Esmeril, then the wallpaper.
     assert_eq!(order, ["surface", "esmeril", "surface"]);
-    let esmeril = esmerils(&mut f, &output).remove(0);
+    // The bar's cells and the windows at their places get none.
+    let mut esmerils = esmerils(&mut f, &output);
+    assert_eq!(esmerils.len(), 1);
+    let esmeril = esmerils.remove(0);
     let whole = Rectangle::from_size(OUTPUT.into());
     assert_eq!(esmeril.strip(), whole);
     assert_eq!(esmeril.shown(), whole);
@@ -1681,8 +1686,7 @@ fn esmeril_off_leaves_the_wallpaper_only_dimmed() {
 
 #[test]
 fn the_wallpaper_is_blurred_once_while_the_overview_fades_in_and_is_open() {
-    let settings = vec![(CAMINITO, "overview-animation".into(), Value::Bool(true))];
-    let Some(mut f) = Fixture::on_gles_with(settings) else {
+    let Some(mut f) = Fixture::on_gles_with(overview_animation()) else {
         return;
     };
     let (shell, wallpapers, outputs) = wallpaper_shell(&mut f, &[BENEATH]);

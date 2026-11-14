@@ -54,7 +54,7 @@ use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format as ShmFormat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::user_data::UserDataMap;
-use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size};
+use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::background_effect::BackgroundEffectSurfaceCachedState;
 use smithay::wayland::compositor::{RectangleKind, RegionAttributes, SurfaceData};
 use smithay::wayland::dmabuf::get_dmabuf;
@@ -816,9 +816,9 @@ struct Blur {
     region: Rectangle<i32, Physical>,
     /// A strip's mask, once it's first drawn.
     mask: Option<GlesTexture>,
-    /// What was beneath when it was blurred, at which strength, where it's kept while that's the
-    /// same.
-    beneath: Option<(Beneath, u32)>,
+    /// What was beneath when it was blurred, at which strength and on an output turned which
+    /// way, where it's kept while that's the same.
+    beneath: Option<(Beneath, u32, Transform)>,
 }
 
 impl Blur {
@@ -966,7 +966,9 @@ impl DrawsEsmeril for GlesRenderer {
         let beneath = esmeril
             .beneath
             .clone()
-            .map(|beneath| (beneath, esmeril.strength));
+            .map(|beneath| (beneath, esmeril.strength, frame.transformation()));
+        // Only an Esmeril that names what's beneath it is kept: what's beneath any other changes
+        // with no commit of its own, as a window moves.
         if kept && blur.region == region && beneath.is_some() && blur.beneath == beneath {
             return Ok(());
         }

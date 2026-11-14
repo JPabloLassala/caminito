@@ -739,7 +739,7 @@ impl Caminito {
         let first_frame = old
             .as_ref()
             .map_or(FirstFrame::Undrawn, |old| old.first_frame);
-        let (dims, mut cell_backs, mark, target_mark, next_bar_frames, mut previous) = match old {
+        let (ids, mut cell_backs, mark, target_mark, next_bar_frames, mut previous) = match old {
             Some(old) => {
                 let mut previous = vec![old.laid];
                 previous.extend(old.leaving);
@@ -787,7 +787,7 @@ impl Caminito {
         });
         let laid = layouts.next().expect("the active workspace is laid out");
         let leaving = layouts.collect();
-        let (dim, esmeril) = dims;
+        let (dim, esmeril) = ids;
         let laid_out = Overview {
             output,
             bar,
