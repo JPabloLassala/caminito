@@ -353,8 +353,8 @@ fn the_panel_and_cajas_desktop_arent_drawn_and_the_wallpaper_is_dimmed() {
             .iter()
             .filter(|l| **l == SceneLayer::Background)
             .count(),
-        1,
-        "the wallpaper alone: {layers:?}"
+        2,
+        "the wallpaper alone, with its Esmeril: {layers:?}"
     );
 
     // And all as it was after it closes.

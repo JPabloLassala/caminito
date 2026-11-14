@@ -198,7 +198,8 @@ pub(crate) enum SceneLayer {
     /// The bottom layer-shell layer (63), without its surfaces' popups.
     Bottom,
     /// The background layer-shell layer (63), with the wallpaper behind caja's desktop,
-    /// and without its surfaces' popups.
+    /// and without its surfaces' popups. While the Overview is drawn, Esmeril is right over
+    /// the wallpaper (ADR 0048).
     Background,
 }
 
@@ -1617,10 +1618,17 @@ fn layer_shell_elements<R>(
     let output_geometry = output_geometry(output);
     let scale = output.current_scale().fractional_scale();
     let part = layer_surface_part(layer);
-    for (surface, geometry) in layer_surfaces_in(caminito, output, layer) {
+    let surfaces = layer_surfaces_in(caminito, output, layer);
+    let mut over_wallpaper = (layer == SceneLayer::Background)
+        .then(|| wallpaper_esmeril(caminito, output, &surfaces))
+        .flatten();
+    for (surface, geometry) in surfaces {
         let alpha = layer_surface_alpha(caminito, output, surface.layer(), surface.namespace());
         if alpha <= 0.0 {
             continue;
+        }
+        if surface.namespace() == WALLPAPER_NAMESPACE {
+            elements.extend(over_wallpaper.take().map(SceneElement::Esmeril));
         }
         let origin = geometry.loc - output_geometry.loc;
         let wl_surface = surface.wl_surface();
@@ -1662,6 +1670,57 @@ fn layer_shell_elements<R>(
             }
         }
     }
+}
+
+/// Esmeril over the wallpaper among `surfaces`, which are `output`'s background layer's, while the
+/// Overview is drawn there (ADR 0048): it fades in and out with the dimming, at the user's
+/// strength, and it's blurred once while the wallpaper doesn't change. The desktop over it
+/// fades at every frame, so it goes right over the wallpaper, under the desktop.
+fn wallpaper_esmeril(
+    caminito: &Caminito,
+    output: &Output,
+    surfaces: &[(LayerSurface, Rectangle<i32, Logical>)],
+) -> Option<Esmeril> {
+    let strength = caminito.settings.esmeril?;
+    let open = caminito.overview_on(output)?;
+    let alpha = open.part(caminito.now()) as f32;
+    if alpha <= 0.0 {
+        return None;
+    }
+    let output_geometry = output_geometry(output);
+    let scale = output.current_scale().fractional_scale();
+    let mut beneath = Vec::new();
+    let wallpapers = surfaces
+        .iter()
+        .filter(|(surface, _)| surface.namespace() == WALLPAPER_NAMESPACE);
+    for (surface, geometry) in wallpapers {
+        let origin = (geometry.loc - output_geometry.loc)
+            .to_f64()
+            .to_physical(scale);
+        for_each_surface_in_tree(
+            surface.wl_surface(),
+            origin,
+            scale,
+            |surface, states, at| {
+                let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() else {
+                    return;
+                };
+                let commit = data.lock().unwrap().current_commit();
+                beneath.push((surface.clone(), at.to_i32_round(), commit));
+            },
+        );
+    }
+    if beneath.is_empty() {
+        return None;
+    }
+    Esmeril::over_wallpaper(
+        open.esmeril.clone(),
+        esmeril::Beneath(beneath),
+        output_geometry.size,
+        scale,
+        strength,
+        alpha,
+    )
 }
 
 /// The cursor at the pointer, if it's on `output`: Caminito's own, or the surface the client

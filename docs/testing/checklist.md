@@ -4175,6 +4175,24 @@ They are the developer's to run.
   picture beneath, at once. Rounded corners stay clear. Moving a window drops no frames. On
   the turned output the blur still lines up with what's beneath.
 
+### Esmeril covers the wallpaper in the Overview
+
+- **Milestone:** esmeril
+- **Steps:**
+  1. Start a Session on two monitors, with a wallpaper that has sharp detail on each.
+  2. Open the Overview with Super+W, let it open, then close it. Open the Application overview
+     from a window with Super+A.
+  3. Open the Overview, then run `gsettings set org.mate.Caminito esmeril-strength 1`.
+  4. Run `gsettings set org.mate.Caminito esmeril false`, open the Overview, and close it. Set
+     `esmeril` back to `true`, run `gsettings set org.mate.Marco.general reduced-resources true`,
+     and open the Overview again.
+- **Expected:** On both monitors the wallpaper behind the shrunk windows shows blurred, more
+  saturated and more contrasted, under the dimming. The blur fades in with the dimming as the
+  Overview opens and out as it closes, and doesn't grow: the wallpaper doesn't swell or sharpen
+  part-way. The bar's cells show the wallpaper sharp. The Application overview looks the same.
+  The strength of 1 blurs the wallpaper far less, at once. With `esmeril` off or
+  `reduced-resources` on, the wallpaper is only dimmed. Opening and closing drops no frames.
+
 ### A client can ask for Esmeril through ext-background-effect-v1
 
 - **Milestone:** esmeril

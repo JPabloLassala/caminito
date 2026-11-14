@@ -8,14 +8,18 @@
 //! depend on the kind. A layer surface is a Wayland client's, and the window that hides an
 //! Intellihide panel only has to overlap it. A client's region (CMN-238) is asked for through
 //! ext-background-effect-v1, whichever kind of Wayland surface has it. A lock surface's goes between
-//! the layers of its tree (CMN-301); caminito_locker.rs has the real Locker's.
+//! the layers of its tree (CMN-301); caminito_locker.rs has the real Locker's. The wallpaper's in
+//! the Overview (CMN-235) is a Wayland client's layer surface, and the window that the Application
+//! overview lists only has to be focused.
 
 use std::time::Duration;
 
 use caminito_test_client::background_effect::{
     ExtBackgroundEffectSurfaceV1, RegionRect, WlSurface,
 };
-use caminito_test_client::layer_shell::{KeyboardInteractivity, Layer, LayerAnchor, LayerSpec};
+use caminito_test_client::layer_shell::{
+    KeyboardInteractivity, Layer, LayerAnchor, LayerId, LayerSpec,
+};
 use caminito_test_client::{Anchor, ConstraintAdjustment, Gravity, Positioner};
 use caminito_theme::{GtkState, Palette, PaletteColors, Rgba, StateColors};
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -24,15 +28,16 @@ use smithay::output::Output;
 use smithay::utils::{Physical, Point, Rectangle, Scale};
 
 use super::fixture::{
-    ClientId, ClientWindow, Fixture, KEY_ESC, KEY_F10, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHT,
-    KEY_TAB, Kind, WindowSpec, on_both_kinds,
+    ClientId, ClientWindow, Fixture, KEY_A, KEY_ESC, KEY_F10, KEY_LEFTALT, KEY_LEFTCTRL,
+    KEY_LEFTMETA, KEY_RIGHT, KEY_TAB, Kind, WindowSpec, on_both_kinds,
 };
 use super::maximise_animation::asked_size;
 use super::overview;
 use super::popup_slide::{PART_WAY, the_closing, the_slide};
 use super::window_menu::{alt_space, menu, rect, tap};
 use crate::backend::headless::{Drawing, drawing};
-use crate::esmeril::Esmeril;
+use crate::esmeril::{self, Esmeril};
+use crate::overview::DIM;
 use crate::popup_slide::LENGTH;
 use crate::scene::{self, SceneElement};
 use crate::settings::Value;
@@ -1513,4 +1518,238 @@ fn a_lock_surfaces_esmeril_goes_between_it_and_its_subsurface() {
     });
     // Front to back: the lock's come first, and the window under the lock after them.
     assert_eq!(&order[..3], ["surface", "esmeril", "surface"]);
+}
+
+/// A wallpaper of `color` over all of an output of `OUTPUT`, and caja's desktop in the middle of
+/// it, with Caminito's clock stopped.
+fn wallpaper_desk(f: &mut Fixture, color: u32) -> Output {
+    wallpaper_desks(f, &[color]).remove(0)
+}
+
+/// As `wallpaper_desk`, with an output for each of `colors`, side by side, each with its own
+/// wallpaper, and the desktop on the first.
+fn wallpaper_desks(f: &mut Fixture, colors: &[u32]) -> Vec<Output> {
+    wallpaper_shell(f, colors).2
+}
+
+/// As `wallpaper_desks`, with the client that draws the wallpapers and each wallpaper's layer.
+fn wallpaper_shell(f: &mut Fixture, colors: &[u32]) -> (ClientId, Vec<LayerId>, Vec<Output>) {
+    let outputs: Vec<_> = colors.iter().map(|_| f.add_output(OUTPUT, 1.0)).collect();
+    let shell = f.connect(Kind::Xdg);
+    f.client(shell).bind_outputs();
+    f.roundtrip(shell);
+    let mut wallpapers = Vec::new();
+    for (i, &color) in colors.iter().enumerate() {
+        let wallpaper = LayerSpec {
+            output: Some(i),
+            ..LayerSpec::covering(Layer::Background, "mate-background")
+        };
+        wallpapers.push(f.map_layer(shell, wallpaper, color));
+    }
+    let desktop = LayerSpec {
+        namespace: "desktop",
+        output: Some(0),
+        ..LayerSpec::floating(Layer::Background, (100, 100))
+    };
+    f.map_layer(shell, desktop, OTHER);
+    f.stop_clock();
+    for output in &outputs {
+        f.draw(output);
+    }
+    (shell, wallpapers, outputs)
+}
+
+fn overview_animation() -> Vec<(&'static str, String, Value)> {
+    vec![(CAMINITO, "overview-animation".into(), Value::Bool(true))]
+}
+
+#[test]
+fn the_overview_has_esmeril_over_all_of_the_wallpaper_and_under_the_desktop() {
+    let mut f = Fixture::with_settings(overview_animation());
+    let output = wallpaper_desk(&mut f, BENEATH);
+    assert!(
+        esmerils(&mut f, &output).is_empty(),
+        "none while it's closed"
+    );
+
+    overview::open(&mut f);
+    f.advance_clock(Duration::from_millis(50));
+    let drawing = f.state.backend.headless_mut().drawing();
+    let order: Vec<&str> = drawing!(drawing, renderer, _memory, _T => {
+        let elements = scene::output_elements(renderer, &f.state.caminito, &output);
+        let layers = scene::output_element_layers(renderer, &f.state.caminito, &output);
+        elements
+            .into_iter()
+            .zip(layers)
+            .filter(|(_, layer)| *layer == scene::SceneLayer::Background)
+            .map(|(element, _)| match element {
+                SceneElement::Esmeril(_) => "esmeril",
+                _ => "surface",
+            })
+            .collect()
+    });
+    // Front to back: the desktop as it fades, Esmeril, then the wallpaper.
+    assert_eq!(order, ["surface", "esmeril", "surface"]);
+    // The bar's cells and the windows at their places get none.
+    let mut esmerils = esmerils(&mut f, &output);
+    assert_eq!(esmerils.len(), 1);
+    let esmeril = esmerils.remove(0);
+    let whole = Rectangle::from_size(OUTPUT.into());
+    assert_eq!(esmeril.strip(), whole);
+    assert_eq!(esmeril.shown(), whole);
+}
+
+#[test]
+fn the_wallpapers_esmeril_fades_in_and_out_with_the_dimming() {
+    let mut f = Fixture::with_settings(overview_animation());
+    let output = wallpaper_desk(&mut f, BENEATH);
+    overview::open(&mut f);
+    let dimming = |f: &Fixture| {
+        let open = f.state.caminito.overview_on(&output).unwrap();
+        open.dim(f.state.caminito.now()) / DIM
+    };
+
+    f.advance_clock(Duration::from_millis(125));
+    let alpha = esmerils(&mut f, &output).remove(0).alpha();
+    assert!(0.0 < alpha && alpha < 1.0, "part-way: {alpha}");
+    assert_eq!(alpha, dimming(&f));
+
+    f.advance_clock(Duration::from_millis(250));
+    assert_eq!(esmerils(&mut f, &output).remove(0).alpha(), 1.0);
+
+    overview::press_shortcut(&mut f);
+    f.advance_clock(Duration::from_millis(125));
+    let alpha = esmerils(&mut f, &output).remove(0).alpha();
+    assert!(0.0 < alpha && alpha < 1.0, "part-way closed: {alpha}");
+    assert_eq!(alpha, dimming(&f));
+
+    f.advance_clock(Duration::from_millis(250));
+    assert!(
+        esmerils(&mut f, &output).is_empty(),
+        "none once it's closed"
+    );
+}
+
+#[test]
+fn esmeril_off_or_reduced_resources_leaves_the_overview_without_it() {
+    for (schema, key, value) in [
+        (CAMINITO, "esmeril", Value::Bool(false)),
+        (MARCO_GENERAL, "reduced-resources", Value::Bool(true)),
+    ] {
+        let mut f = Fixture::with_settings(vec![(schema, key.into(), value)]);
+        let output = wallpaper_desk(&mut f, BENEATH);
+        overview::open(&mut f);
+        f.draw(&output);
+        assert!(esmerils(&mut f, &output).is_empty(), "{key}");
+    }
+}
+
+/// A spot on an output of `OUTPUT` that the Overview leaves to the wallpaper: below its bar,
+/// beside its layout and away from the cursor.
+const WALLPAPER_SPOT: (i32, i32) = (20, OUTPUT.1 - 20);
+
+#[test]
+fn the_wallpaper_shows_blurred_under_the_dimming_on_every_output() {
+    let settings = vec![
+        (CAMINITO, "overview-animation".into(), Value::Bool(false)),
+        (CAMINITO, "esmeril-strength".into(), Value::Uint(1)),
+    ];
+    let Some(mut f) = Fixture::on_gles_with(settings) else {
+        return;
+    };
+    let outputs = wallpaper_desks(&mut f, &[BENEATH, OTHER]);
+    overview::open(&mut f);
+    for (output, color) in outputs.iter().zip([BENEATH, OTHER]) {
+        f.draw(output);
+        let got = channels(pixel(&mut f, output, WALLPAPER_SPOT.into()));
+        let want = saturated_and_contrasted(color).map(|c| c * f64::from(1.0 - DIM));
+        assert_near(got, want);
+    }
+}
+
+#[test]
+fn esmeril_off_leaves_the_wallpaper_only_dimmed() {
+    let settings = vec![
+        (CAMINITO, "overview-animation".into(), Value::Bool(false)),
+        (CAMINITO, "esmeril".into(), Value::Bool(false)),
+    ];
+    let Some(mut f) = Fixture::on_gles_with(settings) else {
+        return;
+    };
+    let output = wallpaper_desk(&mut f, BENEATH);
+    overview::open(&mut f);
+    f.draw(&output);
+    let got = channels(pixel(&mut f, &output, WALLPAPER_SPOT.into()));
+    let want = channels(BENEATH).map(|c| f64::from(c) * f64::from(1.0 - DIM));
+    assert_near(got, want);
+}
+
+#[test]
+fn the_wallpaper_is_blurred_once_while_the_overview_fades_in_and_is_open() {
+    let Some(mut f) = Fixture::on_gles_with(overview_animation()) else {
+        return;
+    };
+    let (shell, wallpapers, outputs) = wallpaper_shell(&mut f, &[BENEATH]);
+    let output = outputs[0].clone();
+    let before = esmeril::blurs();
+    overview::open(&mut f);
+    for _ in 0..20 {
+        f.advance_clock(Duration::from_millis(25));
+        f.draw(&output);
+    }
+    assert_eq!(
+        esmeril::blurs() - before,
+        1,
+        "once through the fade and while open"
+    );
+
+    // A new picture of the wallpaper, as a Slideshow's step draws, is blurred again.
+    f.client(shell).redraw_layer_surface(wallpapers[0], OTHER);
+    f.roundtrip(shell);
+    f.draw(&output);
+    f.draw(&output);
+    assert_eq!(esmeril::blurs() - before, 2, "again for a new wallpaper");
+
+    f.set_setting(CAMINITO, "esmeril-strength", Value::Uint(3));
+    f.dispatch_until(|f| f.state.caminito.settings.esmeril == Some(3));
+    f.draw(&output);
+    f.draw(&output);
+    assert_eq!(esmeril::blurs() - before, 3, "again at a new strength");
+}
+
+#[test]
+fn the_application_overview_has_it_from_its_shortcut_and_from_a_hot_corner() {
+    for corner in [false, true] {
+        let mut f = Fixture::with_settings(vec![
+            (
+                CAMINITO,
+                "application-overview".into(),
+                Value::Str("<Super>a".into()),
+            ),
+            (
+                CAMINITO,
+                "hot-corner-top-right".into(),
+                Value::Str("application-overview".into()),
+            ),
+            (CAMINITO, "overview-animation".into(), Value::Bool(false)),
+        ]);
+        let output = wallpaper_desk(&mut f, BENEATH);
+        let id = f.connect(Kind::Xdg);
+        f.map(id, WindowSpec::plain((100, 100)));
+        if corner {
+            f.pointer_move(f64::from(OUTPUT.0 - 1), 0.);
+            f.advance_clock(Duration::from_millis(150));
+        } else {
+            f.chord(&[KEY_LEFTMETA, KEY_A]);
+        }
+        assert_eq!(
+            overview::overview(&f)["scope"],
+            "application",
+            "corner: {corner}"
+        );
+        f.draw(&output);
+        let esmerils = esmerils(&mut f, &output);
+        assert_eq!(esmerils.len(), 1, "corner: {corner}");
+        assert_eq!(esmerils[0].strip(), Rectangle::from_size(OUTPUT.into()));
+    }
 }

@@ -17,7 +17,7 @@ Plasma does it with KWin's Blur effect, for the surfaces that ask through `org_k
   - Caminito's own popups: the Window menu, the Window switcher and the Workspace popup;
   - layer surfaces by namespace: `panel`, `mate-osd`, `desktop-menu` and the notification bubbles. Never the `desktop` or `mate-background`, and no unknown namespace. Their popups get it too, the panel's menus and tooltips, so a client-side shadow on one does (CMN-232);
   - the windows of the applications in `esmeril-applications`, matched by app id as `wheel-glide-exceptions` is (ADR 0039), behind their own surfaces but not their popups;
-  - the wallpaper while the Overview or the Application overview is open, under the dimming and fading with it, at a fixed strength.
+  - the wallpaper while the Overview or the Application overview is open, under the dimming and fading with it, at the user's strength, which doesn't grow as it opens.
 - **Each pixel's alpha weights it**, so an opaque pixel shows none and a wholly clear one shows none either: rounded corners and the clear outer band of a `-border` theme stay clear. The theme supplies the tint.
 - **It fades with a window's alpha** in the animations. The Overview's thumbnails, the Window switcher's previews and a capture of one window don't get it; a capture of an output does.
 - **The shaders are Caminito's own**, written from the published dual Kawase algorithm, and take from KWin its numbers: the passes and offsets of each strength step, and the colour transform with the saturation of Plasma's default. The contrast of 1.2 is Caminito's own, as Plasma's default contrasts are below 1 and go with an intensity that makes up for them (CMN-231). As in ADRs 0033 to 0037, KWin's behaviour is taken and its code isn't.
