@@ -1,15 +1,19 @@
 //! `caminito-behaviour` (CMN-184): Workspace Behaviour, the settings of how Caminito itself
 //! behaves beyond what MATE's capplets set. One window of pages, in GTK4 without libadwaita,
-//! as caminito-displays is (ADR 0014). Hot corners, Key remaps (CMN-189) and Animations
-//! (ADR 0055) are its pages for now; Per-output workspaces join them later, a tab of its own.
+//! as caminito-displays is (ADR 0014). Hot corners, Key remaps (CMN-189), Animations
+//! (ADR 0055) and Effects (ADR 0048) are its pages for now; Per-output workspaces join them
+//! later, a tab of its own.
 
 #![forbid(unsafe_code)]
 
 mod animations_page;
+mod dialogs;
+mod esmeril_page;
 mod hot_corners_page;
 mod key_remaps_page;
 
 use caminito_behaviour::animations::Animations;
+use caminito_behaviour::esmeril::Esmeril;
 use caminito_behaviour::hot_corners::HotCorners;
 use caminito_behaviour::key_remaps::KeyRemapKeys;
 use gtk::prelude::*;
@@ -65,6 +69,14 @@ fn open(application: &gtk::Application) {
                 }
             };
             pages.append_page(&animations, Some(&gtk::Label::new(Some("Animations"))));
+            let effects = match Esmeril::open() {
+                Ok(esmeril) => esmeril_page::build(esmeril),
+                Err(err) => {
+                    glib::g_critical!(DOMAIN, "can't open the effects: {err}");
+                    unavailable(&format!("The effects can't be opened: {err}."))
+                }
+            };
+            pages.append_page(&effects, Some(&gtk::Label::new(Some("Effects"))));
             pages.upcast::<gtk::Widget>()
         }
         Err(err) => {

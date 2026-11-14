@@ -1046,6 +1046,24 @@ session_env() {
   key is set back.
 - **Debug tool:** `gsettings monitor org.mate.Caminito`.
 
+### Workspace Behaviour's Effects tab follows and sets Esmeril's keys
+
+- **Milestone:** esmeril (ADR 0048)
+- **Steps:**
+  1. Open *Workspace Behaviour* and its *Effects* tab. Run `gsettings monitor
+     org.mate.Caminito` in a terminal.
+  2. Turn *Esmeril* off and on, move the *Strength* slider, and check and uncheck an application
+     in the list. Add one with *Another app id…*.
+  3. Run `gsettings set org.mate.Caminito esmeril false`, `... esmeril-strength 3` and `...
+     esmeril-applications "['Code']"`, then set them back.
+  4. Run `gsettings set org.mate.Marco.general reduced-resources true`, then set it back to
+     `false`.
+- **Expected:** in step 2 each change shows on `gsettings monitor` with no Apply, the slider is
+  greyed out while the switch is off, and an app id with a space is refused. In step 3 each
+  control follows its key. In step 4 a line under the switch says Esmeril is off, and it goes
+  when the key is set back.
+- **Debug tool:** `gsettings monitor org.mate.Caminito`.
+
 ### An X11 app's menu slides away from the pointer
 
 - **Milestone:** M9

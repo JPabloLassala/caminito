@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod animations;
+pub mod esmeril;
 pub mod hot_corners;
 pub mod key_remaps;
 pub mod open_windows;

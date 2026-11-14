@@ -13,10 +13,10 @@ use caminito_behaviour::key_remaps::{
 use caminito_behaviour::open_windows;
 use caminito_behaviour::remap_templates::{self, Template, Templates};
 use caminito_behaviour::system_shortcuts::SystemShortcuts;
-use futures_channel::oneshot;
 use gtk::prelude::*;
 use gtk::{gdk, glib};
 
+use crate::dialogs::{ask_text, choose};
 use crate::{DOMAIN, SPACING};
 
 /// The space between a row's parts, in pixels.
@@ -27,6 +27,8 @@ const APPS: (i32, i32) = (240, 440);
 const RULES: (i32, i32) = (600, 320);
 /// What a target's field says until one is typed.
 const TARGET_HINT: &str = "Ctrl+T · Shift+Home, BackSpace · nothing";
+/// The title of the page's dialogs.
+const TITLE: &str = "Key remaps";
 /// The list's first row, which is no group's.
 const ALL_APPLICATIONS: &str = "All applications";
 
@@ -807,7 +809,8 @@ async fn save_as(page: Rc<Page>) -> bool {
     let window = page.window();
     let mut name = page.keys.template();
     loop {
-        let Some(asked) = ask_text(window.as_ref(), "Save the remaps in use as:", &name).await
+        let Some(asked) =
+            ask_text(window.as_ref(), TITLE, "Save the remaps in use as:", &name).await
         else {
             return false;
         };
@@ -905,7 +908,7 @@ async fn delete(page: Rc<Page>) {
 /// Asks for an app id the list hasn't, and chooses it.
 async fn add_app_id(page: Rc<Page>) {
     let window = page.window();
-    let asked = ask_text(window.as_ref(), "Another app id:", "").await;
+    let asked = ask_text(window.as_ref(), TITLE, "Another app id:", "").await;
     match asked.map(|app_id| app_id.trim().to_owned()) {
         Some(app_id) if app_id.contains(char::is_whitespace) => {
             let detail = "An app id has no spaces.";
@@ -924,7 +927,7 @@ async fn add_app_id(page: Rc<Page>) {
 /// Asks for a new group's name, and puts `app_id` in it.
 async fn new_group(page: Rc<Page>, app_id: String) {
     let window = page.window();
-    let asked = ask_text(window.as_ref(), "The new group's name:", "").await;
+    let asked = ask_text(window.as_ref(), TITLE, "The new group's name:", "").await;
     let refused = |name: &str| {
         let taken = page
             .remaps
@@ -953,93 +956,6 @@ async fn new_group(page: Rc<Page>, app_id: String) {
         // The drop-down goes back to the group the app id is in.
         _ => page.redraw_detail(),
     }
-}
-
-/// Asks `message` with `buttons`, the first of which cancels and the last of which is the
-/// default, and returns the one chosen.
-async fn choose(
-    window: Option<&gtk::Window>,
-    message: &str,
-    detail: &str,
-    buttons: &[&str],
-) -> Option<i32> {
-    let dialog = gtk::AlertDialog::builder()
-        .message(message)
-        .detail(detail)
-        .buttons(buttons)
-        .cancel_button(0)
-        .default_button(buttons.len() as i32 - 1)
-        .modal(true)
-        .build();
-    dialog.choose_future(window).await.ok()
-}
-
-/// Asks for a line of text, with `initial` in its field, and returns it, or `None` if the
-/// user cancelled.
-async fn ask_text(window: Option<&gtk::Window>, label: &str, initial: &str) -> Option<String> {
-    let dialog = gtk::Window::builder()
-        .modal(true)
-        .resizable(false)
-        .title("Key remaps")
-        .build();
-    dialog.set_transient_for(window);
-    let entry = gtk::Entry::builder()
-        .text(initial)
-        .activates_default(true)
-        .width_chars(32)
-        .build();
-    let cancel = gtk::Button::with_label("Cancel");
-    let ok = gtk::Button::with_label("OK");
-    ok.add_css_class("suggested-action");
-    let buttons = gtk::Box::builder()
-        .spacing(GAP)
-        .halign(gtk::Align::End)
-        .build();
-    buttons.append(&cancel);
-    buttons.append(&ok);
-    let content = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(GAP)
-        .margin_top(SPACING)
-        .margin_bottom(SPACING)
-        .margin_start(SPACING)
-        .margin_end(SPACING)
-        .build();
-    content.append(&gtk::Label::builder().label(label).xalign(0.0).build());
-    content.append(&entry);
-    content.append(&buttons);
-    dialog.set_child(Some(&content));
-    dialog.set_default_widget(Some(&ok));
-
-    let (send, answer) = oneshot::channel();
-    let send = Rc::new(RefCell::new(Some(send)));
-    let answer_with = {
-        let dialog = dialog.downgrade();
-        move |text: Option<String>| {
-            if let Some(send) = send.borrow_mut().take() {
-                // The receiver is awaited below, as long as the dialog is open.
-                let _ = send.send(text);
-            }
-            if let Some(dialog) = dialog.upgrade() {
-                dialog.close();
-            }
-        }
-    };
-    ok.connect_clicked({
-        let entry = entry.clone();
-        let answer_with = answer_with.clone();
-        move |_| answer_with(Some(entry.text().into()))
-    });
-    cancel.connect_clicked({
-        let answer_with = answer_with.clone();
-        move |_| answer_with(None)
-    });
-    dialog.connect_close_request(move |_| {
-        answer_with(None);
-        glib::Propagation::Proceed
-    });
-    dialog.present();
-    answer.await.ok().flatten()
 }
 
 /// What a button of the template bar runs.
