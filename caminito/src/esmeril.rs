@@ -280,6 +280,12 @@ enum Behind {
     Region(Vec<Rectangle<i32, Physical>>),
 }
 
+/// What's beneath the Esmeril over the wallpaper (ADR 0048): each surface of the wallpaper with
+/// its place and its commit. While it's the same, the blur of it is kept and not made again,
+/// as the Overview fades the Esmeril in and out at every frame.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Beneath(pub(crate) Vec<(WlSurface, Point<i32, Physical>, CommitCounter)>);
+
 /// The id of the Esmeril behind one surface, which keeps its blur for as long as the surface
 /// lives. The surface's own element has the id of its resource.
 struct SurfaceId(Id);
@@ -315,6 +321,8 @@ pub struct Esmeril {
     read: Rectangle<i32, Physical>,
     /// The output's size, in the coordinates of the two rectangles.
     output: Size<i32, Physical>,
+    /// What's beneath it, where it's blurred once and kept while that's the same.
+    beneath: Option<Beneath>,
 }
 
 impl Esmeril {
@@ -470,7 +478,26 @@ impl Esmeril {
             alpha,
             read,
             output,
+            beneath: None,
         })
+    }
+
+    /// Esmeril over all of an output of the logical size `output`, at `scale`, over the wallpaper
+    /// whose surfaces are `beneath`, while the Overview is drawn there, showing `alpha` of itself.
+    pub(crate) fn over_wallpaper(
+        id: Id,
+        beneath: Beneath,
+        output: Size<i32, Logical>,
+        scale: f64,
+        strength: u32,
+        alpha: f32,
+    ) -> Option<Self> {
+        let output = output.to_f64().to_physical_precise_round(scale);
+        let strip = Rectangle::from_size(output);
+        let behind = Behind::Region(vec![strip]);
+        let mut esmeril = Self::at(id, behind, strip, strip, alpha, output, strength)?;
+        esmeril.beneath = Some(beneath);
+        Some(esmeril)
     }
 
     /// The rectangle of the strip or the surface, on the output.
@@ -789,6 +816,9 @@ struct Blur {
     region: Rectangle<i32, Physical>,
     /// A strip's mask, once it's first drawn.
     mask: Option<GlesTexture>,
+    /// What was beneath when it was blurred, at which strength, where it's kept while that's the
+    /// same.
+    beneath: Option<(Beneath, u32)>,
 }
 
 impl Blur {
@@ -820,6 +850,7 @@ impl Blur {
             levels,
             region,
             mask: None,
+            beneath: None,
         })
     }
 }
@@ -895,6 +926,17 @@ unsafe fn bind_texture(gl: &ffi::Gles2, unit: u32, texture: &GlesTexture) {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static BLURS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many blurs GLES has made on this thread.
+#[cfg(test)]
+pub(crate) fn blurs() -> usize {
+    BLURS.with(std::cell::Cell::get)
+}
+
 impl DrawsEsmeril for GlesRenderer {
     fn capture(
         frame: &mut GlesFrame<'_, '_>,
@@ -921,7 +963,17 @@ impl DrawsEsmeril for GlesRenderer {
             *blur = Some(Blur::new(frame, region, step.iterations)?);
         }
         let blur = blur.as_mut().expect("it was just made");
+        let beneath = esmeril
+            .beneath
+            .clone()
+            .map(|beneath| (beneath, esmeril.strength));
+        if kept && blur.region == region && beneath.is_some() && blur.beneath == beneath {
+            return Ok(());
+        }
         blur.region = region;
+        blur.beneath = beneath;
+        #[cfg(test)]
+        BLURS.with(|blurs| blurs.set(blurs.get() + 1));
 
         let instancing = frame
             .capabilities()

@@ -106,6 +106,9 @@ pub(crate) struct Overview {
     pub(crate) leaving: Vec<Laid>,
     /// The dimming's render element, the same one at every frame.
     pub(crate) dim: Id,
+    /// The Esmeril over the wallpaper, under the dimming (ADR 0048), the same one at every
+    /// frame.
+    pub(crate) esmeril: Id,
     /// Each cell's backing render element, the same ones at every frame.
     pub(crate) cell_backs: Vec<Id>,
     /// The windows each cell shows, from the first workspace's, bottom to top: those of
@@ -736,12 +739,12 @@ impl Caminito {
         let first_frame = old
             .as_ref()
             .map_or(FirstFrame::Undrawn, |old| old.first_frame);
-        let (dim, mut cell_backs, mark, target_mark, next_bar_frames, mut previous) = match old {
+        let (dims, mut cell_backs, mark, target_mark, next_bar_frames, mut previous) = match old {
             Some(old) => {
                 let mut previous = vec![old.laid];
                 previous.extend(old.leaving);
                 (
-                    old.dim,
+                    (old.dim, old.esmeril),
                     old.cell_backs,
                     old.mark,
                     old.target_mark,
@@ -750,7 +753,7 @@ impl Caminito {
                 )
             }
             None => (
-                Id::new(),
+                (Id::new(), Id::new()),
                 Vec::new(),
                 [Id::new(), Id::new(), Id::new(), Id::new()],
                 Id::new(),
@@ -784,12 +787,14 @@ impl Caminito {
         });
         let laid = layouts.next().expect("the active workspace is laid out");
         let leaving = layouts.collect();
+        let (dim, esmeril) = dims;
         let laid_out = Overview {
             output,
             bar,
             laid,
             leaving,
             dim,
+            esmeril,
             cell_backs,
             cell_windows,
             active: workspace,
