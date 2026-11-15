@@ -117,6 +117,45 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
+# The control center in a Session (ADR 0058, CMN-325), all in directories only a Session looks
+# in, so that X11 MATE and the Wayfire session have the stock one.
+#
+# The Unported entries: copies of the stock entries under their ids, from mate-control-center
+# 1.29.1 and mate-user-share 1.28.0, with their translations, whose only category is
+# X-Caminito-Unported. That takes them out of the categories and of the menu's Preferences, and
+# into "Not yet ported". Porting one, or replacing it, ends its copy here.
+install_data(
+  'data/control-center/mate-window-properties.desktop',
+  'data/control-center/mate-at-properties.desktop',
+  'data/control-center/mate-user-share-properties.desktop',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
+)
+# The replaced entries, hidden under their ids: caminito-notifications's settings take Popup
+# Notifications' place (ADR 0051), and caminito-locker has no screensaver to set (ADR 0056).
+install_data(
+  'data/control-center/mate-notification-properties.desktop',
+  'data/control-center/mate-screensaver-preferences.desktop',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
+)
+# "Not yet ported" itself: its name, and the menu file that matecc.menu merges from the
+# matecc-merged directory of Caminito's configuration directory, which Caminito puts first in
+# its session command's XDG_CONFIG_DIRS. The second file keeps the Unported entries out of the
+# Applications menu's Other, which would take them for having no Settings category.
+install_data(
+  'data/control-center/caminito-unported.directory',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'desktop-directories',
+)
+install_data(
+  'data/control-center/matecc-caminito-unported.menu',
+  rename: 'caminito-unported.menu',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg-config' / 'menus' / 'matecc-merged',
+)
+install_data(
+  'data/control-center/applications-caminito-unported.menu',
+  rename: 'caminito-unported.menu',
+  install_dir: get_option('datadir') / 'caminito' / 'xdg-config' / 'menus' / 'mate-applications-merged',
+)
+
 # The Remap templates that come with Caminito (CMN-189), which caminito-behaviour's Key remaps
 # page lists and can't change or delete. macos-pc.remaps and macos-mac.remaps are converted from
 # Toshy's config by tools/toshy-to-remaps, and are GPL-3, as Toshy is (CMN-190).

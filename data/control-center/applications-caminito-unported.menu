@@ -1,0 +1,19 @@
+<!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
+ "http://www.freedesktop.org/standards/menu-spec/1.0/menu.dtd">
+
+<!-- Merged into the panel's Applications menu, mate-applications.menu, in a Session
+     (ADR 0058). Without Settings among their categories, the Unported entries would fall into
+     Other, which takes every unallocated entry that isn't Settings, Core or Screensaver. An
+     Exclude can't keep them out: a merged file's rules come where <DefaultMergeDirs/> is,
+     before Other's Include. This deleted menu takes them instead, so they are allocated and
+     Other passes them over, and libmate-menu shows neither the menu nor them. -->
+<Menu>
+  <Name>Applications</Name>
+  <Menu>
+    <Name>Caminito Unported</Name>
+    <Deleted/>
+    <Include>
+      <Category>X-Caminito-Unported</Category>
+    </Include>
+  </Menu>
+</Menu>

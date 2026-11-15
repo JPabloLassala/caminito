@@ -97,6 +97,25 @@ pub(crate) fn data_dirs(has: Option<&OsStr>) -> OsString {
     dirs
 }
 
+/// Where `caminito-git` puts the configuration a Session's programs are to read before the
+/// stock packages' own (ADR 0058): the control center's menu file that adds "Not yet ported",
+/// the category of the Unported entries.
+const CONFIG_DIR: &str = "/usr/share/caminito/xdg-config";
+
+/// What the specification has for an `XDG_CONFIG_DIRS` that isn't set.
+const DEFAULT_CONFIG_DIRS: &str = "/etc/xdg";
+
+/// The session command's `XDG_CONFIG_DIRS`: Caminito's directory, then what Caminito `has`.
+/// As with `data_dirs`, the bus and systemd aren't given it, so an X11 MATE login after the
+/// Session has the stock control center.
+fn config_dirs(has: Option<&OsStr>) -> OsString {
+    let has = has.filter(|dirs| !dirs.is_empty());
+    let mut dirs = OsString::from(CONFIG_DIR);
+    dirs.push(":");
+    dirs.push(has.unwrap_or(OsStr::new(DEFAULT_CONFIG_DIRS)));
+    dirs
+}
+
 /// Where `mate-screensaver-command` is, which Meson installs (CMN-297).
 const BIN_DIR: &str = "/usr/lib/caminito/bin";
 
@@ -477,7 +496,8 @@ impl Caminito {
     /// Spawns the command with `Caminito::environment`, and `GDK_BACKEND=x11` for itself
     /// alone: mate-session isn't Wayland-safe, and its carried patch unsets the variable
     /// for what it starts (08). Caminito's data directory is first in its `XDG_DATA_DIRS`,
-    /// and so in those of what it starts (84), its own directory of programs is first in its
+    /// and so in those of what it starts (84), its configuration directory is first in its
+    /// `XDG_CONFIG_DIRS` (ADR 0058), its own directory of programs is first in its
     /// `PATH`, and the menu module is in its `GTK_MODULES`
     /// if it's installed (111).
     fn spawn_session_command(&mut self) {
@@ -500,6 +520,10 @@ impl Caminito {
             .env(
                 "XDG_DATA_DIRS",
                 data_dirs(std::env::var_os("XDG_DATA_DIRS").as_deref()),
+            )
+            .env(
+                "XDG_CONFIG_DIRS",
+                config_dirs(std::env::var_os("XDG_CONFIG_DIRS").as_deref()),
             )
             .env("PATH", session_path(std::env::var_os("PATH").as_deref()))
             .stdin(Stdio::null());
@@ -821,6 +845,19 @@ mod tests {
         let expected = "/usr/share/caminito/xdg:/usr/local/share:/usr/share";
         assert_eq!(data_dirs(None), expected);
         assert_eq!(data_dirs(Some("".as_ref())), expected);
+    }
+
+    #[test]
+    fn caminitos_config_directory_is_first_among_the_commands() {
+        let dirs = config_dirs(Some("/etc/xdg:/opt/xdg".as_ref()));
+        assert_eq!(dirs, "/usr/share/caminito/xdg-config:/etc/xdg:/opt/xdg");
+    }
+
+    #[test]
+    fn without_config_directories_set_the_command_has_caminito_s_and_the_default_one() {
+        let expected = "/usr/share/caminito/xdg-config:/etc/xdg";
+        assert_eq!(config_dirs(None), expected);
+        assert_eq!(config_dirs(Some("".as_ref())), expected);
     }
 
     #[test]

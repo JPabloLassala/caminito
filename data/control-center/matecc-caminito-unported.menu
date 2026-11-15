@@ -1,0 +1,16 @@
+<!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
+ "http://www.freedesktop.org/standards/menu-spec/1.0/menu.dtd">
+
+<!-- Merged into the control center's menu, matecc.menu, in a Session (ADR 0058): the category
+     of the Unported entries, whose copies in Caminito's applications directory have
+     X-Caminito-Unported as their only category. -->
+<Menu>
+  <Name>Control Center</Name>
+  <Menu>
+    <Name>Not yet ported</Name>
+    <Directory>caminito-unported.directory</Directory>
+    <Include>
+      <Category>X-Caminito-Unported</Category>
+    </Include>
+  </Menu>
+</Menu>
