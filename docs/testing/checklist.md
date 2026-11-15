@@ -2374,6 +2374,41 @@ session_env() {
 - **Debug tool:** `gsettings monitor org.mate.Caminito`, and Caminito's log for the key's
   problems.
 
+### Workspace Behaviour's Screen locking tab follows and sets the lock's keys
+
+- **Milestone:** lock-screen (CMN-337)
+- **Steps:**
+  1. In *MATE on Caminito*, open the control center and search for "screensaver". Open
+     *Workspace Behaviour* and its *Screen locking* tab. Run `gsettings monitor
+     org.mate.screensaver` and `gsettings monitor org.mate.session` in two terminals.
+  2. Set *Blank the screen after* to *1 minute* and *Lock the screen* to *1 minute after it
+     blanks*, then leave the keyboard and the mouse alone for three minutes.
+  3. Set *Blank the screen after* to *Never*, then back to *1 minute*.
+  4. Run `gsettings set org.mate.session idle-delay 7` and `gsettings set org.mate.screensaver
+     lock-delay 3`, then open each drop-down.
+  5. Set *Clock time* to *24-hour* and *Clock date* to *Custom*, and type `%d/%m/%Y`, then lock
+     with *System* ▸ *Lock Screen*.
+  6. Run `gsettings set org.mate.screensaver lock-dialog-time-format '%H.%M'`.
+  7. Run `gsettings set org.mate.power-manager sleep-display-battery 300`, and press *Power
+     Settings…*, *Wallpaper…* and *Notifications…*.
+  8. Reset every key the steps set: `gsettings reset org.mate.session idle-delay`, and the same
+     for `org.mate.screensaver` `idle-activation-enabled`, `lock-enabled`, `lock-delay`,
+     `lock-dialog-time-format` and `lock-dialog-date-format`, and `org.mate.power-manager
+     sleep-display-battery`.
+- **Expected:** in step 1 the search finds *Workspace Behaviour*, and the tab reads *5 minutes*
+  and *When it blanks*, with *Locale* for both clocks. In step 2 each choice shows on `gsettings
+  monitor` with no Apply, the screens blank after a minute and the session locks a minute later.
+  In step 3 `idle-activation-enabled` goes false and back with `idle-delay` kept at 1, and while
+  it is *Never* the lock's drop-down is greyed out with a line saying the screen never locks by
+  itself. In step 4 the drop-downs read *7 minutes* and *3 minutes after it blanks*, and each has
+  that value in its place in the list. In step 5 the field shows today's date as typed, and the
+  Idle view's clock reads the time on 24 hours and the date as typed. In step 6 *Clock time*
+  turns to *Custom* with `%H.%M` in its field. In step 7 the line under the delays changes to
+  say the screens turn off after 30 minutes, or 5 minutes on battery, and each button opens its
+  program.
+- **Debug tool:** `gsettings monitor org.mate.screensaver`, and `caminito-behaviour` run from a
+  terminal for GTK's warnings.
+
 ## The wallpaper
 
 ### caminito-wallpaperd draws each output's wallpaper, and follows the monitors

@@ -1,21 +1,25 @@
 //! `caminito-behaviour` (CMN-184): Workspace Behaviour, the settings of how Caminito itself
 //! behaves beyond what MATE's capplets set. One window of pages, in GTK4 without libadwaita,
 //! as caminito-displays is (ADR 0014). Hot corners, Key remaps (CMN-189), Animations
-//! (ADR 0055) and Effects (ADR 0048) are its pages for now; Per-output workspaces join them
-//! later, a tab of its own.
+//! (ADR 0055), Effects (ADR 0048) and Screen locking (CMN-337), whose keys are MATE's, are its
+//! pages for now; Per-output workspaces join them later, a tab of its own.
 
 #![forbid(unsafe_code)]
 
 mod animations_page;
 mod dialogs;
 mod esmeril_page;
+#[cfg(test)]
+mod gtk_testing;
 mod hot_corners_page;
 mod key_remaps_page;
+mod screen_locking_page;
 
 use caminito_behaviour::animations::Animations;
 use caminito_behaviour::esmeril::Esmeril;
 use caminito_behaviour::hot_corners::HotCorners;
 use caminito_behaviour::key_remaps::KeyRemapKeys;
+use caminito_behaviour::screen_locking::ScreenLocking;
 use gtk::prelude::*;
 use gtk::{gdk, glib};
 
@@ -77,6 +81,14 @@ fn open(application: &gtk::Application) {
                 }
             };
             pages.append_page(&effects, Some(&gtk::Label::new(Some("Effects"))));
+            let locking = match ScreenLocking::open() {
+                Ok(screen_locking) => screen_locking_page::build(screen_locking),
+                Err(err) => {
+                    glib::g_critical!(DOMAIN, "can't open the screen locking: {err}");
+                    unavailable(&format!("Screen locking can't be opened: {err}."))
+                }
+            };
+            pages.append_page(&locking, Some(&gtk::Label::new(Some("Screen locking"))));
             pages.upcast::<gtk::Widget>()
         }
         Err(err) => {

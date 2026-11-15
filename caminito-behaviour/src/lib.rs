@@ -9,6 +9,7 @@ pub mod hot_corners;
 pub mod key_remaps;
 pub mod open_windows;
 pub mod remap_templates;
+pub mod screen_locking;
 pub mod system_shortcuts;
 
 #[cfg(test)]
