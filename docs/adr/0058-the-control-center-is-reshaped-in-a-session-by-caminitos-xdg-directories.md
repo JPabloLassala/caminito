@@ -24,6 +24,6 @@ The alternative was a carried patch to `matecc.menu` (ADR 0011), which would nee
 
 ## Consequences
 
-- A Session now sets `XDG_CONFIG_DIRS`, which reaches every program it starts. Only `matecc-merged` is placed there, but other `menus/` or autostart directories under it would take effect too. ADR 0014's autostart skips still go through mate-session's patch.
+- A Session now sets `XDG_CONFIG_DIRS`, which reaches every program it starts. Only `matecc-merged` is placed there, but other `menus/` or autostart directories under it would take effect too. The autostart skips of ADR 0014 (mate-session skips or moves X11-only autostarts) still go through mate-session's patch.
 - Porting an entry means deleting its copy in Caminito's directory. Replacing it means changing the copy to `NoDisplay=true`.
 - A copy pins the stock entry's other fields (`Name`, `Exec`, `Icon`) to the version it was copied from, so an upstream rename has to be followed by hand.

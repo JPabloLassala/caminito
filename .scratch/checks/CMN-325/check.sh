@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CMN-325: lays out what Meson installs under /usr/share/caminito in a temporary root, then
-# resolves the control center's, the Preferences' and the Applications' menus with libmate-menu
+# resolves the Control Center's, the Preferences' and the Applications' menus with libmate-menu
 # (menus.py), once as X11 MATE has them and once as a Session does. Needs meson, python-gobject
 # and mate-menus. Run it from the repository's root.
 set -euo pipefail

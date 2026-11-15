@@ -117,7 +117,7 @@ install_data(
   install_dir: get_option('datadir') / 'caminito' / 'xdg' / 'applications',
 )
 
-# The control center in a Session (ADR 0058, CMN-325), all in directories only a Session looks
+# The Control Center in a Session (ADR 0058, CMN-325), all in directories only a Session looks
 # in, so that X11 MATE and the Wayfire session have the stock one.
 #
 # The Unported entries: copies of the stock entries under their ids, from mate-control-center

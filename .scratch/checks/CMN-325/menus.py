@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CMN-325: resolves the control center's, the Preferences' and the Applications' menus with
+"""CMN-325: resolves the Control Center's, the Preferences' and the Applications' menus with
 libmate-menu, as MATE does, and prints each entry's place. Run by check.sh, or with the session's
 XDG_DATA_DIRS and XDG_CONFIG_DIRS, or without them for X11 MATE's:
 
