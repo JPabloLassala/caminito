@@ -45,6 +45,12 @@ SPDX-FileCopyrightText = [
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
+path = "helpers/caminito-locker/protocols/alpha-modifier-v1.xml"
+precedence = "closest"
+SPDX-FileCopyrightText = "2024 Xaver Hugl"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
 path = "helpers/caminito-locker/protocols/ext-background-effect-v1.xml"
 precedence = "closest"
 SPDX-FileCopyrightText = [
