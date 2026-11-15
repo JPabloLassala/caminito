@@ -737,6 +737,21 @@ fn wallpapers_folder() -> PathBuf {
         .join("Wallpapers")
 }
 
+/// A file chooser titled `title`, for one picture of a format GTK reads.
+fn picture_dialog(title: &str) -> gtk::FileDialog {
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("Pictures"));
+    filter.add_pixbuf_formats();
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&filter);
+    gtk::FileDialog::builder()
+        .title(title)
+        .modal(true)
+        .filters(&filters)
+        .default_filter(&filter)
+        .build()
+}
+
 /// A heading of the grid or a pane.
 fn heading(text: &str) -> gtk::Label {
     gtk::Label::builder()
@@ -941,6 +956,8 @@ impl Ui {
             }
         });
         // With no picture yet, choosing one asks for it; a cancel goes back to the desktop's.
+        // Not while rendering: `render_lock` checks this button for a picture the key holds,
+        // and the chooser is asked for outside `act`, which would pass the toggle over.
         let on = self.handler(|ui, ()| {
             if !ui.rendering.get() {
                 ui.choose_lock_picture();
@@ -958,17 +975,7 @@ impl Ui {
     /// Asks for a picture, and makes it every output's Lock screen picture. A cancel leaves
     /// the Lock screen as it was.
     fn choose_lock_picture(&self) {
-        let filter = gtk::FileFilter::new();
-        filter.set_name(Some("Pictures"));
-        filter.add_pixbuf_formats();
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        filters.append(&filter);
-        let dialog = gtk::FileDialog::builder()
-            .title("Choose Lock Screen Picture")
-            .modal(true)
-            .filters(&filters)
-            .default_filter(&filter)
-            .build();
+        let dialog = picture_dialog("Choose Lock Screen Picture");
         let on = self.handler(|ui, file: Option<String>| match file {
             Some(file) => ui.act(|page, store| page.choose_lock_picture(store, &file)),
             None => ui.render(),
@@ -1117,17 +1124,7 @@ impl Ui {
 
     /// Asks for a picture, adds it and makes it the selected output's.
     fn add_picture(&self) {
-        let filter = gtk::FileFilter::new();
-        filter.set_name(Some("Pictures"));
-        filter.add_pixbuf_formats();
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        filters.append(&filter);
-        let dialog = gtk::FileDialog::builder()
-            .title("Add Picture")
-            .modal(true)
-            .filters(&filters)
-            .default_filter(&filter)
-            .build();
+        let dialog = picture_dialog("Add Picture");
         let on = self.handler(|ui, file: String| {
             ui.act(|page, store| page.add_picture(store, &file));
         });

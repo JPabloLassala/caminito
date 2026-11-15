@@ -1,7 +1,8 @@
 //! The store in GSettings (210): `org.mate.Caminito.wallpaper`, and one relocatable
 //! `org.mate.Caminito.wallpaper.output` per monitor under its path, and one more for every
 //! output's. MATE's `org.mate.background` is read for the first run, and bridged to after
-//! (211).
+//! (211). The dialog also reads and writes `org.mate.screensaver picture-filename`, the
+//! Lock screen's own picture (CMN-336), which the drawer never opens.
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
