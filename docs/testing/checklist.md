@@ -2683,6 +2683,29 @@ session_env() {
   from the wallpaper file: …`, or `No wallpaper file`, `The wallpaper file has no …` or `… names
   a picture that is gone` before `Background from org.mate.background`.
 
+### The Wallpaper dialog's Lock screen section chooses one picture for every output's Lock screen
+
+- **Milestone:** lock-screen
+- **Steps:**
+  1. With `caminito-git` built and installed, log into *MATE on Caminito* with two monitors,
+     each with a different wallpaper. Open *Wallpaper*: under *Lock screen*, *Same as the
+     desktop* is chosen.
+  2. Click *Choose a picture*, and cancel the file chooser. Click it again, and choose a
+     picture whose shape isn't the monitors'. Lock with *System* ▸ *Lock Screen*, and unlock.
+  3. Click *Same as the desktop*. Lock, and unlock.
+  4. With the dialog open, run `gsettings set org.mate.screensaver picture-filename` with a
+     picture under `/usr/share/backgrounds/mate/`, then with `/tmp/gone.jpg`, a file that
+     isn't there.
+- **Expected:** in step 2 the cancel leaves *Same as the desktop* chosen. Once the picture is
+  chosen, its thumbnail and *Choose…* show under *Choose a picture*, `gsettings get
+  org.mate.screensaver picture-filename` names it, and every monitor's Lock screen shows it,
+  zoomed to cover the monitor. In step 3 the thumbnail goes, the key is `''`, and each
+  monitor's Lock screen shows that monitor's own wallpaper. In step 4 the dialog follows the
+  key at once: the picture's thumbnail, then *Same as the desktop* for the file that's gone.
+- **Debug tool:** `gsettings get org.mate.screensaver picture-filename`, and the journal's
+  `caminito-locker` line `The Lock screen's own picture: …` with `locker-command` set to
+  `"['caminito-locker', '--verbose']"`.
+
 ## The control center
 
 ### Windows and System Shortcuts open under Caminito, and name it

@@ -1,7 +1,9 @@
 //! The window: variant B of the prototype (spec). A sidebar with a small picture of each
 //! output, "Same on all outputs" and the five kinds, and beside it the selected kind's
 //! controls for the selected output. A click writes the store at once, and the drawer
-//! draws it.
+//! draws it. Under the kinds, the Lock screen's section: the desktop's wallpaper, or one
+//! picture shown by a thumbnail, and no preview of the Lock screen itself, which would copy
+//! the Locker's layout into a second program.
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -12,7 +14,7 @@ use caminito_wallpaper::dynamic::Dynamic;
 use caminito_wallpaper::grid::{self, DynamicGroup, Group, Installed, Roots};
 use caminito_wallpaper::heic::{self, DecodeError, Schedule};
 use caminito_wallpaper::monitors::Monitors;
-use caminito_wallpaper::page::{Output, Page};
+use caminito_wallpaper::page::{LockWallpaper, Output, Page};
 use caminito_wallpaper::slideshow::Interval;
 use caminito_wallpaper::sun::sky_now;
 use caminito_wallpaper::{
@@ -30,6 +32,8 @@ const DOMAIN: &str = "caminito-wallpaper";
 const PREVIEW_WIDTH: i32 = 200;
 /// A thumbnail of the grid.
 const THUMBNAIL: (i32, i32) = (160, 100);
+/// The thumbnail of the Lock screen's picture, in the sidebar.
+const LOCK_THUMBNAIL: (i32, i32) = (96, 60);
 /// The space between the window's parts and around them.
 const SPACING: i32 = 12;
 
@@ -100,6 +104,8 @@ struct Ui {
     _cache_monitor: Option<gio::FileMonitor>,
     /// What "Keep this picture" did last, until the picture or the source changes.
     kept: RefCell<Option<(PathBuf, String)>>,
+    /// The Lock screen's picture whose thumbnail shows.
+    lock_shown: RefCell<Option<String>>,
     /// Whether the window is the demo, which keeps no picture outside it.
     demo: bool,
 
@@ -131,6 +137,11 @@ struct Ui {
     keep: gtk::Button,
     keep_line: gtk::Label,
     daily_positioning: gtk::DropDown,
+    lock_same: gtk::CheckButton,
+    lock_picture: gtk::CheckButton,
+    /// The Lock screen's picture's thumbnail and "Choose…", while it has one.
+    lock_row: gtk::Box,
+    lock_thumbnail: gtk::Box,
 }
 
 /// Opens the window, on the store and the compositor's outputs or, for `demo`, on made-up
@@ -381,6 +392,25 @@ fn build(
         kinds.append(&row);
     }
     sidebar.append(&kinds);
+    sidebar.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    sidebar.append(&heading("Lock screen"));
+    let lock_same = gtk::CheckButton::with_label("Same as the desktop");
+    let lock_picture = gtk::CheckButton::builder()
+        .label("Choose a picture")
+        .group(&lock_same)
+        .build();
+    sidebar.append(&lock_same);
+    sidebar.append(&lock_picture);
+    let lock_row = gtk::Box::new(gtk::Orientation::Horizontal, SPACING);
+    let lock_thumbnail = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    lock_row.append(&lock_thumbnail);
+    let lock_choose = gtk::Button::builder()
+        .label("Choose…")
+        .valign(gtk::Align::Center)
+        .tooltip_text("Choose the picture every output's Lock screen shows")
+        .build();
+    lock_row.append(&lock_choose);
+    sidebar.append(&lock_row);
     body.append(&sidebar);
     body.append(&gtk::Separator::new(gtk::Orientation::Vertical));
 
@@ -624,6 +654,7 @@ fn build(
         cache,
         _cache_monitor: cache_monitor,
         kept: RefCell::new(None),
+        lock_shown: RefCell::new(None),
         demo,
         window,
         previews,
@@ -650,8 +681,18 @@ fn build(
         keep,
         keep_line,
         daily_positioning,
+        lock_same,
+        lock_picture,
+        lock_row,
+        lock_thumbnail,
     });
-    ui.connect(&add_picture, &add_folder, &add_dynamic, &swatches);
+    ui.connect(
+        &add_picture,
+        &add_folder,
+        &add_dynamic,
+        &swatches,
+        &lock_choose,
+    );
     ui
 }
 
@@ -783,6 +824,7 @@ impl Ui {
         add_folder: &gtk::Button,
         add_dynamic: &gtk::Button,
         swatches: &gtk::FlowBox,
+        lock_choose: &gtk::Button,
     ) {
         let on = self.handler(|ui, same: bool| {
             ui.act(|page, store| page.set_same_on_all_outputs(store, same));
@@ -891,6 +933,82 @@ impl Ui {
         add_folder.connect_clicked(move |_| on(()));
         let on = self.handler(|ui, ()| ui.add_dynamic());
         add_dynamic.connect_clicked(move |_| on(()));
+
+        let on = self.handler(|ui, ()| ui.act(|page, store| page.lock_same_as_desktop(store)));
+        self.lock_same.connect_toggled(move |check| {
+            if check.is_active() {
+                on(());
+            }
+        });
+        // With no picture yet, choosing one asks for it; a cancel goes back to the desktop's.
+        let on = self.handler(|ui, ()| {
+            if !ui.rendering.get() {
+                ui.choose_lock_picture();
+            }
+        });
+        self.lock_picture.connect_toggled(move |check| {
+            if check.is_active() {
+                on(());
+            }
+        });
+        let on = self.handler(|ui, ()| ui.choose_lock_picture());
+        lock_choose.connect_clicked(move |_| on(()));
+    }
+
+    /// Asks for a picture, and makes it every output's Lock screen picture. A cancel leaves
+    /// the Lock screen as it was.
+    fn choose_lock_picture(&self) {
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some("Pictures"));
+        filter.add_pixbuf_formats();
+        let filters = gio::ListStore::new::<gtk::FileFilter>();
+        filters.append(&filter);
+        let dialog = gtk::FileDialog::builder()
+            .title("Choose Lock Screen Picture")
+            .modal(true)
+            .filters(&filters)
+            .default_filter(&filter)
+            .build();
+        let on = self.handler(|ui, file: Option<String>| match file {
+            Some(file) => ui.act(|page, store| page.choose_lock_picture(store, &file)),
+            None => ui.render(),
+        });
+        dialog.open(
+            Some(&self.window),
+            None::<&gio::Cancellable>,
+            move |result| {
+                on(result
+                    .ok()
+                    .and_then(|file| file.path())
+                    .map(|path| path.to_string_lossy().into_owned()));
+            },
+        );
+    }
+
+    /// Gives the Lock screen's section the Lock wallpaper, which another program may have set.
+    fn render_lock(&self, lock: &LockWallpaper) {
+        let picture = match lock {
+            LockWallpaper::SameAsDesktop => {
+                self.lock_same.set_active(true);
+                None
+            }
+            LockWallpaper::Picture(file) => {
+                self.lock_picture.set_active(true);
+                Some(file.clone())
+            }
+        };
+        self.lock_row.set_visible(picture.is_some());
+        if *self.lock_shown.borrow() != picture {
+            while let Some(child) = self.lock_thumbnail.first_child() {
+                self.lock_thumbnail.remove(&child);
+            }
+            if let Some(file) = &picture {
+                self.lock_thumbnail
+                    .append(&self.thumbnail(Path::new(file), LOCK_THUMBNAIL));
+                self.lock_thumbnail.set_tooltip_text(Some(file));
+            }
+            *self.lock_shown.borrow_mut() = picture;
+        }
     }
 
     /// Copies the selected output's picture of the day to `~/Pictures/Wallpapers`, and adds
@@ -1089,6 +1207,7 @@ impl Ui {
         let page = self.page.borrow().clone();
         let store = self.store.borrow();
         let current = page.current(store.as_ref());
+        let lock = page.lock_wallpaper(store.as_ref());
 
         self.same_row.set_visible(page.has_switch());
         self.same.set_active(store.same_on_all_outputs());
@@ -1138,6 +1257,7 @@ impl Ui {
             .set_label(&self.dynamic_line_text(&current));
         self.render_daily(&current);
         self.mark_current(&current);
+        self.render_lock(&lock);
         self.rendering.set(false);
     }
 
@@ -1445,7 +1565,7 @@ impl Ui {
                 .row_spacing(SPACING as u32 / 2)
                 .build();
             for path in &group.pictures {
-                let thumbnail = self.thumbnail(path);
+                let thumbnail = self.thumbnail(path, THUMBNAIL);
                 let child = gtk::FlowBoxChild::builder()
                     .child(&thumbnail)
                     .css_classes(["caminito-wallpaper-thumbnail"])
@@ -1608,11 +1728,11 @@ impl Ui {
         area
     }
 
-    /// A thumbnail of the grid, filled in once its picture is decoded.
-    fn thumbnail(&self, path: &Path) -> gtk::DrawingArea {
+    /// A thumbnail of `size`, filled in once its picture is decoded.
+    fn thumbnail(&self, path: &Path, size: (i32, i32)) -> gtk::DrawingArea {
         let area = gtk::DrawingArea::builder()
-            .content_width(THUMBNAIL.0)
-            .content_height(THUMBNAIL.1)
+            .content_width(size.0)
+            .content_height(size.1)
             .build();
         let shown: Rc<RefCell<Option<Rc<Decoded>>>> = Rc::default();
         area.set_draw_func({
@@ -1641,7 +1761,7 @@ impl Ui {
         // Decoded to fit a square twice the thumbnail's width, so that a picture of any shape
         // still covers it at a scale of 2 once cropped.
         self.decoder
-            .request(path, THUMBNAIL.0 * 2, THUMBNAIL.0 * 2, move |decoded| {
+            .request(path, size.0 * 2, size.0 * 2, move |decoded| {
                 if let Some(area) = weak.upgrade() {
                     *shown.borrow_mut() = decoded;
                     area.queue_draw();

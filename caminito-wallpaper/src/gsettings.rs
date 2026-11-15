@@ -3,7 +3,7 @@
 //! output's. MATE's `org.mate.background` is read for the first run, and bridged to after
 //! (211).
 
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 
 use gio::glib;
@@ -23,6 +23,8 @@ pub const OUTPUT_SCHEMA: &str = "org.mate.Caminito.wallpaper.output";
 pub const PATH: &str = "/org/mate/caminito/wallpaper/";
 /// MATE's background, which the first run reads and the bridges write and hear.
 pub const MATE_SCHEMA: &str = "org.mate.background";
+/// The Locker's keys, whose `picture-filename` is the Lock screen's own picture (CMN-335).
+pub const SCREENSAVER_SCHEMA: &str = "org.mate.screensaver";
 
 /// The path of a set of an output's keys.
 pub fn path(set: &Set) -> String {
@@ -61,6 +63,9 @@ pub struct GioStore {
     domain: &'static str,
     main: gio::Settings,
     sets: RefCell<HashMap<String, gio::Settings>>,
+    /// The Locker's keys, made and watched the first time they're read, or `None` if their
+    /// schema isn't installed. The drawer never reads them.
+    screensaver: OnceCell<Option<gio::Settings>>,
     /// Called with every set made, for its `changed` signal.
     watch: Box<dyn Fn(&gio::Settings)>,
 }
@@ -89,6 +94,7 @@ impl GioStore {
             domain,
             main,
             sets: RefCell::new(HashMap::new()),
+            screensaver: OnceCell::new(),
             watch: Box::new(watch),
         })
     }
@@ -104,6 +110,19 @@ impl GioStore {
         (self.watch)(&settings);
         sets.insert(path, settings.clone());
         settings
+    }
+
+    /// The Locker's keys, if their schema is installed.
+    fn screensaver(&self) -> Option<&gio::Settings> {
+        self.screensaver
+            .get_or_init(|| {
+                has_schema(SCREENSAVER_SCHEMA).then(|| {
+                    let settings = gio::Settings::new(SCREENSAVER_SCHEMA);
+                    (self.watch)(&settings);
+                    settings
+                })
+            })
+            .as_ref()
     }
 
     /// A list of the main schema's.
@@ -210,6 +229,25 @@ impl Store for GioStore {
 
     fn set_dynamics(&mut self, dynamics: &[String]) {
         self.set_list("dynamics", dynamics);
+    }
+
+    fn lock_picture(&self) -> String {
+        self.screensaver()
+            .map(|settings| settings.string("picture-filename").into())
+            .unwrap_or_default()
+    }
+
+    fn set_lock_picture(&mut self, picture: &str) {
+        let Some(settings) = self.screensaver() else {
+            glib::g_warning!(
+                self.domain,
+                "can't set the Lock screen's picture: {SCREENSAVER_SCHEMA} isn't installed"
+            );
+            return;
+        };
+        if let Err(err) = settings.set_string("picture-filename", picture) {
+            glib::g_warning!(self.domain, "can't set the Lock screen's picture: {err}");
+        }
     }
 }
 

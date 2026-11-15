@@ -256,6 +256,10 @@ pub trait Store {
     /// The dynamic wallpapers the user added, each a timed XML (216).
     fn dynamics(&self) -> Vec<String>;
     fn set_dynamics(&mut self, dynamics: &[String]);
+    /// `org.mate.screensaver picture-filename`, the Lock screen's own picture: empty for
+    /// none, where each output's Lock screen shows its desktop wallpaper (CMN-335).
+    fn lock_picture(&self) -> String;
+    fn set_lock_picture(&mut self, picture: &str);
 }
 
 /// The store in memory, as GSettings has it with nothing written: "same on all outputs" on,
@@ -269,6 +273,7 @@ pub struct Memory {
     pictures: Vec<String>,
     folders: Vec<String>,
     dynamics: Vec<String>,
+    lock_picture: String,
 }
 
 impl Memory {
@@ -323,6 +328,12 @@ impl Store for Memory {
     }
     fn set_dynamics(&mut self, dynamics: &[String]) {
         self.dynamics = dynamics.to_vec();
+    }
+    fn lock_picture(&self) -> String {
+        self.lock_picture.clone()
+    }
+    fn set_lock_picture(&mut self, picture: &str) {
+        self.lock_picture = picture.to_owned();
     }
 }
 
