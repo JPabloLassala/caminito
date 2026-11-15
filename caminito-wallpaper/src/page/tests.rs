@@ -382,3 +382,51 @@ fn an_output_is_titled_as_displays_titles_it() {
         "Q27"
     );
 }
+
+#[test]
+fn the_lock_screen_follows_the_key_set_elsewhere_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let sea = dir.path().join("sea.jpg");
+    std::fs::write(&sea, b"").unwrap();
+    let sea = sea.to_string_lossy().into_owned();
+    let mut store = store(true);
+    let page = Page::new(&mut store, vec![aoc(), lg()], None);
+    assert_eq!(page.lock_wallpaper(&store), LockWallpaper::SameAsDesktop);
+
+    store.set_lock_picture(&sea);
+
+    assert_eq!(page.lock_wallpaper(&store), LockWallpaper::Picture(sea));
+}
+
+#[test]
+fn each_lock_screen_choice_writes_the_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let sea = dir.path().join("sea.jpg");
+    std::fs::write(&sea, b"").unwrap();
+    let sea = sea.to_string_lossy().into_owned();
+    let mut store = store(false);
+    let mut page = Page::new(&mut store, vec![aoc(), lg()], None);
+    let desktop = page.current(&store);
+
+    page.choose_lock_picture(&mut store, &sea);
+    assert_eq!(store.lock_picture(), sea);
+    assert_eq!(page.lock_wallpaper(&store), LockWallpaper::Picture(sea));
+
+    page.lock_same_as_desktop(&mut store);
+    assert_eq!(store.lock_picture(), "");
+    assert_eq!(page.lock_wallpaper(&store), LockWallpaper::SameAsDesktop);
+    // The desktop's wallpaper isn't touched.
+    assert_eq!(page.current(&store), desktop);
+}
+
+#[test]
+fn a_lock_screen_picture_thats_gone_reads_as_same_as_the_desktop() {
+    let dir = tempfile::tempdir().unwrap();
+    let gone = dir.path().join("gone.jpg").to_string_lossy().into_owned();
+    let mut store = store(true);
+    let page = Page::new(&mut store, vec![aoc()], None);
+
+    store.set_lock_picture(&gone);
+
+    assert_eq!(page.lock_wallpaper(&store), LockWallpaper::SameAsDesktop);
+}

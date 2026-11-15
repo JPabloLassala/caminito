@@ -4,6 +4,10 @@
 //!
 //! While "same on all outputs" is on, a change is every output's, at `all/`; while it's
 //! off, it's the selected output's own.
+//!
+//! The Lock wallpaper (CONTEXT.md) is every output's at once: the desktop's, or one picture.
+
+use std::path::Path;
 
 use crate::daily::Source;
 use crate::identity::Identity;
@@ -72,6 +76,15 @@ fn title(connector: &str, make: &str, model: &str) -> String {
         (Some(make), None) => make,
         (None, None) => connector.to_owned(),
     }
+}
+
+/// What the Lock screen shows (CONTEXT.md: Lock wallpaper).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LockWallpaper {
+    /// Each output's Lock screen shows its desktop wallpaper.
+    SameAsDesktop,
+    /// Every output's Lock screen shows this picture, zoomed (CMN-335).
+    Picture(String),
 }
 
 /// The dialog's state.
@@ -338,5 +351,26 @@ impl Page {
             folders.push(folder.to_owned());
             store.set_folders(&folders);
         }
+    }
+
+    /// What the Lock screen shows. A picture that's gone is Same as the desktop, as the
+    /// Locker shows it.
+    pub fn lock_wallpaper(&self, store: &(impl Store + ?Sized)) -> LockWallpaper {
+        let picture = store.lock_picture();
+        if picture.is_empty() || !Path::new(&picture).exists() {
+            LockWallpaper::SameAsDesktop
+        } else {
+            LockWallpaper::Picture(picture)
+        }
+    }
+
+    /// Makes `file` every output's Lock screen picture.
+    pub fn choose_lock_picture(&mut self, store: &mut (impl Store + ?Sized), file: &str) {
+        store.set_lock_picture(file);
+    }
+
+    /// Has each output's Lock screen show its desktop wallpaper.
+    pub fn lock_same_as_desktop(&mut self, store: &mut (impl Store + ?Sized)) {
+        store.set_lock_picture("");
     }
 }
