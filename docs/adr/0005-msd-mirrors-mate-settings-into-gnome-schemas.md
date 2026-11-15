@@ -1,7 +1,7 @@
 # 5. msd mirrors MATE's appearance settings into the GNOME schemas GTK reads
 
 Date: 2026-09-28
-Status: Accepted. Partly qualified by [ADR 0006](0006-caminito-serves-xsettings.md): under Caminito, the xsettings plugin runs the mirror only.
+Status: Accepted. Partly qualified by [ADR 0006](0006-caminito-serves-xsettings.md): under Caminito, the xsettings plugin runs the mirror only. The colour scheme's derivation is superseded by [ADR 0059](0059-the-colour-scheme-is-the-users-choice-and-picks-an-appearance.md).
 
 ## Context
 

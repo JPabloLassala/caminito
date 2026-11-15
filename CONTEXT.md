@@ -57,8 +57,12 @@ The GTK3 theme's colours that Marco themes refer to: the window background and t
 _Avoid_: colour scheme (that's the portal's light/dark preference)
 
 **Colour scheme**:
-The light or dark preference that apps read through the portal. It is separate from the GTK theme: choosing a dark theme doesn't by itself make the colour scheme dark.
+The user's choice of light or dark, which apps read through the portal. Choosing it switches the desktop to the matching appearance. It is separate from the GTK theme: choosing a dark theme doesn't by itself make the colour scheme dark.
 _Avoid_: dark mode, dark theme (a GTK theme that happens to be dark)
+
+**Appearance**:
+A GTK theme, a Marco theme and an icon theme that go together. The user keeps two: the light appearance and the dark appearance, and the colour scheme decides which one is in use. Picking a theme while one is in use changes that one.
+_Avoid_: theme (a single GTK, Marco or icon theme), theme set, style
 
 **Helper**:
 A process that Caminito itself starts and supervises: Xwayland, the palette helper, the locker and, in a Session, caminito-wallpaperd and caminito-notifications. MATE components aren't helpers, because mate-session starts and restarts them.
