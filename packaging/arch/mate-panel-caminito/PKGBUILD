@@ -26,7 +26,7 @@ _basever=1.28.7
 # weekly job knows this source by its -stock name, and leaves it at the tag.
 _stocktag=v1.28.7
 pkgver=1.28.7.r111.g58ac6c1
-pkgrel=18
+pkgrel=19
 pkgdesc="The MATE Panel, with Caminito's patches"
 url="https://mate-desktop.org"
 arch=('x86_64')
@@ -74,6 +74,8 @@ conflicts=("${_pkgname}" 'mate-panel-gtk3')
 # space and asks Caminito, through its private caminito_intellihide_manager_v1, to hide it while a
 # window overlaps it (CMN-224, ADR 0047). It is gated on the global, which only Caminito offers:
 # without it the option is not shown and the panel is an ordinary one.
+# The twentieth is a fix with no gate: a panel menu item's icon is drawn at the menu size, where
+# a theme that has it only at a larger size, as Breeze has help-browser, made it that size.
 # The patches are kept once for every distribution, in packaging/patches/ (ADR 0030), and
 # tools/bootstrap copies them beside the PKGBUILD before makepkg (ADR 0052).
 source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
@@ -97,7 +99,8 @@ source=("git+https://github.com/mate-desktop/mate-panel.git#commit=${_commit}"
         "0016-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch"
         "0017-toplevel-Reserve-nothing-for-an-autohide-panel-on-Way.patch"
         "0018-toplevel-Keep-a-floating-autohide-panel-up-over-its-g.patch"
-        "0019-toplevel-Size-a-packed-panel-by-its-surface-s-scale.patch")
+        "0019-toplevel-Size-a-packed-panel-by-its-surface-s-scale.patch"
+        "0020-panel-gtk-Draw-a-menu-item-s-icon-at-the-menu-size.patch")
 sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             '030f76e59b0aa2880167968770a319e14bb91e38d77873f8ceab9718873da5ce'
             'SKIP'
@@ -119,7 +122,8 @@ sha256sums=('2637be22ba6b7eb7a283051cddbcf0385e7a11c3b4d86f148b6f3c71acfa7934'
             'ac39ccd0903a025787f59004bbae2e79d16efb21b514055f74d438cceb9c2c37'
             '6a40987dc10f8b7e1f432749599527c201be2f6ea57c634736045ab960bfa12f'
             '0e49c74d35c190a5a3490666dce57741a1a77ce5b3654cdc5005f16c73996066'
-            '051b614061c58a55d87b0b2d52ca3f3b5aa7e6c1834f91ff56712b6704465367')
+            '051b614061c58a55d87b0b2d52ca3f3b5aa7e6c1834f91ff56712b6704465367'
+            '3b9ced1eaec11b168f6ba3c37d44b7b709d74ac7e80ca5c71943c00da6475d1f')
 
 pkgver() {
     cd "${_pkgname}"

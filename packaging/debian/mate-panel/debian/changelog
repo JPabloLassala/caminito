@@ -1,3 +1,10 @@
+mate-panel (1.29.0~git20260925.58ac6c1-0caminito9) resolute; urgency=medium
+
+  * Take the twentieth carried patch: a panel menu item's icon is drawn at the
+    menu size, where the theme has it only at a larger one.
+
+ -- jpablo <jpablolassala@gmail.com>  Sun, 15 Nov 2026 00:00:00 +0000
+
 mate-panel (1.29.0~git20260925.58ac6c1-0caminito8) resolute; urgency=medium
 
   * Take the nineteenth carried patch: a panel that isn't expanded is no wider

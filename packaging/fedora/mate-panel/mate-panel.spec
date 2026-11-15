@@ -22,7 +22,7 @@
 
 Name:          mate-panel
 Version:       1.29.0~%{commitdate}git%{shortcommit}
-Release:       0.caminito6%{?dist}
+Release:       0.caminito7%{?dist}
 Summary:       MATE Desktop panel and applets
 #libs are LGPL-2.0-or-later
 #applications GPL-2.0-or-later
@@ -57,6 +57,7 @@ Patch116:      0016-panel-Ask-Caminito-to-hide-the-panel-while-a-window-.patch
 Patch117:      0017-toplevel-Reserve-nothing-for-an-autohide-panel-on-Way.patch
 Patch118:      0018-toplevel-Keep-a-floating-autohide-panel-up-over-its-g.patch
 Patch119:      0019-toplevel-Size-a-packed-panel-by-its-surface-s-scale.patch
+Patch120:      0020-panel-gtk-Draw-a-menu-item-s-icon-at-the-menu-size.patch
 
 Requires:      %{name}-libs%{?_isa} = %{version}-%{release}
 #for fish
@@ -210,6 +211,10 @@ install -D -m 0644 %{SOURCE2} %{buildroot}%{_datadir}/mate-panel/layouts/rhel.la
 
 
 %changelog
+* Sun Nov 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito7
+- Carry 0020: a panel menu item's icon is drawn at the menu size, where the theme has it only
+  at a larger one
+
 * Sat Oct 31 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.0~20260925git58ac6c1-0.caminito6
 - Carry 0019: a panel that isn't expanded is no wider than its applets on an output of a higher
   scale than it started with

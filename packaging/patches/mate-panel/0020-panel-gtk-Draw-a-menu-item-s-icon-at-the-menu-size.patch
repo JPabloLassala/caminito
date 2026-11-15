@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Juan Pablo Lassala <jpablolassala@gmail.com>
+Date: Sun, 15 Nov 2026 12:00:00 -0300
+Subject: [PATCH] panel-gtk: Draw a menu item's icon at the menu size
+
+The panel's menu items ask for their icon at the menu size, and GTK
+gives a larger one when the theme has the icon only in a folder whose
+MinSize is above it. Breeze has help-browser only among its 48-pixel
+applications, so the panel's context menu drew Help's icon at 48
+pixels, three times the others.
+
+Set the image's pixel size to the menu size, which makes GTK scale the
+icon down to it.
+---
+ mate-panel/libpanel-util/panel-gtk.c | 20 ++++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/mate-panel/libpanel-util/panel-gtk.c b/mate-panel/libpanel-util/panel-gtk.c
+--- a/mate-panel/libpanel-util/panel-gtk.c
++++ b/mate-panel/libpanel-util/panel-gtk.c
+@@ -178,6 +178,18 @@ ensure_icon_settings (void)
+ 					&icon_settings);
+ }
+ 
++static void
++pin_to_menu_size (GtkWidget *icon)
++{
++	gint width;
++
++	/* A theme may have the icon only in a folder whose MinSize is above the menu
++	 * size, as Breeze has help-browser among its 48-pixel applications, and GTK
++	 * then draws it at that size. A pixel size makes GTK scale it down. */
++	if (gtk_icon_size_lookup (GTK_ICON_SIZE_MENU, &width, NULL))
++		gtk_image_set_pixel_size (GTK_IMAGE (icon), width);
++}
++
+ GtkWidget *
+ panel_image_menu_item_new_from_icon (const gchar *icon_name,
+ 				     const gchar *label_name)
+@@ -188,8 +200,10 @@ panel_image_menu_item_new_from_icon (const gchar *icon_name,
+ 	GtkWidget *box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+ 	GtkWidget *icon_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
+ 
+-	if (icon_name)
++	if (icon_name) {
+ 		icon = gtk_image_new_from_icon_name (icon_name, GTK_ICON_SIZE_MENU);
++		pin_to_menu_size (icon);
++	}
+ 	else
+ 		icon = gtk_image_new ();
+ 
+@@ -226,8 +240,10 @@ panel_image_menu_item_new_from_gicon (GIcon       *gicon,
+ 	GtkWidget *box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+ 	GtkWidget *icon_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
+ 
+-	if (gicon)
++	if (gicon) {
+ 		icon = gtk_image_new_from_gicon (gicon, GTK_ICON_SIZE_MENU);
++		pin_to_menu_size (icon);
++	}
+ 	else
+ 		icon = gtk_image_new ();
+ 
