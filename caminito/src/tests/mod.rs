@@ -5,6 +5,7 @@ mod accessx;
 mod activate_application;
 mod active_toplevel;
 mod app_menu_registrar;
+mod appearance;
 mod application_overview;
 mod bell;
 mod bindings;

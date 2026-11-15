@@ -9,6 +9,12 @@
     <value nick="vertical" value="1"/>
   </enum>
 
+  <enum id="org.mate.Caminito.ColourScheme">
+    <value nick="unset" value="0"/>
+    <value nick="light" value="1"/>
+    <value nick="dark" value="2"/>
+  </enum>
+
   <enum id="org.mate.Caminito.NightLightSchedule">
     <value nick="sun" value="0"/>
     <value nick="constant" value="1"/>
@@ -280,6 +286,46 @@
       <default>nothing</default>
       <summary>The last location geoclue gave</summary>
       <description>The latitude and longitude, in degrees, that geoclue last gave Caminito, which the sun schedule follows while geoclue gives none. Caminito writes it.</description>
+    </key>
+    <!--
+      The Colour scheme and the two Appearances (ADR 0059). Caminito writes the Appearance the
+      Colour scheme picks into org.mate.interface's gtk-theme and icon-theme and Marco's theme,
+      and saves a theme picked anywhere else into the Appearance in use.
+    -->
+    <key name="colour-scheme" enum="org.mate.Caminito.ColourScheme">
+      <default>'unset'</default>
+      <summary>The colour scheme</summary>
+      <description>Whether the desktop is "light" or "dark": the matching Appearance's themes are applied, and apps that read the colour scheme follow it. "unset" is before Caminito's first start, which works it out from the GTK theme in use.</description>
+    </key>
+    <key name="light-gtk-theme" type="s">
+      <default>''</default>
+      <summary>The light Appearance's GTK theme</summary>
+      <description>The GTK theme applied while the colour scheme is "light". Empty until Caminito fills it in, from the theme in use or from its pair in a table of known light and dark themes.</description>
+    </key>
+    <key name="light-marco-theme" type="s">
+      <default>''</default>
+      <summary>The light Appearance's Marco theme</summary>
+      <description>The Marco theme applied while the colour scheme is "light". Empty until Caminito fills it in, from the theme in use or from its pair in a table of known light and dark themes.</description>
+    </key>
+    <key name="light-icon-theme" type="s">
+      <default>''</default>
+      <summary>The light Appearance's icon theme</summary>
+      <description>The icon theme applied while the colour scheme is "light". Empty until Caminito fills it in, from the theme in use or from its pair in a table of known light and dark themes.</description>
+    </key>
+    <key name="dark-gtk-theme" type="s">
+      <default>''</default>
+      <summary>The dark Appearance's GTK theme</summary>
+      <description>The GTK theme applied while the colour scheme is "dark". Empty until Caminito fills it in, from the theme in use or from its pair in a table of known light and dark themes.</description>
+    </key>
+    <key name="dark-marco-theme" type="s">
+      <default>''</default>
+      <summary>The dark Appearance's Marco theme</summary>
+      <description>The Marco theme applied while the colour scheme is "dark". Empty until Caminito fills it in, from the theme in use or from its pair in a table of known light and dark themes.</description>
+    </key>
+    <key name="dark-icon-theme" type="s">
+      <default>''</default>
+      <summary>The dark Appearance's icon theme</summary>
+      <description>The icon theme applied while the colour scheme is "dark". Empty until Caminito fills it in, from the theme in use or from its pair in a table of known light and dark themes.</description>
     </key>
   </schema>
 
