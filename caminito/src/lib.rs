@@ -1,5 +1,6 @@
 //! Caminito, a Wayland compositor for the MATE desktop.
 
+mod appearance;
 pub mod backend;
 mod bell;
 mod capture;

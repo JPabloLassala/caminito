@@ -462,6 +462,35 @@ pub struct Settings {
     pub hot_corners: HotCorners,
     /// The Key remaps in use (CMN-186), from `org.mate.Caminito`'s `key-remaps`.
     pub key_remaps: KeyRemaps,
+    /// The Colour scheme and the two Appearances (ADR 0059), or `None` without
+    /// `org.mate.Caminito`, which holds them.
+    pub appearance: Option<AppearanceKeys>,
+}
+
+/// The Colour scheme and the two Appearances as `org.mate.Caminito` holds them (ADR 0059).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppearanceKeys {
+    /// `colour-scheme`, or `None` while it's `unset`, before Caminito's first start.
+    pub colour_scheme: Option<ColourScheme>,
+    /// `light-gtk-theme`, `light-marco-theme` and `light-icon-theme`.
+    pub light: Themes,
+    /// `dark-gtk-theme`, `dark-marco-theme` and `dark-icon-theme`.
+    pub dark: Themes,
+}
+
+/// The user's choice of light or dark (`org.mate.Caminito.ColourScheme`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColourScheme {
+    Light,
+    Dark,
+}
+
+/// An Appearance's themes. An empty one isn't set yet.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Themes {
+    pub gtk: String,
+    pub marco: String,
+    pub icons: String,
 }
 
 /// What each Hot corner does (CMN-183), from `org.mate.Caminito`'s `hot-corner-*` keys. A
@@ -1494,6 +1523,7 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
         night_light: night_light(&mut r),
         hot_corners: hot_corners(&mut r),
         key_remaps: key_remaps(&mut r),
+        appearance: (!reading.missing.contains(&CAMINITO)).then(|| appearance(&mut r)),
     };
     for schema in &reading.missing {
         r.problems.push(Problem::MissingSchema((*schema).into()));
@@ -1512,6 +1542,25 @@ fn translate_with(reading: &Reading, unsupported: &[(&str, &str)]) -> Translatio
     Translation {
         settings,
         problems: r.problems,
+    }
+}
+
+fn appearance(r: &mut Reader<'_>) -> AppearanceKeys {
+    let mut themes = |scheme: &str| Themes {
+        gtk: r.string(CAMINITO, &format!("{scheme}-gtk-theme"), ""),
+        marco: r.string(CAMINITO, &format!("{scheme}-marco-theme"), ""),
+        icons: r.string(CAMINITO, &format!("{scheme}-icon-theme"), ""),
+    };
+    let (light, dark) = (themes("light"), themes("dark"));
+    let colour_scheme = match r.string(CAMINITO, "colour-scheme", "unset").as_str() {
+        "light" => Some(ColourScheme::Light),
+        "dark" => Some(ColourScheme::Dark),
+        _ => None,
+    };
+    AppearanceKeys {
+        colour_scheme,
+        light,
+        dark,
     }
 }
 

@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -78,6 +79,7 @@ use smithay::wayland::xwayland_shell::XWaylandShellState;
 
 use caminito_theme::{PaletteCache, ThemeDirs, Variant};
 
+use crate::appearance::{self, Appearances};
 use crate::backend::{self, Backend};
 use crate::bell::Bells;
 use crate::cursor::{CursorSource, Cursors};
@@ -128,7 +130,7 @@ use crate::protocols::intellihide::IntellihideState;
 use crate::protocols::output_management::OutputManagementState;
 use crate::protocols::xfce_foreign_toplevel::XfceForeignToplevelState;
 use crate::session::Session;
-use crate::settings::translate::MARCO_GENERAL;
+use crate::settings::translate::{ColourScheme, MARCO_GENERAL, Themes};
 use crate::settings::{self, Settings, SettingsThread, Value};
 use crate::sound::{Canberra, Player};
 use crate::switcher::OpenSwitcher;
@@ -386,6 +388,11 @@ pub struct Caminito {
     /// The workspace count last written to `num-workspaces` for `dynamic-workspaces`, until
     /// the key changes (151).
     written_workspace_count: Option<usize>,
+    /// The Colour scheme and the Appearances as last reconciled (ADR 0059).
+    appearances: Appearances,
+    /// GTK3's user `settings.ini`, which gets `prefer-dark` (CMN-326). Tests have none, so
+    /// they never write the user's.
+    gtk3_settings: Option<PathBuf>,
     /// The input devices plugged in, which get the settings for their kind (53).
     pub(crate) input_devices: InputDevices,
     /// NumLock's state when the refresh pass last looked, so a change is written back once.
@@ -488,6 +495,8 @@ impl PaletteState for State {
         );
         self.caminito.frame_context.palette_changed();
         self.caminito.queue_redraw_all();
+        // The first start may have been waiting for it.
+        self.caminito.refresh_appearance();
     }
 }
 
@@ -540,6 +549,8 @@ impl State {
             CursorSource::Xcursor,
             Box::new(Canberra::default()),
         )?;
+        caminito.gtk3_settings = appearance::gtk3_settings_path();
+        caminito.refresh_appearance();
         // Before the backend finds the monitors, so that they're restored as they're found.
         caminito.saved_layouts = SavedLayouts::load(saved::default_path());
         let backend = match kind {
@@ -568,7 +579,7 @@ impl State {
         let themes = ThemeDirs::new(vec![
             concat!(env!("CARGO_MANIFEST_DIR"), "/../tests").into(),
         ]);
-        let caminito = Caminito::new(
+        let mut caminito = Caminito::new(
             event_loop,
             display,
             settings,
@@ -578,6 +589,7 @@ impl State {
             player,
         )
         .expect("the settings start");
+        caminito.refresh_appearance();
         let backend = Backend::Headless(Box::new(headless));
         Self { backend, caminito }
     }
@@ -1120,6 +1132,8 @@ impl Caminito {
             settings,
             settings_thread,
             written_workspace_count: None,
+            appearances: Appearances::default(),
+            gtk3_settings: None,
             xwayland: None,
             xwayland_restart: xwayland::Restart::default(),
             wayland_selections: WaylandSelections::default(),
@@ -1212,6 +1226,42 @@ impl Caminito {
         self.settings = settings;
         if factor_changed {
             self.window_scaling_factor_changed(factor);
+        }
+        self.refresh_appearance();
+    }
+
+    /// Applies the Appearance the Colour scheme picks, saves a theme picked elsewhere into
+    /// the Appearance in use, and seeds the keys on the first start (ADR 0059). A theme the
+    /// table of known pairs doesn't place is measured on its palette, once the palette for
+    /// it is in use.
+    fn refresh_appearance(&mut self) {
+        let Some(keys) = &self.settings.appearance else {
+            return;
+        };
+        let shown = Themes {
+            gtk: self.settings.interface.gtk_theme.clone(),
+            marco: self.settings.frames.theme.clone(),
+            icons: self.settings.interface.icon_theme.clone(),
+        };
+        let palette = &self.palette;
+        let is_dark = |theme: &str| {
+            appearance::known_scheme(theme)
+                .map(|scheme| scheme == ColourScheme::Dark)
+                .or_else(|| {
+                    (palette.gtk_theme() == Some(theme)).then(|| {
+                        appearance::palette_is_dark(palette.palette().variant(Variant::Default))
+                    })
+                })
+        };
+        let outcome = self.appearances.reconcile(keys, &shown, is_dark);
+        for write in outcome.writes {
+            self.settings_thread
+                .set(write.schema, &write.key, write.value);
+        }
+        if let (Some(on), Some(path)) = (outcome.prefer_dark, &self.gtk3_settings)
+            && let Err(err) = appearance::write_prefer_dark(path, on)
+        {
+            tracing::warn!("can't write prefer-dark into {}: {err}", path.display());
         }
     }
 
