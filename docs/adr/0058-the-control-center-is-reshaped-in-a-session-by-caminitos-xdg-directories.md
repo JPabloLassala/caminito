@@ -16,6 +16,7 @@ Everything is done through Caminito's XDG directories, with no carried patch to 
 - **Replaced entry:** a same-id copy with `NoDisplay=true`, shipped with the replacement and not before it.
 - **Unported entry:** a same-id copy whose `Categories=` is `X-Caminito-Unported` alone. It drops `Settings`, so it leaves the panel's Preferences menu too.
 - **The category:** a Session also puts a Caminito config directory first in `XDG_CONFIG_DIRS`, and that directory holds a `menus/matecc-merged/` file that adds "Not yet ported", taking the entries with `X-Caminito-Unported`.
+- **The Applications menu:** without `Settings`, an Unported entry would fall into its Other, which takes every unallocated entry that isn't `Settings`, `Core` or `Screensaver`. A merged file's `<Exclude>` can't stop that, because it comes where `<DefaultMergeDirs/>` is, before Other's `<Include>`. So `menus/mate-applications-merged/` holds a `<Deleted/>` menu that takes them: allocated, they are passed over by Other, and libmate-menu shows neither the menu nor them.
 - **Caminito's own programs** go into MATE's categories by subject.
 - **Entries from other desktops** (KDE's, Manjaro's, duplicates such as pavucontrol) aren't touched: hiding other distributions' packages is the user's choice, made in `~/.local/share/applications`.
 
@@ -23,6 +24,6 @@ The alternative was a carried patch to `matecc.menu` (ADR 0011), which would nee
 
 ## Consequences
 
-- A Session now sets `XDG_CONFIG_DIRS`, which reaches every program it starts. Only `matecc-merged` is placed there, but other `menus/` or autostart directories under it would take effect too. ADR 0014's autostart skips still go through mate-session's patch.
+- A Session now sets `XDG_CONFIG_DIRS`, which reaches every program it starts. Only `matecc-merged` is placed there, but other `menus/` or autostart directories under it would take effect too. The autostart skips of ADR 0014 (mate-session skips or moves X11-only autostarts) still go through mate-session's patch.
 - Porting an entry means deleting its copy in Caminito's directory. Replacing it means changing the copy to `NoDisplay=true`.
 - A copy pins the stock entry's other fields (`Name`, `Exec`, `Icon`) to the version it was copied from, so an upstream rename has to be followed by hand.

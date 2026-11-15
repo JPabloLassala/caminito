@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Directory
+Name=Not yet ported
+Name[es]=Aún sin portar
+Comment=Settings that don't fully work under Caminito yet
+Comment[es]=Ajustes que aún no funcionan del todo en Caminito
+Icon=preferences-other

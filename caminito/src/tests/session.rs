@@ -487,6 +487,12 @@ fn the_command_starts_once_xwayland_is_ready_with_the_names_owned_and_the_enviro
         data_dirs.starts_with("/usr/share/caminito/xdg:"),
         "{data_dirs}"
     );
+    // Where the control center finds its "Not yet ported" category (ADR 0058).
+    let config_dirs = &environment["XDG_CONFIG_DIRS"];
+    assert!(
+        config_dirs.starts_with("/usr/share/caminito/xdg-config:"),
+        "{config_dirs}"
+    );
     // Where MATE's components find mate-screensaver-command without its package (CMN-297).
     let path = &environment["PATH"];
     assert!(path.starts_with("/usr/lib/caminito/bin:"), "{path}");

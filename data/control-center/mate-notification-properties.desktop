@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Popup Notifications
+Exec=mate-notification-properties
+NoDisplay=true
