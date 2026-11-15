@@ -137,7 +137,7 @@ pub(crate) fn palette_is_dark(colors: &PaletteColors) -> bool {
     luminance(colors.background(GtkState::Normal)) < luminance(colors.text(GtkState::Normal))
 }
 
-/// WCAG 2's relative luminance, from sRGB, as msd's mirror computes it.
+/// WCAG 2's relative luminance, from sRGB.
 fn luminance(color: Rgba) -> f64 {
     let linear = |c: f64| {
         if c <= 0.04045 {

@@ -289,18 +289,22 @@ session_env() {
 - **Debug tool:** the pasted text, `wayland-info`, and
   `WAYLAND_DEBUG=1 mate-settings-daemon --replace 2>&1 | grep data_control` for msd's offers.
 
-### Firefox's page content is dark with a dark GTK theme
+### Firefox's page content follows the Colour scheme
 
 - **Milestone:** M5
 - **Steps:**
-  1. Log into *MATE on Caminito*. In *Appearance*, choose BlackMATE.
+  1. Log into *MATE on Caminito*. Run `gsettings set org.mate.Caminito colour-scheme dark`.
   2. In Firefox, open a page that follows the colour scheme, such as
      `data:text/html,<style>@media (prefers-color-scheme: dark) { body { background: black; color: white } }</style>dark?`,
      and, in a terminal, run `gsettings get org.gnome.desktop.interface color-scheme`.
-  3. With Firefox open, choose Menta, and look at the page and the key again.
-- **Expected:** with BlackMATE the page is white on black, Firefox's own toolbars and
-  `about:preferences` are dark, and the key is `prefer-dark`. With Menta the page goes black on
-  white within a second, with Firefox not restarted, and the key is `default` (180).
+  3. With Firefox open, run `gsettings set org.mate.Caminito colour-scheme light`, and look at
+     the page and the key again.
+  4. In *Appearance*, pick another GTK theme, and look at the key again.
+- **Expected:** with dark the page is white on black, Firefox's own toolbars and
+  `about:preferences` are dark, and the key is `prefer-dark`. With light the page goes black on
+  white within a second, with Firefox not restarted, and the key is `default`. Picking a theme
+  leaves the key as it is: msd's mirror copies it from Caminito's key, not from the theme (180,
+  CMN-329, ADR 0059).
 - **Debug tool:** the page, `gsettings`, and `gdbus call --session --dest
   org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method
   org.freedesktop.portal.Settings.ReadOne org.freedesktop.appearance color-scheme`, which gives
