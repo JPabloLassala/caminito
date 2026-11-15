@@ -77,7 +77,7 @@ use smithay::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server:
 use smithay::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState;
 use smithay::wayland::xwayland_shell::XWaylandShellState;
 
-use caminito_theme::{PaletteCache, ThemeDirs, Variant};
+use caminito_theme::{PaletteCache, PaletteColors, ThemeDirs, Variant};
 
 use crate::appearance::{self, Appearances};
 use crate::backend::{self, Backend};
@@ -1195,6 +1195,10 @@ impl Caminito {
             );
             self.policy.settings_changed(settings.policy.clone());
         }
+        if palette_variant(&settings) != palette_variant(&self.settings) {
+            self.frame_context.palette_changed();
+            self.queue_redraw_all();
+        }
         if settings.interface.gtk_theme != self.settings.interface.gtk_theme {
             // The helper reports the new theme's palette; the cached one is used meanwhile.
             if self.palette.use_cached(&settings.interface.gtk_theme) {
@@ -1228,6 +1232,14 @@ impl Caminito {
             self.window_scaling_factor_changed(factor);
         }
         self.refresh_appearance();
+    }
+
+    /// The colours of the palette the compositor draws from: its dark variant while the
+    /// Colour scheme is dark (ADR 0059).
+    pub fn palette_colors(&self) -> &PaletteColors {
+        self.palette
+            .palette()
+            .variant(palette_variant(&self.settings))
     }
 
     /// Applies the Appearance the Colour scheme picks, saves a theme picked elsewhere into
@@ -1296,7 +1308,10 @@ impl Caminito {
 
     /// Draws again the strips of every frame whose inputs changed, and redraws if any did.
     fn refresh_frames(&mut self) {
-        let colors = self.palette.palette().variant(Variant::Default);
+        let colors = self
+            .palette
+            .palette()
+            .variant(palette_variant(&self.settings));
         let ids: Vec<WindowId> = self.policy.windows().map(|mapped| mapped.id()).collect();
         let mut changed = false;
         for id in ids {
@@ -1438,5 +1453,18 @@ impl Caminito {
         self.refresh_x_root_cursor();
         self.refresh_numlock();
         self.popups.cleanup();
+    }
+}
+
+/// The variant of the palette drawn from under `settings`: the dark one while the Colour
+/// scheme is dark (ADR 0059), and the default one while it's light or not set yet.
+fn palette_variant(settings: &Settings) -> Variant {
+    let scheme = settings
+        .appearance
+        .as_ref()
+        .and_then(|keys| keys.colour_scheme);
+    match scheme {
+        Some(ColourScheme::Dark) => Variant::Dark,
+        Some(ColourScheme::Light) | None => Variant::Default,
     }
 }

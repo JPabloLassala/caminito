@@ -2,7 +2,7 @@
 //! `gsettings`, Appearance and the applets would set them: Caminito writes MATE's theme keys
 //! and its own, and each comes back as a reading.
 
-use super::fixture::Fixture;
+use super::fixture::{Fixture, Kind, WindowSpec};
 use crate::settings::Value;
 use crate::settings::translate::{CAMINITO, ColourScheme, INTERFACE, MARCO_GENERAL, Themes};
 
@@ -89,4 +89,39 @@ fn the_first_start_under_blackmate_stays_dark_with_a_light_appearance_from_the_t
         themes("BlackMATE", "BlackMATE", "menta")
     );
     assert_eq!(shown(&f), themes("BlackMATE", "BlackMATE", "menta"));
+}
+
+/// Caminito set up before, light with Adwaita, and with the same themes as its dark
+/// Appearance, so that only GTK's `prefer-dark` and the Palette's dark variant go dark.
+fn adwaita_both_ways() -> Fixture {
+    let mut settings = vec![
+        (INTERFACE, "gtk-theme".into(), s("Adwaita")),
+        (MARCO_GENERAL, "theme".into(), s("Menta")),
+        (INTERFACE, "icon-theme".into(), s("menta")),
+        (CAMINITO, "colour-scheme".into(), s("light")),
+    ];
+    for scheme in ["light", "dark"] {
+        settings.push((CAMINITO, format!("{scheme}-gtk-theme"), s("Adwaita")));
+        settings.push((CAMINITO, format!("{scheme}-marco-theme"), s("Menta")));
+        settings.push((CAMINITO, format!("{scheme}-icon-theme"), s("menta")));
+    }
+    Fixture::with_settings(settings)
+}
+
+#[test]
+fn switching_the_colour_scheme_draws_the_frames_again_when_no_theme_changes() {
+    let mut f = adwaita_both_ways();
+    f.add_output((1920, 1080), 1.0);
+    let id = f.connect(Kind::Xdg);
+    let window = f.map(id, WindowSpec::default());
+    let renders = |f: &Fixture| f.mapped(window).frame().renders();
+    let before = renders(&f);
+
+    f.set_setting(CAMINITO, "colour-scheme", s("dark"));
+    f.dispatch_until(|f| renders(f) > before);
+    assert_eq!(shown(&f), themes("Adwaita", "Menta", "menta"));
+
+    let before = renders(&f);
+    f.set_setting(CAMINITO, "colour-scheme", s("light"));
+    f.dispatch_until(|f| renders(f) > before);
 }

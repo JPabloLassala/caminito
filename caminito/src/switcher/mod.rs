@@ -13,7 +13,7 @@ pub(crate) mod layout;
 use std::time::Duration;
 
 use caminito_policy::{Action, SwitchEntry};
-use caminito_theme::{PaletteColors, Title, Variant, pango};
+use caminito_theme::{PaletteColors, Title, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
@@ -274,7 +274,7 @@ impl Caminito {
                 title.or_else(|| namespace(selected)).unwrap_or_default()
             },
             scale: output.current_scale().fractional_scale().ceil() as i32,
-            colors: self.palette.palette().variant(Variant::Default).clone(),
+            colors: self.palette_colors().clone(),
             font: self.settings.interface.font_name.clone(),
             generation: self.frame_context.generation(),
         })

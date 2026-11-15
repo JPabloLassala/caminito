@@ -14,7 +14,7 @@ pub(crate) mod layout;
 pub(crate) mod slide;
 
 use caminito_policy::{MenuEntry, MenuItem, MenuKey, MenuSelection, WindowId, WindowMenu};
-use caminito_theme::{PaletteColors, Variant, pango};
+use caminito_theme::{PaletteColors, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle};
 use smithay::output::Output;
@@ -167,7 +167,7 @@ impl Caminito {
             anchor,
             output: output_geometry(&output),
             scale: output.current_scale().fractional_scale().ceil() as i32,
-            colors: self.palette.palette().variant(Variant::Default).clone(),
+            colors: self.palette_colors().clone(),
             font: self.settings.interface.font_name.clone(),
             generation: self.frame_context.generation(),
         };

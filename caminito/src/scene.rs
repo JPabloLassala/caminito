@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 use caminito_policy::{Layer as StackLayer, PolicyWindow, SwitchEntry, WindowId};
-use caminito_theme::{GtkState, Variant};
+use caminito_theme::GtkState;
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::{
     MemoryRenderBuffer, MemoryRenderBufferRenderElement,
@@ -2405,7 +2405,7 @@ fn tile_preview_elements<R>(
 /// selects in the background of anything else would hide them: the text colour draws them
 /// then, as the Window switcher's selection does.
 fn selection_color(caminito: &Caminito) -> Color32F {
-    let colors = caminito.palette.palette().variant(Variant::Default);
+    let colors = caminito.palette_colors();
     let selected = colors.background(GtkState::Selected);
     let color = if selected == colors.background(GtkState::Normal) {
         colors.text(GtkState::Normal)

@@ -679,6 +679,31 @@ fn nearest_in_label(f: &mut Fixture, row: Rectangle<i32, Logical>, color: Rgba) 
 }
 
 #[test]
+fn under_a_dark_colour_scheme_the_menu_is_drawn_from_the_palettes_dark_variant() {
+    let mut f = Fixture::with_settings(vec![(
+        CAMINITO,
+        "colour-scheme".into(),
+        Value::Str("dark".into()),
+    )]);
+    f.add_output((1920, 1080), 1.0);
+    let id = f.connect(Kind::Xdg);
+    f.map(id, WindowSpec::default());
+    alt_space(&mut f);
+    let output = f.state.caminito.outputs[0].clone();
+    f.draw(&output);
+
+    // The neutral palette's dark background, as the menu is drawn with no GTK theme's.
+    let whole = rect(&menu(&f)["rect"]);
+    assert_eq!(
+        distance(
+            pixel(&mut f, whole.loc + Point::from((2, 2))),
+            Rgba::from_rgb8(0x35, 0x35, 0x35)
+        ),
+        0
+    );
+}
+
+#[test]
 fn the_menu_is_drawn_with_its_items_a_greyed_one_and_the_selected_one() {
     let (mut f, _, window) = with_window(Kind::Xdg);
     let id = f.pid(window);

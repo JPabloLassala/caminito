@@ -12,7 +12,7 @@ pub(crate) mod draw;
 pub(crate) mod layout;
 
 use caminito_policy::{Action, Interaction, default_workspace_name};
-use caminito_theme::{PaletteColors, Title, Variant, pango};
+use caminito_theme::{PaletteColors, Title, pango};
 use smithay::backend::input::{ButtonState, InputTime};
 use smithay::input::keyboard::{FilterResult, Keycode, KeysymHandle, ModifiersState};
 use smithay::output::Output;
@@ -345,7 +345,7 @@ impl Caminito {
             windows: (0..count).map(windows).collect(),
             output: geometry.size,
             scale: output.current_scale().fractional_scale().ceil() as i32,
-            colors: self.palette.palette().variant(Variant::Default).clone(),
+            colors: self.palette_colors().clone(),
             font: self.settings.interface.font_name.clone(),
             generation: self.frame_context.generation(),
         }

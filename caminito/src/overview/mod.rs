@@ -65,7 +65,7 @@ pub(crate) mod transition;
 use std::time::{Duration, Instant};
 
 use caminito_policy::{Direction, OutputId, OverviewOutput, OverviewScope, PolicyWindow, WindowId};
-use caminito_theme::{PaletteColors, Title, Variant, pango};
+use caminito_theme::{PaletteColors, Title, pango};
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -1069,7 +1069,7 @@ impl Caminito {
         Drawn {
             labels,
             scale: output.current_scale().fractional_scale().ceil() as i32,
-            colors: self.palette.palette().variant(Variant::Default).clone(),
+            colors: self.palette_colors().clone(),
             font: self.settings.interface.font_name.clone(),
             generation: self.frame_context.generation(),
         }
