@@ -1,3 +1,11 @@
+mate-settings-daemon (1.29.1-0caminito2) resolute; urgency=medium
+
+  * 0001: the mirror copies the colour scheme from org.mate.Caminito
+    colour-scheme, instead of working it out from the GTK theme
+    (CMN-329, Caminito's ADR 0059).
+
+ -- jpablo <jpablolassala@gmail.com>  Sun, 15 Nov 2026 00:00:00 +0000
+
 mate-settings-daemon (1.29.1-0caminito1) resolute; urgency=medium
 
   * Caminito's patched mate-settings-daemon, from Ubuntu 26.04's

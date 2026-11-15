@@ -14,7 +14,7 @@
 
 Name:          mate-settings-daemon
 Version:       %{branch}.1
-Release:       0.caminito1%{?dist}
+Release:       0.caminito2%{?dist}
 Summary:       MATE Desktop settings daemon
 # Automatically converted from old format: GPLv2+ - review is highly recommended.
 License:       GPL-2.0-or-later
@@ -148,6 +148,10 @@ desktop-file-validate %{buildroot}%{_sysconfdir}/xdg/autostart/mate-settings-dae
 
 
 %changelog
+* Sun Nov 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.1-0.caminito2
+- 0001: the mirror copies the colour scheme from org.mate.Caminito colour-scheme, instead
+  of working it out from the GTK theme (CMN-329)
+
 * Thu Oct 15 2026 Juan Pablo Lassala <jpablolassala@gmail.com> - 1.29.1-0.caminito1
 - mate-settings-daemon 1.29.1, with Caminito's carried patches, from Fedora f45's spec
   (CMN-170)
