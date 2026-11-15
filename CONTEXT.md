@@ -148,6 +148,14 @@ _Avoid_: repack, normalise
 Caminito's display settings program, which replaces MATE's Display capplet in a Session.
 _Avoid_: the capplet, display properties
 
+**Control Center**:
+MATE's window of settings entries, grouped into categories by subject. In a Session, Caminito's own settings programs sit in those categories beside MATE's, a replaced entry is hidden, and the Unported entries are gathered in a category of their own, "Not yet ported".
+_Avoid_: settings app, system settings (KDE's), matecc
+
+**Unported entry**:
+A Control Center entry, MATE's, that doesn't fully do its job in a Session, because some of its settings have no effect there, and that no Caminito program replaces yet. Porting or replacing it takes it out of "Not yet ported". Entries from other desktops aren't Unported entries.
+_Avoid_: legacy capplet, X11 capplet, broken entry
+
 **Output scale**:
 The factor from logical to physical pixels for one output. It may be fractional. Caminito's default comes from KWin's rule, or from `window-scaling-factor` when that is 1 or 2, and Caminito's saved layout overrides it.
 _Avoid_: DPI (that's the font setting), window scale (GTK's term)
