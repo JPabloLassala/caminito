@@ -705,6 +705,71 @@ fn the_two_keys_hide_switch_user_when_the_seat_can_switch() {
     );
 }
 
+/// How wide the open dialog is, in pixels, once the output has drawn it: the extent of what isn't
+/// the wallpaper on the output's middle row, as the dialog is in the middle of the output.
+#[track_caller]
+fn dialog_width(f: &mut Fixture, locker: &Locker) -> i32 {
+    // Long enough for a seat's answer to arrive and be drawn.
+    f.dispatch_for(std::time::Duration::from_millis(400));
+    let output = f.state.caminito.outputs[0].clone();
+    let width = output_geometry(&output).size.w;
+    let pixels = f.state.backend.headless_mut().pixels(&output).unwrap();
+    let row = &pixels[(pixels.len() / 2 / width as usize * width as usize)..][..width as usize];
+    let covered = |pixel: &&u32| *pixel & 0xff_ffff != WALLPAPER;
+    let first = row.iter().position(|p| covered(&p));
+    let last = row.iter().rposition(|p| covered(&p));
+    let (Some(first), Some(last)) = (first, last) else {
+        panic!("no dialog on the middle row: {}", locker.seen());
+    };
+    (last - first + 1) as i32
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn the_dialog_is_as_wide_before_the_seat_answers_as_after_it_says_either_way() {
+    let keyfile = format!("{SOLID_BACKGROUND}user-switch-enabled=true\n");
+
+    // The read has no answer yet: it gives up after 1 s, and the width is read before.
+    // A loaded machine can be slower than that second, so it's tried again.
+    let silent = SeatBus::with_a_silent_owner();
+    let mut pending = None;
+    for _ in 0..3 {
+        let (mut f, locker) = locked_for_switch_user(&keyfile, silent.env());
+        open_dialog(&mut f, &locker);
+        let width = dialog_width(&mut f, &locker);
+        if locker.count(SWITCH_BUTTON_HIDDEN) == 0 {
+            pending = Some(width);
+            break;
+        }
+    }
+    let pending = pending.expect("the dialog is read before the seat gives up, in three tries");
+
+    let can = SeatBus::with_seat(true);
+    let (mut f, locker) = locked_for_switch_user(&keyfile, can.env());
+    open_dialog(&mut f, &locker);
+    f.dispatch_until_explained(|_| locker.count(SWITCH_BUTTON_SHOWN) == 1, || locker.seen());
+    let shown = dialog_width(&mut f, &locker);
+    drop((f, locker));
+
+    let cannot = SeatBus::with_seat(false);
+    let (mut f, locker) = locked_for_switch_user(&keyfile, cannot.env());
+    open_dialog(&mut f, &locker);
+    f.dispatch_until_explained(
+        |_| locker.count(SWITCH_BUTTON_HIDDEN) >= 1,
+        || locker.seen(),
+    );
+    let hidden = dialog_width(&mut f, &locker);
+
+    assert_eq!(
+        pending, shown,
+        "the dialog changes width when the button shows"
+    );
+    assert_eq!(
+        hidden, shown,
+        "the dialog changes width when the button hides"
+    );
+}
+
 /// ADR 0056: a missing service is a failed start, not a prompt that can't succeed. The locker
 /// exits each time, so Caminito gives up, the session stays locked, and the message says how
 /// to end it.
@@ -1864,6 +1929,8 @@ fn the_dialog_has_esmeril_on_every_outputs_lock_surface_and_the_idle_view_none()
     tap(&mut f, KEY_ESC);
     wait_for_esmeril(&mut f, &locker, &outputs, true);
     assert_eq!(locker.count(ESMERIL_FADES_IN), 1, "{}", locker.seen());
+    // The fade is over, with the copy of the wallpaper wholly clear over Esmeril.
+    f.dispatch_for(std::time::Duration::from_millis(600));
     // Pixman draws no Esmeril, so the wallpaper stays as it is under the see-through window.
     for output in &outputs {
         f.wait_for_pixel_on(output, 100, 100, WALLPAPER);
@@ -1878,6 +1945,52 @@ fn the_dialog_has_esmeril_on_every_outputs_lock_surface_and_the_idle_view_none()
     tap(&mut f, KEY_ENTER);
     type_and_enter(&mut f, PASSWORD);
     f.dispatch_until_explained(|f| f.lock_state() == "unlocked", || locker.seen());
+}
+
+/// How many times the lock surface of `output` has been committed, as Caminito's renderer saw it.
+fn lock_surface_commits(
+    f: &Fixture,
+    output: &Output,
+) -> smithay::backend::renderer::utils::CommitCounter {
+    use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
+    use smithay::wayland::compositor::with_states;
+
+    let surface = f.state.caminito.lock.surface_on(output).unwrap();
+    with_states(surface.wl_surface(), |states| {
+        let data = states
+            .data_map
+            .get::<RendererSurfaceStateUserData>()
+            .unwrap();
+        data.lock().unwrap().current_commit()
+    })
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_fade_does_not_repaint_the_lock_window() {
+    use std::time::Duration;
+
+    let fade = vec![("CAMINITO_LOCKER_ESMERIL_FADE_MSEC", "3000".to_owned())];
+    let (mut f, locker) = idle_with(&[(1920, 1080)], Vec::new(), "", fade);
+    let output = f.state.caminito.outputs[0].clone();
+    tap(&mut f, KEY_ESC);
+    f.dispatch_until_explained(|_| locker.count(ESMERIL_FADES_IN) == 1, || locker.seen());
+    // The dialog's own first frames are done.
+    f.dispatch_for(Duration::from_millis(500));
+
+    let before = lock_surface_commits(&f, &output);
+    f.dispatch_for(Duration::from_millis(1500));
+    let commits = lock_surface_commits(&f, &output)
+        .distance(Some(before))
+        .unwrap();
+
+    // The compositor blends the fade. The window's own frames are the entry's cursor, which blinks
+    // twice or so in that time: a repaint of each frame would be dozens.
+    assert!(
+        commits <= 4,
+        "the window committed {commits} times: {}",
+        locker.seen()
+    );
 }
 
 #[test]
@@ -1958,7 +2071,10 @@ fn a_new_output_and_a_new_scale_keep_esmeril_and_the_wallpaper_under_the_dialog(
 #[test]
 #[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
 fn a_locker_that_dies_mid_fade_leaves_the_session_locked_and_comes_back_to_the_idle_view() {
-    let fade = vec![("CAMINITO_LOCKER_ESMERIL_FADE_MSEC", LONG_FADE_MSEC.to_string())];
+    let fade = vec![(
+        "CAMINITO_LOCKER_ESMERIL_FADE_MSEC",
+        LONG_FADE_MSEC.to_string(),
+    )];
     let (mut f, locker) = idle_with(&[(1920, 1080)], Vec::new(), "", fade);
     f.state.caminito.locker.policy = quick_restarts();
     let outputs = f.state.caminito.outputs.clone();
@@ -2020,4 +2136,48 @@ fn the_dialog_shows_the_wallpaper_through_esmeril_on_gles() {
 
     tap(&mut f, KEY_ESC);
     f.wait_for_pixel_on(&output, 100, 100, WALLPAPER);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn part_way_through_a_fade_the_wallpaper_is_between_the_sharp_and_the_esmeril_one_on_gles() {
+    let mut locker = Locker::new();
+    locker.env = vec![("CAMINITO_LOCKER_ESMERIL_FADE_MSEC", "4000".to_owned())];
+    locker.set_settings(SOLID_BACKGROUND);
+    let command = Value::StrList(locker.command());
+    let settings = vec![(CAMINITO, "locker-command".to_owned(), command)];
+    let Some(f) = Fixture::on_gles_with(settings) else {
+        return;
+    };
+    let (mut f, locker) = lock_on(f, locker, &[(1920, 1080)], |_| None);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+    f.dispatch_until_explained(|_| locker.count(PROMPT) == 1, || locker.seen());
+    let output = f.state.caminito.outputs[0].clone();
+    f.wait_for_pixel_on(&output, 100, 100, WALLPAPER);
+
+    tap(&mut f, KEY_ESC);
+    f.dispatch_until_explained(|_| locker.count(ESMERIL_FADES_IN) == 1, || locker.seen());
+    f.dispatch_for(std::time::Duration::from_millis(1600));
+    let got = channels(
+        f.state
+            .backend
+            .headless_mut()
+            .pixel(&output, (100, 100).into())
+            .unwrap(),
+    );
+    let sharp = channels(0xff00_0000 | WALLPAPER).map(f64::from);
+    let blurred = saturated_and_contrasted(0xff00_0000 | WALLPAPER);
+    // Past a rounding's difference from each end, and between them, in every channel that has any
+    // distance to go.
+    let mut moved = false;
+    for ((got, sharp), blurred) in got.into_iter().map(f64::from).zip(sharp).zip(blurred) {
+        let (low, high) = (sharp.min(blurred), sharp.max(blurred));
+        assert!(
+            (low - 3.0..=high + 3.0).contains(&got),
+            "{got} isn't between {sharp} and {blurred}: {}",
+            locker.seen()
+        );
+        moved |= (got - sharp).abs() > 3.0 && (got - blurred).abs() > 3.0;
+    }
+    assert!(moved, "{got:?} is at an end of the fade: {}", locker.seen());
 }

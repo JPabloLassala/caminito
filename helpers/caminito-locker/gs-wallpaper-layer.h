@@ -1,8 +1,9 @@
 /* SPDX-FileCopyrightText: 2026 Juan Pablo Lassala
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * A lock window's sharp wallpaper, in a subsurface under the window, and the window's asking for
- * Esmeril over it (CMN-301, ADR 0056). GTK 3 has no API for either.
+ * A lock window's wallpaper, in two subsurfaces under the window: the sharp one, and a copy of it
+ * over that, which asks for Esmeril and fades by the alpha modifier (CMN-301, ADR 0056). GTK 3 has
+ * no API for either.
  */
 
 #ifndef __GS_WALLPAPER_LAYER_H
@@ -28,12 +29,18 @@ gboolean gs_wallpaper_layer_can_blur(void);
 GSWallpaperLayer* gs_wallpaper_layer_new(GtkWidget* window);
 void gs_wallpaper_layer_free(GSWallpaperLayer* layer);
 
-/* Shows `picture` under the window at the window's next commit, on a buffer of `width` by
- * `height` at `scale`, and returns a surface of the same pixels, which the window can paint and
- * which lasts until the next call or the layer's end. NULL if it can't be shown. */
-cairo_surface_t* gs_wallpaper_layer_set_picture(GSWallpaperLayer* layer, cairo_surface_t* picture, int width, int height, int scale);
+typedef void (*GSWallpaperLayerFrame)(GSWallpaperLayer* layer, gpointer data);
 
-/* Whether the window asks for Esmeril, from its next commit. */
+/* Shows `picture` under the window at the window's next commit, on a buffer of `width` by
+ * `height` at `scale`. FALSE if it can't be shown. */
+gboolean gs_wallpaper_layer_set_picture(GSWallpaperLayer* layer, cairo_surface_t* picture, int width, int height, int scale);
+
+/* Whether the copy asks for Esmeril, from the next `gs_wallpaper_layer_show`. */
 void gs_wallpaper_layer_set_blurred(GSWallpaperLayer* layer, gboolean blurred);
+
+/* Shows `amount` of Esmeril now, from none to all of it: the copy shows through that much less.
+ * If `on_frame` isn't NULL it's called when the compositor has shown the result, for the next
+ * step of a fade. */
+void gs_wallpaper_layer_show(GSWallpaperLayer* layer, double amount, GSWallpaperLayerFrame on_frame, gpointer data);
 
 #endif /* __GS_WALLPAPER_LAYER_H */

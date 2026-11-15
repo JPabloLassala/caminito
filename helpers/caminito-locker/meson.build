@@ -55,6 +55,21 @@ background_effect_code = custom_target(
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
+# And the one that fades the wallpaper in front of Esmeril, on the compositor's side.
+alpha_modifier_xml = 'protocols/alpha-modifier-v1.xml'
+alpha_modifier_header = custom_target(
+  'alpha-modifier-v1-client-protocol.h',
+  input: alpha_modifier_xml,
+  output: 'alpha-modifier-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+alpha_modifier_code = custom_target(
+  'alpha-modifier-v1-protocol.c',
+  input: alpha_modifier_xml,
+  output: 'alpha-modifier-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
 # gtk-session-lock is barely maintained (ADR 0007); it builds at 16's baseline as it is, so
 # it isn't vendored. libmate-desktop has MateBG, for the background (132). There's no libmatekbd: the layout indicator reads org.mate.Caminito (CMN-299).
 executable(
@@ -63,6 +78,8 @@ executable(
   'gs-wallpaper-layer.c',
   background_effect_header,
   background_effect_code,
+  alpha_modifier_header,
+  alpha_modifier_code,
   'gs-lock-plug.c',
   'gs-notifications.c',
   'gs-prefs.c',

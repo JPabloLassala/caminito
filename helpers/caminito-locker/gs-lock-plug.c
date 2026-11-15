@@ -156,12 +156,26 @@ G_DEFINE_TYPE_WITH_PRIVATE (GSLockPlug, gs_lock_plug, GTK_TYPE_BIN)
 #define SEAT_INTERFACE         "org.freedesktop.DisplayManager.Seat"
 #define SEAT_READ_TIMEOUT_MSEC 1000
 
+/* The button keeps its place, invisible, until the seat says it can switch and after it says it
+ * can't, so that the dialog is as wide when the answer comes as it was before. Only a session
+ * that never asks the seat has no place for it. */
+static void
+place_switch_button (GSLockPlug *plug,
+                     gboolean    shown,
+                     gboolean    reserved)
+{
+	gtk_widget_set_visible (plug->priv->auth_switch_button, shown || reserved);
+	gtk_widget_set_opacity (plug->priv->auth_switch_button, shown ? 1.0 : 0.0);
+	gtk_widget_set_sensitive (plug->priv->auth_switch_button, shown);
+}
+
 static void
 set_switch_button_shown (GSLockPlug *plug,
-                         gboolean    shown)
+                         gboolean    shown,
+                         gboolean    reserved)
 {
 	gs_debug ("Switch User button: %s", shown ? "shown" : "hidden");
-	gtk_widget_set_visible (plug->priv->auth_switch_button, shown);
+	place_switch_button (plug, shown, reserved);
 }
 
 static void
@@ -196,7 +210,7 @@ seat_can_switch_cb (GObject      *source,
 		g_variant_unref (reply);
 	}
 
-	set_switch_button_shown (plug, res);
+	set_switch_button_shown (plug, res, TRUE);
 }
 
 static void
@@ -219,7 +233,7 @@ system_bus_cb (GObject      *source G_GNUC_UNUSED,
 	{
 		gs_debug ("Unable to reach the system bus: %s", error->message);
 		g_error_free (error);
-		set_switch_button_shown (plug, FALSE);
+		set_switch_button_shown (plug, FALSE, TRUE);
 		return;
 	}
 
@@ -268,12 +282,12 @@ update_switch_button (GSLockPlug *plug)
 
 	if (!plug->priv->switch_enabled || g_getenv ("XDG_SEAT_PATH") == NULL)
 	{
-		set_switch_button_shown (plug, FALSE);
+		set_switch_button_shown (plug, FALSE, FALSE);
 		return;
 	}
 
 	/* Not yet the answer, so no debug line. */
-	gtk_widget_hide (plug->priv->auth_switch_button);
+	place_switch_button (plug, FALSE, TRUE);
 	plug->priv->seat_read_cancellable = g_cancellable_new ();
 	g_bus_get (G_BUS_TYPE_SYSTEM, plug->priv->seat_read_cancellable, system_bus_cb, plug);
 }

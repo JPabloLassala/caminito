@@ -28,8 +28,9 @@
  * derived from MATE's, on the monitor under the pointer (CMN-298, ADR 0056). The right
  * password unlocks and the locker exits; nothing else ends the lock. While the dialog shows,
  * Esmeril blurs the wallpaper on every monitor, and the locker never blurs anything itself: the
- * sharp wallpaper is in a subsurface under each window (gs-wallpaper-layer.c), and the window fades its
- * own copy of it out over Esmeril (CMN-301, ADR 0056).
+ * sharp wallpaper is in a subsurface under each window (gs-wallpaper-layer.c), and a copy of it
+ * over that asks for Esmeril and fades out over it by the alpha modifier's factor, so the
+ * compositor blends each frame and nothing is repainted (CMN-301, ADR 0056).
  *
  * Ported from mate-screensaver 60b2db3's src/mate-screensaver-dialog.c, which mate-screensaver
  * runs as a GtkPlug in its own lock window and which tells the daemon how the conversation
@@ -96,7 +97,7 @@
 #define CLOCK_GAP 8
 
 /* How long Esmeril takes to fade in and out behind the Unlock dialog. The amount follows the
- * clock, so a slow repaint at 4K means fewer frames and not a longer fade (CMN-301). */
+ * clock, so a slow frame means one less and not a longer fade (CMN-301). */
 #define ESMERIL_FADE_MSEC 200
 
 /* How far the notifications are from their corner, and the dialog's width until it has been
@@ -712,14 +713,12 @@ static Background* apply_background_to_window(GtkWidget* window, int width, int 
 	background->scale = scale;
 	if (layer != NULL)
 	{
-		cairo_surface_t *shown = gs_wallpaper_layer_set_picture(layer, background->surface, width, height, scale);
-
-		/* The layer's pixels last as long as this does, or until the next. With no picture
-		 * in it, the window is the wallpaper as if it had no layer. */
-		if (shown != NULL)
+		/* The layer's pictures are the wallpaper, and the window draws none. With none in it,
+		 * the window is the wallpaper as if it had no layer. */
+		if (gs_wallpaper_layer_set_picture(layer, background->surface, width, height, scale))
 		{
 			cairo_surface_destroy(background->surface);
-			background->surface = cairo_surface_reference(shown);
+			background->surface = NULL;
 		}
 		else
 		{
@@ -748,27 +747,32 @@ static double esmeril_amount(void)
 	return done >= 1.0 ? target : esmeril_from + (target - esmeril_from) * done;
 }
 
-/* Each frame of a fade, on each window. The draw after the last ends the window's asking. */
-static gboolean esmeril_fade_tick(GtkWidget* window, GdkFrameClock* clock G_GNUC_UNUSED, gpointer data G_GNUC_UNUSED)
+/* Whether a fade is under way. */
+static gboolean esmeril_going(void)
 {
-	gboolean going = g_get_monotonic_time() - esmeril_fade_start < esmeril_fade_usec;
+	return g_get_monotonic_time() - esmeril_fade_start < esmeril_fade_usec;
+}
 
-	gtk_widget_queue_draw(window);
-	if (!going)
-	{
-		g_object_set_data(G_OBJECT(window), "esmeril-tick", NULL);
-	}
+/* A step of a fade, on one layer: the amount of Esmeril now, and the next step when the compositor
+ * has shown this one. The step after the last ends the layer's asking, if Esmeril is off. The
+ * window itself has nothing to draw, so a fade is no repaint. */
+static void fade_step(GSWallpaperLayer* layer, gpointer data G_GNUC_UNUSED)
+{
+	double amount = esmeril_amount();
+	gboolean going = esmeril_going();
 
-	return going ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
+	gs_wallpaper_layer_set_blurred(layer, esmeril_wanted || amount > 0.0);
+	gs_wallpaper_layer_show(layer, amount, going ? fade_step : NULL, NULL);
 }
 
 static void fade_window(GtkWidget* window)
 {
-	gtk_widget_queue_draw(window);
-	if (esmeril_fade_usec != 0 && g_object_get_data(G_OBJECT(window), "esmeril-tick") == NULL)
+	GSWallpaperLayer* layer = g_object_get_data(G_OBJECT(window), "layer");
+
+	/* With no layer, the window can't ask for Esmeril, and has none. */
+	if (layer != NULL)
 	{
-		g_object_set_data(G_OBJECT(window), "esmeril-tick", GINT_TO_POINTER(1));
-		gtk_widget_add_tick_callback(window, esmeril_fade_tick, NULL, NULL);
+		fade_step(layer, NULL);
 	}
 }
 
@@ -822,9 +826,9 @@ static void follow_animations(void)
 }
 
 /* gs-window-x11.c's gs_window_real_draw, under the window's content. The background is
- * made at the first draw at a size, as the window has its size from Caminito only then. The
- * window is the sharp wallpaper as much as Esmeril doesn't show: Esmeril shows through a pixel
- * as much as it's see-through (ADR 0048), so this is its fade (CMN-301). */
+ * made at the first draw at a size, as the window has its size from Caminito only then. With a
+ * layer the window is clear: its wallpaper is under it, and Esmeril, which shows through a pixel
+ * as much as it's see-through (ADR 0048), goes between (CMN-301). */
 static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_GNUC_UNUSED)
 {
 	Background *background;
@@ -832,7 +836,7 @@ static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_
 	int width = gtk_widget_get_allocated_width(window);
 	int height = gtk_widget_get_allocated_height(window);
 	int scale = gtk_widget_get_scale_factor(window);
-	double amount;
+	gboolean fresh = FALSE;
 
 	layer = g_object_get_data(G_OBJECT(window), "layer");
 	if (layer == NULL && !GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "no-layer")))
@@ -840,40 +844,41 @@ static gboolean draw_background(GtkWidget* window, cairo_t* cr, gpointer data G_
 		layer = gs_wallpaper_layer_new(window);
 		g_object_set_data(G_OBJECT(window), "layer", layer);
 		g_object_set_data(G_OBJECT(window), "no-layer", GINT_TO_POINTER(layer == NULL));
+		fresh = layer != NULL;
 	}
 
 	background = g_object_get_data(G_OBJECT(window), "background");
 	if (background == NULL || background->width != width || background->height != height || background->scale != scale)
 	{
 		background = apply_background_to_window(window, width, height, scale);
-		layer = g_object_get_data(G_OBJECT(window), "layer");
 	}
-	/* With no layer there's nothing for the window to fade down to. */
-	amount = layer != NULL ? esmeril_amount() : 0.0;
-	if (layer != NULL)
+	layer = g_object_get_data(G_OBJECT(window), "layer");
+	/* A window that comes in the middle of a fade follows it, and the layer is shown as it is. */
+	if (fresh && layer != NULL)
 	{
-		gs_wallpaper_layer_set_blurred(layer, esmeril_wanted || amount > 0.0);
+		fade_step(layer, NULL);
 	}
 
 	cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
 	cairo_paint (cr);
+	if (layer != NULL)
+	{
+		return FALSE;
+	}
+
 	cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
 	if (background->surface != NULL)
 	{
 		cairo_set_source_surface (cr, background->surface, 0, 0);
 		/* MateBG makes a solid colour's surface 1x1, which X tiled as the window's
-		 * background pixmap, and which cairo has to be told to. A layer's picture is
-		 * already whole, and tiling takes a third longer at each frame of the fade. */
-		if (layer == NULL)
-		{
-			cairo_pattern_set_extend (cairo_get_source (cr), CAIRO_EXTEND_REPEAT);
-		}
+		 * background pixmap, and which cairo has to be told to. */
+		cairo_pattern_set_extend (cairo_get_source (cr), CAIRO_EXTEND_REPEAT);
 	}
 	else
 	{
 		cairo_set_source_rgb (cr, 0, 0, 0);
 	}
-	cairo_paint_with_alpha (cr, 1.0 - amount);
+	cairo_paint (cr);
 
 	return FALSE;
 }
