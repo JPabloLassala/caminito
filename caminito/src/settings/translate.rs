@@ -481,15 +481,38 @@ pub struct AppearanceKeys {
 /// The user's choice of light or dark (`org.mate.Caminito.ColourScheme`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColourScheme {
+    /// The light Appearance is in use.
     Light,
+    /// The dark Appearance is in use.
     Dark,
+}
+
+impl ColourScheme {
+    /// Its nick in `colour-scheme`, which begins its Appearance's keys too.
+    pub fn nick(self) -> &'static str {
+        match self {
+            ColourScheme::Light => "light",
+            ColourScheme::Dark => "dark",
+        }
+    }
+
+    /// The other one.
+    pub fn opposite(self) -> ColourScheme {
+        match self {
+            ColourScheme::Light => ColourScheme::Dark,
+            ColourScheme::Dark => ColourScheme::Light,
+        }
+    }
 }
 
 /// An Appearance's themes. An empty one isn't set yet.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Themes {
+    /// The GTK theme.
     pub gtk: String,
+    /// The Marco theme.
     pub marco: String,
+    /// The icon theme.
     pub icons: String,
 }
 
@@ -1551,12 +1574,14 @@ fn appearance(r: &mut Reader<'_>) -> AppearanceKeys {
         marco: r.string(CAMINITO, &format!("{scheme}-marco-theme"), ""),
         icons: r.string(CAMINITO, &format!("{scheme}-icon-theme"), ""),
     };
-    let (light, dark) = (themes("light"), themes("dark"));
-    let colour_scheme = match r.string(CAMINITO, "colour-scheme", "unset").as_str() {
-        "light" => Some(ColourScheme::Light),
-        "dark" => Some(ColourScheme::Dark),
-        _ => None,
-    };
+    let (light, dark) = (
+        themes(ColourScheme::Light.nick()),
+        themes(ColourScheme::Dark.nick()),
+    );
+    let nick = r.string(CAMINITO, "colour-scheme", "unset");
+    let colour_scheme = [ColourScheme::Light, ColourScheme::Dark]
+        .into_iter()
+        .find(|scheme| scheme.nick() == nick);
     AppearanceKeys {
         colour_scheme,
         light,

@@ -49,11 +49,13 @@ impl Desktop {
     /// A reading, with the darkness of the table of known pairs alone. Returns the writes, and
     /// makes them, so the next reading shows them.
     fn read(&mut self) -> Outcome {
-        self.read_with(|theme| known_scheme(theme).map(|s| s == ColourScheme::Dark))
+        self.read_with(known_scheme)
     }
 
-    fn read_with(&mut self, is_dark: impl FnOnce(&str) -> Option<bool>) -> Outcome {
-        let outcome = self.appearances.reconcile(&self.keys, &self.mate, is_dark);
+    fn read_with(&mut self, scheme_of: impl FnOnce(&str) -> Option<ColourScheme>) -> Outcome {
+        let outcome = self
+            .appearances
+            .reconcile(&self.keys, &self.mate, scheme_of);
         for write in &outcome.writes {
             self.make(write);
         }
@@ -65,7 +67,7 @@ impl Desktop {
         self.appearances.reconcile(&self.keys, &self.mate, |_| None)
     }
 
-    fn make(&mut self, write: &Write) {
+    fn make(&mut self, write: &KeyWrite) {
         let Value::Str(value) = &write.value else {
             panic!("a theme or a nick: {write:?}");
         };
@@ -275,7 +277,7 @@ fn the_first_start_waits_until_the_themes_darkness_is_known() {
 
     assert_eq!(desktop.read_with(|_| None), Outcome::default());
 
-    let outcome = desktop.read_with(|theme| (theme == "Nordic").then_some(true));
+    let outcome = desktop.read_with(|theme| (theme == "Nordic").then_some(ColourScheme::Dark));
     assert_eq!(desktop.keys.colour_scheme, Some(ColourScheme::Dark));
     assert_eq!(desktop.keys.dark, themes("Nordic", "Nordic", "Papirus"));
     assert_eq!(desktop.keys.light, themes("Nordic", "Nordic", "Papirus"));
@@ -285,7 +287,7 @@ fn the_first_start_waits_until_the_themes_darkness_is_known() {
 #[test]
 fn an_unknown_theme_gets_the_prefer_dark_fallback_as_its_dark_appearance() {
     let mut desktop = Desktop::first_start(themes("Pop", "Pop", "Pop"));
-    let seeded = desktop.read_with(|_| Some(false));
+    let seeded = desktop.read_with(|_| Some(ColourScheme::Light));
     assert_eq!(seeded.prefer_dark, Some(false));
 
     desktop.set_scheme(ColourScheme::Dark);
@@ -297,15 +299,25 @@ fn an_unknown_theme_gets_the_prefer_dark_fallback_as_its_dark_appearance() {
 }
 
 #[test]
-fn a_dark_appearance_of_its_own_turns_prefer_dark_off() {
+fn a_dark_appearance_of_its_own_has_prefer_dark_written_off_again_on_the_switch() {
     let (light, dark) = breeze();
     let mut desktop = Desktop::light(light, dark);
 
     desktop.set_scheme(ColourScheme::Dark);
     let outcome = desktop.read();
 
-    // Already off since the first reading.
-    assert_eq!(outcome.prefer_dark, None);
+    // Written again, as another tool may have changed the file since.
+    assert_eq!(outcome.prefer_dark, Some(false));
+}
+
+#[test]
+fn prefer_dark_isnt_written_again_without_a_change() {
+    let (light, dark) = breeze();
+    let mut desktop = Desktop::light(light, dark);
+
+    desktop.mate.gtk = "Adwaita".into();
+
+    assert_eq!(desktop.read().prefer_dark, None);
 }
 
 #[test]

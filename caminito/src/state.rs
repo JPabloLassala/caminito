@@ -1244,16 +1244,18 @@ impl Caminito {
             icons: self.settings.interface.icon_theme.clone(),
         };
         let palette = &self.palette;
-        let is_dark = |theme: &str| {
-            appearance::known_scheme(theme)
-                .map(|scheme| scheme == ColourScheme::Dark)
-                .or_else(|| {
-                    (palette.gtk_theme() == Some(theme)).then(|| {
-                        appearance::palette_is_dark(palette.palette().variant(Variant::Default))
-                    })
+        let scheme_of = |theme: &str| {
+            appearance::known_scheme(theme).or_else(|| {
+                (palette.gtk_theme() == Some(theme)).then(|| {
+                    if appearance::palette_is_dark(palette.palette().variant(Variant::Default)) {
+                        ColourScheme::Dark
+                    } else {
+                        ColourScheme::Light
+                    }
                 })
+            })
         };
-        let outcome = self.appearances.reconcile(keys, &shown, is_dark);
+        let outcome = self.appearances.reconcile(keys, &shown, scheme_of);
         for write in outcome.writes {
             self.settings_thread
                 .set(write.schema, &write.key, write.value);

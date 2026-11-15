@@ -41,10 +41,7 @@ impl Kind {
 
     /// Caminito's key for the theme of `scheme`'s Appearance.
     fn caminito_key(self, scheme: ColourScheme) -> String {
-        let scheme = match scheme {
-            ColourScheme::Light => "light",
-            ColourScheme::Dark => "dark",
-        };
+        let scheme = scheme.nick();
         let kind = match self {
             Kind::Gtk => "gtk",
             Kind::Marco => "marco",
@@ -122,7 +119,7 @@ impl Kind {
 
 /// A theme's Colour scheme as the table of known pairs has it: dark if it's the dark one
 /// of a pair, light if it's the light one, and `None` if it's in no pair.
-pub fn known_scheme(gtk_theme: &str) -> Option<ColourScheme> {
+pub(crate) fn known_scheme(gtk_theme: &str) -> Option<ColourScheme> {
     Kind::Gtk.pairs().iter().find_map(|(light, dark)| {
         if *dark == gtk_theme {
             Some(ColourScheme::Dark)
@@ -136,7 +133,7 @@ pub fn known_scheme(gtk_theme: &str) -> Option<ColourScheme> {
 
 /// ADR 0005's luminance test on a GTK theme's default palette: the theme is dark when its
 /// window's background is darker than its text.
-pub fn palette_is_dark(colors: &PaletteColors) -> bool {
+pub(crate) fn palette_is_dark(colors: &PaletteColors) -> bool {
     luminance(colors.background(GtkState::Normal)) < luminance(colors.text(GtkState::Normal))
 }
 
@@ -154,20 +151,23 @@ fn luminance(color: Rgba) -> f64 {
 
 /// A key to write.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Write {
+pub(crate) struct KeyWrite {
+    /// The key's schema.
     pub schema: &'static str,
+    /// The key's name.
     pub key: String,
+    /// What it's set to.
     pub value: Value,
 }
 
 /// What a reading calls for.
 #[derive(Debug, Default, PartialEq)]
-pub struct Outcome {
+pub(crate) struct Outcome {
     /// The keys to write, Caminito's and MATE's.
-    pub writes: Vec<Write>,
+    pub(crate) writes: Vec<KeyWrite>,
     /// GTK3's `gtk-application-prefer-dark-theme` to write into its `settings.ini`, when it
     /// changed (CMN-326).
-    pub prefer_dark: Option<bool>,
+    pub(crate) prefer_dark: Option<bool>,
 }
 
 /// A theme Caminito wrote into MATE's key, which a reading may not show yet.
@@ -181,7 +181,7 @@ struct Pending {
 
 /// What Caminito remembers between readings.
 #[derive(Debug, Default)]
-pub struct Appearances {
+pub(crate) struct Appearances {
     /// The Colour scheme of the last reading, so a change of it is told from the first.
     last_scheme: Option<ColourScheme>,
     /// For each [`Kind`], the theme written into MATE's key and not read back yet.
@@ -192,29 +192,25 @@ pub struct Appearances {
 
 impl Appearances {
     /// Works out what to write for a reading of Caminito's keys and of the themes MATE's
-    /// keys have. `is_dark` tells whether a GTK theme is dark, or `None` while that isn't
+    /// keys have. `scheme_of` tells a GTK theme's Colour scheme, or `None` while that isn't
     /// known yet; it's asked only on the first start, while the Colour scheme is unset.
-    pub fn reconcile(
+    pub(crate) fn reconcile(
         &mut self,
         keys: &AppearanceKeys,
         applied: &Themes,
-        is_dark: impl FnOnce(&str) -> Option<bool>,
+        scheme_of: impl FnOnce(&str) -> Option<ColourScheme>,
     ) -> Outcome {
         let seeding = keys.colour_scheme.is_none();
         let scheme = match keys.colour_scheme {
             Some(scheme) => scheme,
-            None => match is_dark(&applied.gtk) {
-                Some(true) => ColourScheme::Dark,
-                Some(false) => ColourScheme::Light,
+            None => match scheme_of(&applied.gtk) {
+                Some(scheme) => scheme,
                 None => return Outcome::default(),
             },
         };
         let changed = self.last_scheme.is_some_and(|last| last != scheme);
         self.last_scheme = Some(scheme);
-        let other = match scheme {
-            ColourScheme::Light => ColourScheme::Dark,
-            ColourScheme::Dark => ColourScheme::Light,
-        };
+        let other = scheme.opposite();
 
         let mut light = keys.light.clone();
         let mut dark = keys.dark.clone();
@@ -235,7 +231,7 @@ impl Appearances {
                 *inactive = kind.paired(active, other);
             }
 
-            let stale = match &self.pending[index] {
+            let outdated = match &self.pending[index] {
                 Some(pending) if pending.to == shown => {
                     self.pending[index] = None;
                     false
@@ -255,7 +251,7 @@ impl Appearances {
                     .to_owned();
                 if *active != effective {
                     let (schema, key) = kind.mate_key();
-                    writes.push(Write {
+                    writes.push(KeyWrite {
                         schema,
                         key: key.into(),
                         value: Value::Str(active.clone()),
@@ -273,22 +269,18 @@ impl Appearances {
                 } else {
                     self.pending[index] = previous;
                 }
-            } else if !stale && *active != shown {
+            } else if !outdated && *active != shown {
                 // A theme picked anywhere else edits the Appearance in use.
                 *active = shown.to_owned();
             }
         }
 
-        let mut caminito = Vec::new();
+        let mut keys_to_write = Vec::new();
         if seeding {
-            let nick = match scheme {
-                ColourScheme::Light => "light",
-                ColourScheme::Dark => "dark",
-            };
-            caminito.push(Write {
+            keys_to_write.push(KeyWrite {
                 schema: CAMINITO,
                 key: "colour-scheme".into(),
-                value: Value::Str(nick.into()),
+                value: Value::Str(scheme.nick().into()),
             });
         }
         for (scheme, themes, stored) in [
@@ -297,7 +289,7 @@ impl Appearances {
         ] {
             for kind in KINDS {
                 if kind.of(themes) != kind.of(stored) {
-                    caminito.push(Write {
+                    keys_to_write.push(KeyWrite {
                         schema: CAMINITO,
                         key: kind.caminito_key(scheme),
                         value: Value::Str(kind.of(themes).to_owned()),
@@ -305,22 +297,24 @@ impl Appearances {
                 }
             }
         }
-        caminito.append(&mut writes);
+        keys_to_write.append(&mut writes);
 
+        // Written again on every change of the Colour scheme, as other tools write the
+        // same file (ADR 0059).
         let prefer_dark = scheme == ColourScheme::Dark && dark.gtk == light.gtk;
-        let prefer_dark = (self.prefer_dark != Some(prefer_dark)).then(|| {
+        let prefer_dark = (changed || self.prefer_dark != Some(prefer_dark)).then(|| {
             self.prefer_dark = Some(prefer_dark);
             prefer_dark
         });
         Outcome {
-            writes: caminito,
+            writes: keys_to_write,
             prefer_dark,
         }
     }
 }
 
 /// GTK3's user `settings.ini`, in `$XDG_CONFIG_HOME`, or `~/.config` without it.
-pub fn gtk3_settings_path() -> Option<PathBuf> {
+pub(crate) fn gtk3_settings_path() -> Option<PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
@@ -332,7 +326,7 @@ const PREFER_DARK: &str = "gtk-application-prefer-dark-theme";
 
 /// `text`, a `settings.ini`, with `gtk-application-prefer-dark-theme` set to `on` in its
 /// `[Settings]` group, and every other line as it was (CMN-326).
-pub fn with_prefer_dark(text: &str, on: bool) -> String {
+pub(crate) fn with_prefer_dark(text: &str, on: bool) -> String {
     let line = format!("{PREFER_DARK}={on}");
     let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
     let group = |l: &str| l.trim_start().starts_with('[');
@@ -368,7 +362,7 @@ pub fn with_prefer_dark(text: &str, on: bool) -> String {
 /// Sets `gtk-application-prefer-dark-theme` in the `settings.ini` at `path`, which is
 /// made if it's missing, and replaced whole so a GTK3 app starting meanwhile never reads
 /// half of it.
-pub fn write_prefer_dark(path: &Path, on: bool) -> io::Result<()> {
+pub(crate) fn write_prefer_dark(path: &Path, on: bool) -> io::Result<()> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
