@@ -1224,41 +1224,20 @@ const PICTURE: [u8; 69] = [
     0x44, 0xae, 0x42, 0x60, 0x82,
 ];
 
-/// `SOLID_BACKGROUND`, with mate-screensaver's `picture-filename` set to `path`.
-fn with_picture_filename(path: &Path) -> String {
-    SOLID_BACKGROUND.replace(
-        "[org/mate/screensaver]\npicture-filename=''",
-        &format!(
-            "[org/mate/screensaver]\npicture-filename='{}'",
-            path.display()
-        ),
-    )
-}
-
-#[test]
-#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
-fn picture_filename_replaces_the_desktop_background_when_the_file_exists() {
-    let dir = tempfile::tempdir().unwrap();
-    let picture = dir.path().join("picture.png");
-    std::fs::write(&picture, PICTURE).unwrap();
-    let missing = dir.path().join("missing.png");
-
-    // A picture-filename that isn't there leaves the desktop's.
-    let keyfile = with_picture_filename(&missing);
-    let (mut f, locker) = locked_by_caminito_locker_with(&[(1920, 1080)], &keyfile);
-    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
-    f.wait_for_pixel(100, 100, 0x608040);
-    drop((f, locker));
-
-    let keyfile = with_picture_filename(&picture);
-    let (mut f, locker) = locked_by_caminito_locker_with(&[(1920, 1080)], &keyfile);
-    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
-    f.wait_for_pixel(100, 100, 0x406080);
-}
-
 /// The wallpaper file's group for `output` at `connector`, as caminito-wallpaperd writes
 /// it: told by its make, model and place, showing `picture`, or no picture, over `colour`.
 fn wallpaper(connector: &str, output: &Output, picture: Option<&Path>, colour: &str) -> String {
+    placed_wallpaper(connector, output, picture, "zoom", colour)
+}
+
+/// As `wallpaper`, placed as `options` says.
+fn placed_wallpaper(
+    connector: &str,
+    output: &Output,
+    picture: Option<&Path>,
+    options: &str,
+    colour: &str,
+) -> String {
     let properties = output.physical_properties();
     let place = output_geometry(output).loc;
     let picture = picture.map(|path| path.display().to_string());
@@ -1269,7 +1248,7 @@ fn wallpaper(connector: &str, output: &Output, picture: Option<&Path>, colour: &
          x={}\n\
          y={}\n\
          picture-filename={}\n\
-         picture-options=zoom\n\
+         picture-options={options}\n\
          primary-color={colour}\n\n",
         properties.make,
         properties.model,
@@ -1297,6 +1276,94 @@ fn each_output_shows_its_own_wallpaper_from_the_drawers_file() {
     let outputs = f.state.caminito.outputs.clone();
     f.wait_for_pixel_on(&outputs[0], 100, 100, 0x406080);
     f.wait_for_pixel_on(&outputs[1], 100, 100, 0x804060);
+}
+
+/// The debug line of the picture chosen for the Lock screen.
+const CHOSEN_PICTURE: &str = "The Lock screen's own picture:";
+
+/// `SOLID_BACKGROUND` with the desktop's pictures centered, and no `picture-filename` of
+/// mate-screensaver's: its default.
+const CENTERED_BACKGROUND: &str = "\
+[org/mate/desktop/background]
+picture-filename=''
+picture-options='centered'
+color-shading-type='solid'
+primary-color='#608040'
+";
+
+/// Two outputs locked with `keyfile`: the first's wallpaper in the drawer's file is no
+/// picture, centered, over `0x804060`, and the second isn't in the file.
+fn locked_with_centered_wallpapers(keyfile: &str) -> (Fixture, Locker) {
+    locked_with_wallpapers(&[(1920, 1080), (2560, 1440)], keyfile, |outputs| {
+        Some(placed_wallpaper(
+            "headless-1",
+            &outputs[0],
+            None,
+            "centered",
+            "#804060",
+        ))
+    })
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn with_the_default_picture_filename_each_output_shows_its_own_wallpaper() {
+    let dir = tempfile::tempdir().unwrap();
+    let picture = dir.path().join("picture.png");
+    std::fs::write(&picture, PICTURE).unwrap();
+    let (mut f, locker) = locked_with_wallpapers(
+        &[(1920, 1080), (2560, 1440)],
+        CENTERED_BACKGROUND,
+        |outputs| {
+            Some(
+                wallpaper("headless-1", &outputs[0], Some(&picture), "#000000")
+                    + &wallpaper("headless-2", &outputs[1], None, "#804060"),
+            )
+        },
+    );
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    let outputs = f.state.caminito.outputs.clone();
+    f.wait_for_pixel_on(&outputs[0], 100, 100, 0x406080);
+    f.wait_for_pixel_on(&outputs[1], 100, 100, 0x804060);
+    // Whether or not mate-backgrounds' Stripes.png, mate-screensaver's default, is here.
+    assert!(!locker.seen().contains(CHOSEN_PICTURE), "{}", locker.seen());
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_chosen_picture_shows_zoomed_on_every_output_whatever_the_desktops_placement() {
+    let dir = tempfile::tempdir().unwrap();
+    let picture = dir.path().join("picture.png");
+    std::fs::write(&picture, PICTURE).unwrap();
+    let keyfile = format!(
+        "{CENTERED_BACKGROUND}\n[org/mate/screensaver]\npicture-filename='{}'\n",
+        picture.display()
+    );
+    let (mut f, locker) = locked_with_centered_wallpapers(&keyfile);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    // Centered, the picture's one pixel would be in the middle, with the colour around it.
+    let outputs = f.state.caminito.outputs.clone();
+    f.wait_for_pixel_on(&outputs[0], 100, 100, 0x406080);
+    f.wait_for_pixel_on(&outputs[1], 100, 100, 0x406080);
+}
+
+#[test]
+#[ignore = "needs CAMINITO_LOCKER, PAM_WRAPPER_MODULES, GTK and gtk-session-lock; tools/check runs it"]
+fn a_chosen_picture_that_is_missing_leaves_each_outputs_wallpaper() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("missing.png");
+    let keyfile = format!(
+        "{CENTERED_BACKGROUND}\n[org/mate/screensaver]\npicture-filename='{}'\n",
+        missing.display()
+    );
+    let (mut f, locker) = locked_with_centered_wallpapers(&keyfile);
+    f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
+
+    let outputs = f.state.caminito.outputs.clone();
+    f.wait_for_pixel_on(&outputs[0], 100, 100, 0x804060);
+    f.wait_for_pixel_on(&outputs[1], 100, 100, 0x608040);
 }
 
 #[test]

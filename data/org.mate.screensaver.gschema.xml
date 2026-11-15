@@ -91,7 +91,7 @@
       <description>Allow the session status message to be displayed when the screen is locked.</description>
     </key>
     <key name="picture-filename" type="s">
-      <default>'/usr/share/backgrounds/mate/desktop/Stripes.png'</default>
+      <default>''</default>
       <summary>Picture Filename</summary>
       <description>File to use for the background image.</description>
     </key>

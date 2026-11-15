@@ -43,7 +43,7 @@
  *
  * What the daemon gave the dialog, the locker finds itself (132), where the daemon did:
  *  - the background, as gs-manager.c's apply_background_to_window: the desktop's through
- *    MateBG, replaced by picture-filename when that file exists, drawn under each lock
+ *    MateBG, replaced by picture-filename, zoomed, when that file exists, drawn under each lock
  *    window's content as gs-window-x11.c's gs_window_real_draw does. Under Caminito the
  *    desktop's is each monitor's own wallpaper, from the file caminito-wallpaperd writes
  *    (218), and org.mate.background's where the file doesn't have it;
@@ -673,8 +673,8 @@ out:
 }
 
 /* gs-manager.c's apply_background_to_window, for a lock window at its size: MateBG's
- * background, read again for each, with picture-filename in its place when that file
- * exists. The desktop's is the window's monitor's in the wallpaper file, if it's there. The
+ * background, read again for each, with picture-filename in its place, zoomed, when that
+ * file exists. The desktop's is the window's monitor's in the wallpaper file, if it's there. The
  * picture is also under the window, in its layer (CMN-301), if it has one. */
 static Background* apply_background_to_window(GtkWidget* window, int width, int height, int scale)
 {
@@ -695,7 +695,12 @@ static Background* apply_background_to_window(GtkWidget* window, int width, int 
 	settings = g_settings_new ("org.mate.screensaver");
 	filename = g_settings_get_string (settings, "picture-filename");
 
-	if (g_file_test (filename, G_FILE_TEST_EXISTS)) {
+	/* The Lock screen's own picture, the same on every output and always zoomed, over the
+	 * desktop's colour: mate-screensaver kept the desktop's placement. Its default is none,
+	 * where mate-screensaver's was mate-backgrounds' Stripes.png (CMN-335). */
+	if (filename[0] != '\0' && g_file_test (filename, G_FILE_TEST_EXISTS)) {
+		gs_debug ("The Lock screen's own picture: %s", filename);
+		mate_bg_set_placement (bg, MATE_BG_PLACEMENT_ZOOMED);
 		mate_bg_set_filename (bg, filename);
 	}
 	g_free (filename);
