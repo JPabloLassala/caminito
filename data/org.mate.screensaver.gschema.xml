@@ -93,7 +93,7 @@
     <key name="picture-filename" type="s">
       <default>''</default>
       <summary>Picture Filename</summary>
-      <description>File to use for the background image.</description>
+      <description>File to use for the background image. Empty, each output shows its own desktop wallpaper.</description>
     </key>
     <key name="screensaver-arguments" type="a{ss}">
       <default>{}</default>

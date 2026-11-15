@@ -43,10 +43,10 @@
  *
  * What the daemon gave the dialog, the locker finds itself (132), where the daemon did:
  *  - the background, as gs-manager.c's apply_background_to_window: the desktop's through
- *    MateBG, replaced by picture-filename, zoomed, when that file exists, drawn under each lock
- *    window's content as gs-window-x11.c's gs_window_real_draw does. Under Caminito the
- *    desktop's is each monitor's own wallpaper, from the file caminito-wallpaperd writes
- *    (218), and org.mate.background's where the file doesn't have it;
+ *    MateBG, replaced by picture-filename, zoomed, when that file exists, drawn under each
+ *    lock window's content as gs-window-x11.c's gs_window_real_draw does. Under Caminito
+ *    the desktop's is each monitor's own wallpaper, from the file caminito-wallpaperd
+ *    writes (218), and org.mate.background's where the file doesn't have it;
  *  - the buttons and the status message, from gs-prefs.c's keys as gs-monitor.c's
  *    _gs_monitor_update_from_prefs gives them to the windows, and the status message from
  *    gs-watcher.c, as gs-monitor.c's on_watcher_status_message_changed;
@@ -674,8 +674,8 @@ out:
 
 /* gs-manager.c's apply_background_to_window, for a lock window at its size: MateBG's
  * background, read again for each, with picture-filename in its place, zoomed, when that
- * file exists. The desktop's is the window's monitor's in the wallpaper file, if it's there. The
- * picture is also under the window, in its layer (CMN-301), if it has one. */
+ * file exists. The desktop's is the window's monitor's in the wallpaper file, if it's
+ * there. The picture is also under the window, in its layer (CMN-301), if it has one. */
 static Background* apply_background_to_window(GtkWidget* window, int width, int height, int scale)
 {
 	GSWallpaperLayer      *layer = g_object_get_data(G_OBJECT(window), "layer");

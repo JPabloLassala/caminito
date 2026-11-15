@@ -1291,6 +1291,14 @@ color-shading-type='solid'
 primary-color='#608040'
 ";
 
+/// `CENTERED_BACKGROUND`, with mate-screensaver's `picture-filename` set to `path`.
+fn centered_with_picture_filename(path: &Path) -> String {
+    format!(
+        "{CENTERED_BACKGROUND}\n[org/mate/screensaver]\npicture-filename='{}'\n",
+        path.display()
+    )
+}
+
 /// Two outputs locked with `keyfile`: the first's wallpaper in the drawer's file is no
 /// picture, centered, over `0x804060`, and the second isn't in the file.
 fn locked_with_centered_wallpapers(keyfile: &str) -> (Fixture, Locker) {
@@ -1336,10 +1344,7 @@ fn a_chosen_picture_shows_zoomed_on_every_output_whatever_the_desktops_placement
     let dir = tempfile::tempdir().unwrap();
     let picture = dir.path().join("picture.png");
     std::fs::write(&picture, PICTURE).unwrap();
-    let keyfile = format!(
-        "{CENTERED_BACKGROUND}\n[org/mate/screensaver]\npicture-filename='{}'\n",
-        picture.display()
-    );
+    let keyfile = centered_with_picture_filename(&picture);
     let (mut f, locker) = locked_with_centered_wallpapers(&keyfile);
     f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
 
@@ -1354,10 +1359,7 @@ fn a_chosen_picture_shows_zoomed_on_every_output_whatever_the_desktops_placement
 fn a_chosen_picture_that_is_missing_leaves_each_outputs_wallpaper() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("missing.png");
-    let keyfile = format!(
-        "{CENTERED_BACKGROUND}\n[org/mate/screensaver]\npicture-filename='{}'\n",
-        missing.display()
-    );
+    let keyfile = centered_with_picture_filename(&missing);
     let (mut f, locker) = locked_with_centered_wallpapers(&keyfile);
     f.dispatch_until_explained(|f| f.lock_state() == "locked", || locker.seen());
 

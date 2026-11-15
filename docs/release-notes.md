@@ -2,6 +2,16 @@
 
 What someone upgrading has to do by hand.
 
+## The Lock screen shows the desktop's wallpaper (CMN-335)
+
+- **Stripes is gone from the Lock screen.** `org.mate.screensaver`'s `picture-filename` now
+  defaults to empty, so each output's Lock screen shows its own desktop wallpaper, where
+  mate-backgrounds' `Stripes.png` showed before. A picture you set yourself stays, and is now
+  always zoomed: to have Stripes back, set the key to
+  `/usr/share/backgrounds/mate/desktop/Stripes.png`. With the mate-screensaver package installed
+  too, Caminito's copy of the schema is the one kept, so an X11 session's mate-screensaver shows
+  the desktop's background as well.
+
 ## The Lock screen without the mate-screensaver package (CMN-297, ADR 0056)
 
 - **A customised PAM file has to be redone.** caminito-locker now authenticates through
