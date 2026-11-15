@@ -2,7 +2,8 @@
 # Dock items are the desktop entries with windows, read through libxfce4windowing, the
 # library mate-panel's own window list reads Caminito's windows with (ADR 0013). Its own
 # project, which the top-level meson.build includes as a subproject and installs. It's called
-# "Dock" in Add to Panel.
+# "Icons Only Task List" in Add to Panel; its ids keep the old name, Dock, so a panel that
+# has it keeps it.
 project(
   'caminito-dock-applet',
   'c',

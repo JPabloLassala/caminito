@@ -118,4 +118,4 @@ factory (MatePanelApplet *applet, const char *iid, gpointer data G_GNUC_UNUSED)
   return fill (applet);
 }
 
-MATE_PANEL_APPLET_IN_PROCESS_FACTORY (FACTORY_ID, PANEL_TYPE_APPLET, "Dock", factory, NULL)
+MATE_PANEL_APPLET_IN_PROCESS_FACTORY (FACTORY_ID, PANEL_TYPE_APPLET, "Icons Only Task List", factory, NULL)

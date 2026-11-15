@@ -2,11 +2,11 @@
 Id=CaminitoDockAppletFactory
 InProcess=true
 Location=@APPLET_LOCATION@
-Name=Dock Applet Factory
-Description=Caminito's Dock applet
+Name=Icons Only Task List Applet Factory
+Description=Caminito's Icons Only Task List applet
 
 [CaminitoDockApplet]
-Name=Dock
+Name=Icons Only Task List
 Description=The programs that are running, and the ones you keep, in a row of icons
 Icon=user-desktop
 MateComponentId=OAFIID:Caminito_DockApplet;
