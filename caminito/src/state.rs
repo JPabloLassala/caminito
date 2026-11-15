@@ -1236,7 +1236,7 @@ impl Caminito {
 
     /// The colours of the palette the compositor draws from: its dark variant while the
     /// Colour scheme is dark (ADR 0059).
-    pub fn palette_colors(&self) -> &PaletteColors {
+    pub(crate) fn palette_colors(&self) -> &PaletteColors {
         self.palette
             .palette()
             .variant(palette_variant(&self.settings))
@@ -1308,6 +1308,8 @@ impl Caminito {
 
     /// Draws again the strips of every frame whose inputs changed, and redraws if any did.
     fn refresh_frames(&mut self) {
+        // `palette_colors`, borrowing only the palette and the settings, as the frames are
+        // borrowed mutably below.
         let colors = self
             .palette
             .palette()
