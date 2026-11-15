@@ -24,6 +24,7 @@ A switch that only sets `color-scheme`, or GTK's `prefer-dark`, does nothing for
 
 - There are now two sources of truth for the GTK theme: the Appearances and the Colour scheme. That's what ADR 0005 rejected. It is kept consistent by having one writer (Caminito) and by treating every theme change as an edit to the active Appearance.
 - Debian's mate-control-center carries Ubuntu's `2001_appearance_support.patch`, which writes `color-scheme` from a `-dark` theme name. It's gated off under Caminito, so it doesn't compete with this key.
+- The `prefer-dark` fallback reaches GTK3 apps only through `~/.config/gtk-3.0/settings.ini`, so Caminito writes `gtk-application-prefer-dark-theme` there with the Colour scheme: `true` when the dark Appearance is the fallback, `false` otherwise. It changes only that key in the file. GTK3 reads the file once, when an app starts, so a running GTK3 app keeps its look until it's restarted, while GTK4, libadwaita and portal apps and the compositor's surfaces switch right away. GTK3 has no other path: the Wayland backend's GNOME schemas and the portal have no prefer-dark key, XSETTINGS drops it, and `GTK_THEME=name:dark` pins the theme. The findings, with GTK3 source lines, are in CMN-326.
 - A schedule, such as dark from sunset using Night Light's sun schedule, can be added later on top of the same key. It isn't part of this decision.
 - Rejected:
   - a switch that only sets the Colour scheme and `prefer-dark` (it does nothing for Breeze, Yaru or MATE's themes);
