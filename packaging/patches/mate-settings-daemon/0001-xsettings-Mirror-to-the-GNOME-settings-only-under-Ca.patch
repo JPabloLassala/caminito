@@ -28,10 +28,10 @@ org.gnome.desktop.interface color-scheme: prefer-dark for dark, and
 default for light.
 ---
  plugins/xsettings/Makefile.am             |   2 +
- plugins/xsettings/msd-gnome-mirror.c      | 353 ++++++++++++++++++++++++++
+ plugins/xsettings/msd-gnome-mirror.c      | 357 ++++++++++++++++++++++++++
  plugins/xsettings/msd-gnome-mirror.h      |  35 +++
  plugins/xsettings/msd-xsettings-manager.c |  16 ++
- 4 files changed, 406 insertions(+)
+ 4 files changed, 410 insertions(+)
  create mode 100644 plugins/xsettings/msd-gnome-mirror.c
  create mode 100644 plugins/xsettings/msd-gnome-mirror.h
 
@@ -50,10 +50,10 @@ index e81842f..aa73e98 100644
  	xsettings-manager.h	\
 diff --git a/plugins/xsettings/msd-gnome-mirror.c b/plugins/xsettings/msd-gnome-mirror.c
 new file mode 100644
-index 0000000..4e276e5
+index 0000000..de2a905
 --- /dev/null
 +++ b/plugins/xsettings/msd-gnome-mirror.c
-@@ -0,0 +1,353 @@
+@@ -0,0 +1,357 @@
 +/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 8 -*-
 + *
 + * Copyright (C) 2026 MATE Developers
@@ -113,7 +113,8 @@ index 0000000..4e276e5
 +        const char *mate_key;
 +        const char *gnome_schema;
 +        const char *gnome_key;
-+        /* NULL copies the value as it is */
++        /* NULL copies the value as it is. A translation that gives NULL
++         * leaves the GNOME key as it is. */
 +        MirrorFunc  translate;
 +        /* What the GNOME key gets when it cannot have the value. With NULL,
 +         * the key stays as it is. */
@@ -159,8 +160,8 @@ index 0000000..4e276e5
 +/* Caminito keeps the colour scheme, the user's choice of light or dark, and
 + * applies the matching themes into MATE's keys (Caminito's ADR 0059). Never
 + * "prefer-light": "default" is what light means to the apps that read it
-+ * from the portal. "unset", before Caminito's first start, is left as it is:
-+ * GNOME's key cannot have it, and the entry has no fallback. */
++ * from the portal. Before Caminito's first start the scheme is "unset", and
++ * the GNOME key is left as it is. */
 +static GVariant *
 +translate_color_scheme (GVariant *value)
 +{
@@ -173,7 +174,7 @@ index 0000000..4e276e5
 +                return g_variant_new_string ("default");
 +        }
 +
-+        return g_variant_new_string (scheme);
++        return NULL;
 +}
 +
 +static const MirrorEntry mirror_entries [] = {
@@ -266,6 +267,9 @@ index 0000000..4e276e5
 +                GVariant *translated = entry->translate (value);
 +
 +                g_variant_unref (value);
++                if (translated == NULL) {
++                        return;
++                }
 +                value = g_variant_ref_sink (translated);
 +        }
 +
