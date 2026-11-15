@@ -243,7 +243,7 @@ fn the_power_line_says_when_the_screens_turn_off() {
         keys.power
             .set_int("sleep-display-battery", battery)
             .unwrap();
-        screen_locking.power_off().unwrap()
+        screen_locking.power_line().unwrap()
     };
     assert_eq!(
         line(1800, 600),
@@ -267,7 +267,7 @@ fn without_powers_schema_there_is_no_power_line() {
     let dir = tempfile::tempdir().unwrap();
     let keys = Keys::new(dir.path());
     let screen_locking = ScreenLocking::new(keys.session.clone(), keys.screensaver.clone(), None);
-    assert_eq!(screen_locking.power_off(), None);
+    assert_eq!(screen_locking.power_line(), None);
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn keys_set_from_outside_are_heard() {
                 let hear = hear("format");
                 move |clock, format| hear(format!("{clock:?} {format}"))
             });
-            screen_locking.connect_power_off_changed(hear("power"));
+            screen_locking.connect_power_line_changed(hear("power"));
 
             let session = keys.outside("org.mate.session");
             let screensaver = keys.outside("org.mate.screensaver");
@@ -333,4 +333,21 @@ fn keys_set_from_outside_are_heard() {
             );
         })
         .unwrap();
+}
+
+#[test]
+fn delays_set_outside_the_lists_are_read_back_as_they_are() {
+    let dir = tempfile::tempdir().unwrap();
+    let keys = Keys::new(dir.path());
+    keys.outside("org.mate.session")
+        .set_int("idle-delay", 7)
+        .unwrap();
+    keys.outside("org.mate.screensaver")
+        .set_int("lock-delay", 3)
+        .unwrap();
+    let screen_locking = keys.screen_locking();
+    assert_eq!(screen_locking.blank_delay(), Delay::Minutes(7));
+    assert_eq!(screen_locking.lock_delay(), Delay::Minutes(3));
+    assert!(blank_choices(screen_locking.blank_delay()).contains(&Delay::Minutes(7)));
+    assert_eq!(keys.session.int("idle-delay"), 7);
 }

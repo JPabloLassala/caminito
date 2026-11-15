@@ -1,5 +1,5 @@
 //! The Screen locking page (CMN-337): the Blank delay's and the Lock delay's drop-downs, the
-//! Idle view's two clock formats, a line on when Power has the screens turned off, and the
+//! Idle view's two clock formats, a line on when Power has the outputs powered off, and the
 //! programs that set the Lock wallpaper and the Lock screen's notifications. A choice is
 //! written to its key at once, as the other pages' are, and the page follows the keys when
 //! they change from outside. While the Blank delay is Never the Lock delay is greyed out with
@@ -9,7 +9,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use caminito_behaviour::screen_locking::{
-    Clock, Delay, ScreenLocking, blank_choices, lock_choices, preview,
+    Clock, Delay, LOCALE, ScreenLocking, blank_choices, lock_choices, preview,
 };
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
@@ -96,7 +96,9 @@ pub fn build(screen_locking: ScreenLocking) -> gtk::Widget {
     if let Some(power) = power_line(&screen_locking) {
         page.append(&power);
     }
-    page.append(&elsewhere());
+    if let Some(elsewhere) = elsewhere() {
+        page.append(&elsewhere);
+    }
     page.upcast()
 }
 
@@ -262,11 +264,9 @@ fn clock_row(grid: &gtk::Grid, row: i32, screen_locking: &Rc<ScreenLocking>, clo
             let current = screen_locking.format(clock);
             let Some(preset) = presets.get(dropdown.selected() as usize) else {
                 // Custom: the field starts from the format in use, which is written only
-                // once it's changed. `locale` is no GDateTime format to start from.
+                // once it's changed. The locale's is no GDateTime format to start from.
                 custom_box.set_visible(true);
-                if entry.text().is_empty() && current != "locale" {
-                    entry.set_text(&current);
-                }
+                entry.set_text(if current == LOCALE { "" } else { &current });
                 show_preview(&entry.text());
                 return;
             };
@@ -308,17 +308,17 @@ fn clock_row(grid: &gtk::Grid, row: i32, screen_locking: &Rc<ScreenLocking>, clo
     grid.attach(&custom_box, 0, row + 1, 2, 1);
 }
 
-/// The line on when Power has the screens turned off, with a button that opens Power where
+/// The line on when Power has the outputs powered off, with a button that opens Power where
 /// it's installed, or `None` without mate-power-manager's schema.
 fn power_line(screen_locking: &Rc<ScreenLocking>) -> Option<gtk::Widget> {
-    let text = screen_locking.power_off()?;
+    let text = screen_locking.power_line()?;
     let label = gtk::Label::builder()
         .label(&text)
         .wrap(true)
         .xalign(0.0)
         .hexpand(true)
         .build();
-    screen_locking.connect_power_off_changed({
+    screen_locking.connect_power_line_changed({
         let label = label.clone();
         move |text| label.set_label(&text)
     });
@@ -333,8 +333,9 @@ fn power_line(screen_locking: &Rc<ScreenLocking>) -> Option<gtk::Widget> {
     Some(line.upcast())
 }
 
-/// The line that sends the user to the programs that set the rest of the Lock screen.
-fn elsewhere() -> gtk::Widget {
+/// The line that sends the user to the programs that set the rest of the Lock screen, or
+/// `None` if neither is installed.
+fn elsewhere() -> Option<gtk::Widget> {
     let line = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(SPACING / 2)
@@ -347,15 +348,20 @@ fn elsewhere() -> gtk::Widget {
             .hexpand(true)
             .build(),
     );
-    for (text, id) in [
+    let buttons: Vec<gtk::Button> = [
         ("Wallpaper…", "caminito-wallpaper.desktop"),
         ("Notifications…", "caminito-notifications.desktop"),
-    ] {
-        if let Some(button) = opener(text, id) {
-            line.append(&button);
-        }
+    ]
+    .into_iter()
+    .filter_map(|(text, id)| opener(text, id))
+    .collect();
+    if buttons.is_empty() {
+        return None;
     }
-    line.upcast()
+    for button in &buttons {
+        line.append(button);
+    }
+    Some(line.upcast())
 }
 
 /// A button that starts the program of the desktop entry `id`, or `None` if it isn't

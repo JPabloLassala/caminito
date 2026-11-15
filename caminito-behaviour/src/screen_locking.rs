@@ -81,6 +81,10 @@ fn choices(offered: &[u32], current: Delay) -> Vec<Delay> {
         .collect()
 }
 
+/// The clocks' format that caminito-locker writes for the locale, as no GDateTime format
+/// can.
+pub const LOCALE: &str = "locale";
+
 /// A format the clock drop-down offers by name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Preset {
@@ -120,16 +124,16 @@ impl Clock {
         }
     }
 
-    /// The formats offered by name, the locale's first. The locale's date is already
-    /// caminito-locker's `%A, %B %e`, so no long date is offered beside it.
+    /// The formats offered by name, the locale's first. The locale's date is caminito-locker's
+    /// `%A, %B %e` translated, so the Long date is the same in English only.
     pub fn presets(self) -> &'static [Preset] {
-        const LOCALE: Preset = Preset {
+        const LOCALE_PRESET: Preset = Preset {
             label: "Locale",
-            format: "locale",
+            format: LOCALE,
         };
         match self {
             Clock::Time => &[
-                LOCALE,
+                LOCALE_PRESET,
                 Preset {
                     label: "24-hour",
                     format: "%R",
@@ -140,14 +144,14 @@ impl Clock {
                 },
             ],
             Clock::Date => &[
-                LOCALE,
+                LOCALE_PRESET,
                 Preset {
                     label: "ISO 8601",
                     format: "%F",
                 },
                 Preset {
-                    label: "Numeric",
-                    format: "%x",
+                    label: "Long",
+                    format: "%A, %B %e",
                 },
             ],
         }
@@ -272,8 +276,8 @@ impl ScreenLocking {
 
     /// The Power line: when mate-power-manager has the outputs powered off, or `None` if
     /// its schema isn't installed.
-    pub fn power_off(&self) -> Option<String> {
-        self.power.as_ref().map(power_off)
+    pub fn power_line(&self) -> Option<String> {
+        self.power.as_ref().map(power_line)
     }
 
     /// Calls `f` with the Blank delay each time one of its two keys changes.
@@ -313,13 +317,13 @@ impl ScreenLocking {
     }
 
     /// Calls `f` with the Power line each time one of its keys changes.
-    pub fn connect_power_off_changed(&self, f: impl Fn(String) + 'static) {
+    pub fn connect_power_line_changed(&self, f: impl Fn(String) + 'static) {
         let Some(power) = &self.power else {
             return;
         };
         power.connect_changed(None, move |settings, key| {
             if SLEEP_DISPLAY.contains(&key) {
-                f(power_off(settings));
+                f(power_line(settings));
             }
         });
     }
@@ -330,7 +334,7 @@ fn read_blank_delay(session: &gio::Settings, screensaver: &gio::Settings) -> Del
     if !screensaver.boolean(IDLE_ACTIVATION) {
         return Delay::Never;
     }
-    Delay::Minutes(session.int(IDLE_DELAY).max(0) as u32)
+    Delay::Minutes(count(session, IDLE_DELAY))
 }
 
 /// The Lock delay of `screensaver`.
@@ -338,12 +342,12 @@ fn read_lock_delay(screensaver: &gio::Settings) -> Delay {
     if !screensaver.boolean(LOCK_ENABLED) {
         return Delay::Never;
     }
-    Delay::Minutes(screensaver.int(LOCK_DELAY).max(0) as u32)
+    Delay::Minutes(count(screensaver, LOCK_DELAY))
 }
 
 /// The Power line of `power`, `org.mate.power-manager`.
-fn power_off(power: &gio::Settings) -> String {
-    let [ac, battery] = SLEEP_DISPLAY.map(|key| power.int(key).max(0) as u32);
+fn power_line(power: &gio::Settings) -> String {
+    let [ac, battery] = SLEEP_DISPLAY.map(|key| count(power, key));
     match (ac, battery) {
         (0, 0) => "The screens never turn off.".into(),
         (ac, battery) if ac == battery => {
@@ -375,7 +379,12 @@ fn seconds_label(seconds: u32) -> String {
     }
 }
 
-/// Writes `value` to `settings`' `key`, which counts minutes.
+/// `settings`' `key`, a count of minutes or seconds, with a negative one read as zero.
+fn count(settings: &gio::Settings, key: &str) -> u32 {
+    settings.int(key).max(0) as u32
+}
+
+/// Writes `value` to `settings`' `key`, as the `i` GSettings has it.
 fn set_int(settings: &gio::Settings, key: &'static str, value: u32) -> Result<(), Error> {
     let value = i32::try_from(value).unwrap_or(i32::MAX);
     settings
