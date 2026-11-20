@@ -17,7 +17,8 @@ use smithay::reexports::pixman::Image;
 use smithay::utils::{Buffer, Physical, Point, Raw, Rectangle, Size, Transform};
 
 use crate::esmeril::DrawsEsmeril;
-use crate::output::{DEFAULT_REFRESH, virtual_output};
+use crate::fast_path::FastPath;
+use crate::output::{DEFAULT_REFRESH, output_id, virtual_output};
 use crate::scene::{self, CLEAR_COLOR};
 use crate::state::Caminito;
 
@@ -347,10 +348,11 @@ impl Headless {
     pub fn render(&mut self, caminito: &mut Caminito, output: &Output) -> RenderElementStates {
         let index = target_index(&self.targets, output).expect("a headless output");
         let target = &mut self.targets[index];
-        let states = drawing!(&mut self.drawing, renderer, memory, _T => {
+        let (states, fast_path) = drawing!(&mut self.drawing, renderer, memory, _T => {
             render(renderer, &mut memory[index], &mut target.damage_tracker, caminito, output)
         });
         target.rendered = true;
+        caminito.fast_paths.insert(output_id(output), fast_path);
         states
     }
 
@@ -389,14 +391,15 @@ where
         .expect("the headless renderer makes memory for an output")
 }
 
-/// Renders `output` into `memory`, and returns how each element was drawn.
+/// Renders `output` into `memory`, and returns how each element was drawn and whether the
+/// frame could take the fast path.
 fn render<R, T>(
     renderer: &mut R,
     memory: &mut T,
     damage_tracker: &mut OutputDamageTracker,
     caminito: &Caminito,
     output: &Output,
-) -> RenderElementStates
+) -> (RenderElementStates, FastPath)
 where
     R: Renderer + ImportAll + ImportMem + DrawsEsmeril + Bind<T>,
     R::TextureId: Send + Clone + 'static,
@@ -404,11 +407,12 @@ where
     let mut framebuffer = renderer
         .bind(memory)
         .expect("the headless renderer binds its own memory");
-    let elements = scene::output_elements(renderer, caminito, output);
-    damage_tracker
+    let (elements, fast_path) = scene::output_frame(renderer, caminito, output);
+    let states = damage_tracker
         .render_output(renderer, &mut framebuffer, 0, &elements, CLEAR_COLOR)
         .expect("the headless renderer draws the scene")
-        .states
+        .states;
+    (states, fast_path)
 }
 
 /// The pixels of `memory` in `rect` as ARGB8888, row by row from the top. GLES's mapping

@@ -331,6 +331,7 @@ impl Caminito {
         let id = self.output_id(output);
         self.outputs.retain(|o| o != output);
         self.redraws.remove(&id);
+        self.fast_paths.remove(&id);
         self.night_light_output_removed(id);
         let record = self
             .output_records

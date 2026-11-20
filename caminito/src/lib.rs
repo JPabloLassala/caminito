@@ -12,6 +12,7 @@ pub mod debug;
 pub mod decoration;
 mod dialogs;
 mod esmeril;
+mod fast_path;
 mod handlers;
 pub mod helpers;
 mod hot_corner;

@@ -31,6 +31,7 @@ mod edge_resistance;
 mod esmeril;
 mod esmeril_animations;
 mod ext_workspace;
+mod fast_path;
 mod fixture;
 mod flash_probe;
 mod focus_modes;

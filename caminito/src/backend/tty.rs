@@ -61,7 +61,7 @@ use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use self::gamma::CrtcGamma;
 use crate::backend::Backend;
 use crate::input::devices::ConfigurableDevice;
-use crate::output::{DEFAULT_REFRESH, UNKNOWN_EDID_TEXT};
+use crate::output::{DEFAULT_REFRESH, UNKNOWN_EDID_TEXT, output_id};
 use crate::scene::{self, CLEAR_COLOR, SceneElement};
 use crate::state::{Caminito, State};
 
@@ -581,7 +581,8 @@ impl Tty {
         }
 
         let start = Instant::now();
-        let elements = scene::output_elements(&mut gpu.renderer, caminito, output);
+        let (elements, fast_path) = scene::output_frame(&mut gpu.renderer, caminito, output);
+        caminito.fast_paths.insert(output_id(output), fast_path);
         let built = Instant::now();
         let result = monitor.drm_output.render_frame(
             &mut gpu.renderer,

@@ -689,6 +689,20 @@ impl Client {
             .set_window_geometry(x, y, width, height);
     }
 
+    /// Sets the window's opaque region to `(x, y, width, height)` of its surface, or to none
+    /// with `None`. It applies at the next commit with a buffer.
+    pub fn set_opaque_region(&mut self, id: WindowId, rect: Option<(i32, i32, i32, i32)>) {
+        let region = rect.map(|(x, y, width, height)| {
+            let region = self.compositor().create_region(&self.qh, ());
+            region.add(x, y, width, height);
+            region
+        });
+        self.window(id).surface.set_opaque_region(region.as_ref());
+        if let Some(region) = region {
+            region.destroy();
+        }
+    }
+
     /// The window's `wl_surface` object id, which the compositor sees too.
     pub fn surface_protocol_id(&self, id: WindowId) -> u32 {
         self.window(id).surface.id().protocol_id()

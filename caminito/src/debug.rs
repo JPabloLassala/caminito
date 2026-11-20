@@ -16,6 +16,7 @@ use smithay::utils::{FrameExtents, Logical, Point, Rectangle};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, KeyboardInteractivity, Layer};
 
 use crate::decoration::memory_buffer;
+use crate::fast_path::FastPath;
 use crate::output::{output_geometry, output_id};
 use crate::popup_slide::DrawnSlide;
 use crate::scene;
@@ -718,6 +719,40 @@ struct OutputDump {
     layer_surfaces: Vec<LayerSurfaceDump>,
     /// Whether the locker that holds the lock has a lock surface on it (12).
     lock_surface: bool,
+    /// Whether its last frame could take the fast path (CMN-312); `null` before its first.
+    fast_path: Option<FastPathDump>,
+}
+
+/// Whether an output's frame could take the fast path (CMN-312): one opaque fullscreen
+/// window covers the output and nothing is drawn over it.
+#[derive(Serialize)]
+struct FastPathDump {
+    eligible: bool,
+    /// The window, by id, that's all the frame shows, if it's eligible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    window: Option<u64>,
+    /// Why not: `no-fullscreen-window`, `does-not-cover`, `translucent` or `drawn-over`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'static str>,
+    /// What's drawn over the window: `workspace-slide`, `popup`, `subsurface`, `window` (one
+    /// of its transients, say), or the scene layer above, such as `overlay`, where the
+    /// Notification bubbles are, `overview`, `switcher` or `lock`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    over: Option<&'static str>,
+}
+
+impl From<FastPath> for FastPathDump {
+    fn from(fast_path: FastPath) -> Self {
+        FastPathDump {
+            eligible: fast_path.reason().is_none(),
+            window: match fast_path {
+                FastPath::Eligible(window) => Some(window.0),
+                FastPath::NotEligible(_) => None,
+            },
+            reason: fast_path.reason(),
+            over: fast_path.over(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -924,6 +959,10 @@ impl Caminito {
                     })
                     .collect(),
                 lock_surface: self.lock.surface_on(output).is_some(),
+                fast_path: self
+                    .fast_paths
+                    .get(&output_id(output))
+                    .map(|fast_path| (*fast_path).into()),
             })
             .collect();
         let bindings = self
