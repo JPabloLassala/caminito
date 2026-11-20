@@ -322,6 +322,37 @@ test_rows_limit (void)
 }
 
 static void
+test_rows_wear (void)
+{
+  static const struct
+  {
+    double capacity;
+    PwWear wear;
+  } cases[] = {
+    { 92, PW_WEAR_NONE },
+    /* Rounded first, as the label shows it: 80%. */
+    { 79.6, PW_WEAR_NONE },
+    { 79, PW_WEAR_WORN },
+    { 60, PW_WEAR_WORN },
+    { 59, PW_WEAR_POOR },
+    /* Unknown: not worn. */
+    { 0, PW_WEAR_NONE },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    {
+      g_autoptr (GPtrArray) devices = devices_new ();
+      g_autoptr (GPtrArray) rows = NULL;
+      PwDevice *device = device_new (BAT0, PW_TYPE_BATTERY, TRUE, PW_STATE_DISCHARGING, 50, NULL);
+
+      device->capacity = cases[i].capacity;
+      g_ptr_array_add (devices, device);
+      rows = pw_state_rows (devices);
+      g_assert_cmpint (row_at (rows, 0)->wear, ==, cases[i].wear);
+    }
+}
+
+static void
 test_rows_peripherals (void)
 {
   g_autoptr (GPtrArray) devices = devices_new ();
@@ -444,6 +475,7 @@ main (int argc, char **argv)
   g_test_add_func ("/rows/one-battery-is-just-battery", test_rows_one_battery);
   g_test_add_func ("/rows/the-four-states-in-words", test_rows_states);
   g_test_add_func ("/rows/the-limit-health-and-switch", test_rows_limit);
+  g_test_add_func ("/rows/the-health-s-wear", test_rows_wear);
   g_test_add_func ("/rows/peripherals-have-their-icon-and-a-name", test_rows_peripherals);
   g_test_add_func ("/rows/low-is-below-20-as-shown", test_rows_low_is_the_shown_percentage);
   g_test_add_func ("/rows/the-mains-and-what-is-off-are-left-out", test_rows_leave_out);

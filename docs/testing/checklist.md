@@ -3101,10 +3101,11 @@ stands in for. They are the developer's to run.
      `charge-end-threshold` is below 100), and answer polkit if it asks. Leave the charger in until
      the battery is above 80%, or start above it.
   3. Turn it off.
-- **Expected:** in step 1 the popover has the battery's health and the switch. In step 2 `upower
+- **Expected:** in step 1 the row has the battery's health under its percentage, and the popover
+  has the switch. In step 2 `upower
   -i` says `charge-threshold-enabled: yes`, the row says *· limit 80%* (or the firmware's
-  threshold), and the battery doesn't charge past it (*Not charging*). In step 3 it charges again to full. On a battery that doesn't
-  support it, the popover has the health only.
+  threshold), and the battery doesn't charge past it (*Not charging*). In step 3 it charges again to full. A battery that doesn't
+  support it has its health in the row and no ⋮ button.
 - **Debug tool:** `upower -i`, and
   `cat /sys/class/power_supply/BAT0/charge_control_end_threshold`.
 

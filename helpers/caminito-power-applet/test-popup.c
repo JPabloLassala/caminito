@@ -190,7 +190,7 @@ table_of (Fixture *fixture)
   return bar != NULL ? gtk_widget_get_ancestor (bar, GTK_TYPE_GRID) : NULL;
 }
 
-/* The ⋮ buttons, a laptop battery's each, in the order of the table. */
+/* The ⋮ buttons, each of a battery with a charge limit, in the order of the table. */
 static GPtrArray *
 menu_buttons (Fixture *fixture)
 {
@@ -224,13 +224,14 @@ test_lists_laptop_batteries_then_peripherals (Fixture *fixture, gconstpointer da
 
   pw_popup_update_devices (fixture->content, devices);
   all = texts (table_of (fixture));
-  /* Each row's name and state and percentage, and a ⋮ on the laptop's. */
+  /* Each row's name and state and percentage, the laptop's health, and a ⋮ where the
+     battery has a charge limit. */
   g_assert_cmpstr (all, ==,
-                   "Battery 1|Discharging|73%|⋮"
-                   "|Battery 2|Discharging|80%|⋮"
+                   "Battery 1|Discharging|73%|Health 58%|⋮"
+                   "|Battery 2|Discharging|80%|Health 58%"
                    "|MX Master 3S|Discharging|55%");
   buttons = menu_buttons (fixture);
-  g_assert_cmpuint (buttons->len, ==, 2);
+  g_assert_cmpuint (buttons->len, ==, 1);
 }
 
 static void
@@ -297,25 +298,39 @@ test_below_20_is_in_the_warning_colour (Fixture *fixture, gconstpointer data G_G
 }
 
 static void
-test_menu_has_health_and_the_switch_where_supported (Fixture *fixture,
-                                                      gconstpointer data G_GNUC_UNUSED)
+test_menu_has_the_switch_where_supported (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
 {
   g_autoptr (GPtrArray) devices = devices_new (battery_new (BAT0, 73, TRUE),
                                                battery_new (BAT1, 80, FALSE), NULL);
   g_autoptr (GPtrArray) buttons = NULL;
-  g_autofree char *with = NULL;
-  g_autofree char *without = NULL;
+  g_autofree char *menu = NULL;
 
   pw_popup_update_devices (fixture->content, devices);
+  /* The health is in the row: the battery without a charge limit has nothing for a ⋮. */
   buttons = menu_buttons (fixture);
-  g_assert_cmpuint (buttons->len, ==, 2);
-  with = texts (menu_of (g_ptr_array_index (buttons, 0)));
-  without = texts (menu_of (g_ptr_array_index (buttons, 1)));
-  g_assert_cmpstr (with, ==, "Health 58%|Limit charging to 80%");
+  g_assert_cmpuint (buttons->len, ==, 1);
+  menu = texts (menu_of (g_ptr_array_index (buttons, 0)));
+  g_assert_cmpstr (menu, ==, "Limit charging to 80%");
   g_assert_nonnull (find (menu_of (g_ptr_array_index (buttons, 0)), GTK_TYPE_SWITCH));
-  /* Where the charge limit isn't supported: health alone, and no switch. */
-  g_assert_cmpstr (without, ==, "Health 58%");
-  g_assert_null (find (menu_of (g_ptr_array_index (buttons, 1)), GTK_TYPE_SWITCH));
+}
+
+static void
+test_worn_health_is_in_the_warning_colours (Fixture *fixture, gconstpointer data G_GNUC_UNUSED)
+{
+  PwDevice *good = battery_new (BAT0, 73, FALSE);
+  PwDevice *worn = battery_new (BAT1, 80, FALSE);
+  g_autoptr (GPtrArray) devices = devices_new (good, worn, NULL);
+  GtkStyleContext *style;
+
+  good->capacity = 92;
+  worn->capacity = 71;
+  pw_popup_update_devices (fixture->content, devices);
+  style = gtk_widget_get_style_context (find_label (content (fixture), "Health 92%"));
+  g_assert_true (gtk_style_context_has_class (style, GTK_STYLE_CLASS_DIM_LABEL));
+  g_assert_false (gtk_style_context_has_class (style, "caminito-power-worn"));
+  style = gtk_widget_get_style_context (find_label (content (fixture), "Health 71%"));
+  g_assert_true (gtk_style_context_has_class (style, "caminito-power-worn"));
+  g_assert_false (gtk_style_context_has_class (style, GTK_STYLE_CLASS_DIM_LABEL));
 }
 
 static void
@@ -492,7 +507,8 @@ main (int argc, char **argv)
   g_test_add ("/popup/peripherals-alone-have-no-menu", Fixture, NULL, setup, test_only_peripherals, teardown);
   g_test_add ("/popup/the-bar-follows-the-percentage", Fixture, NULL, setup, test_bar_follows_the_percentage, teardown);
   g_test_add ("/popup/below-20-is-in-the-warning-colour", Fixture, NULL, setup, test_below_20_is_in_the_warning_colour, teardown);
-  g_test_add ("/popup/the-menu-has-health-and-the-switch-where-supported", Fixture, NULL, setup, test_menu_has_health_and_the_switch_where_supported, teardown);
+  g_test_add ("/popup/the-menu-has-the-switch-where-supported", Fixture, NULL, setup, test_menu_has_the_switch_where_supported, teardown);
+  g_test_add ("/popup/worn-health-is-in-the-warning-colours", Fixture, NULL, setup, test_worn_health_is_in_the_warning_colours, teardown);
   g_test_add ("/popup/the-limit-is-in-the-state-and-the-switch", Fixture, NULL, setup, test_limit_is_in_the_state_and_the_switch, teardown);
   g_test_add ("/popup/the-switch-calls-enable-charge-threshold", Fixture, NULL, setup, test_switch_calls_enable_charge_threshold, teardown);
   g_test_add ("/popup/a-refusal-leaves-the-switch-as-it-was", Fixture, NULL, setup, test_refusal_leaves_the_switch_as_it_was, teardown);

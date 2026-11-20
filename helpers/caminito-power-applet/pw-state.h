@@ -135,11 +135,22 @@ typedef struct
 PwDevice *pw_device_new  (void);
 void      pw_device_free (PwDevice *device);
 
+/* How worn a battery is, from its health: what colour the health is in. */
+typedef enum
+{
+  /* 80% or more, or unknown. */
+  PW_WEAR_NONE,
+  /* Below 80%. */
+  PW_WEAR_WORN,
+  /* Below 60%. */
+  PW_WEAR_POOR,
+} PwWear;
+
 /* A row of the table, as drawn. */
 typedef struct
 {
   char     *path;
-  /* A laptop's battery: it has the ⋮, and comes first. Else a peripheral. */
+  /* A laptop's battery: it has the health, and comes first. Else a peripheral. */
   gboolean  laptop;
   char     *name;
   /* "Discharging", or "Charging · limit 80%". */
@@ -154,8 +165,10 @@ typedef struct
   gboolean  low;
   /* Laptop only. "Health 58%", or "Health unknown". */
   char     *health;
-  /* Where the battery has a charge limit, whether it's on, and the percentage it limits
-     to: the one UPower has, or 80 where UPower has none that limits. */
+  PwWear    wear;
+  /* Where the battery has a charge limit (it has the ⋮), whether it's on, and the
+     percentage it limits to: the one UPower has, or 80 where UPower has none that
+     limits. */
   gboolean  limit_supported;
   gboolean  limit_enabled;
   guint     limit_end;

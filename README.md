@@ -462,9 +462,10 @@ no battery it's a plug. Its popup has:
   or tuned-ppd, runs.
 - _Stay awake_, which keeps the computer from sleeping and the screen from locking until it's
   turned off, and the applications that keep the computer awake.
-- Every battery: the laptop's, with its health and, where the battery supports it, _Limit
-  charging to 80%_ under its ⋮ button (the firmware's own end threshold where it has one), and
-  the mouse's, the keyboard's and the headset's.
+- Every battery, with whether it's charging under its name: the laptop's, with its health under
+  its percentage and, where the battery supports it, _Limit charging to 80%_ under its ⋮ button
+  (the firmware's own end threshold where it has one), and the mouse's, the keyboard's and the
+  headset's.
 - _Configure Power Management…_, which opens mate-power-preferences.
 
 It reads UPower, power-profiles-daemon and mate-session directly, so it depends on `upower`, and

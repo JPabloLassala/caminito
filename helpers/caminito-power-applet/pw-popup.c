@@ -2,7 +2,7 @@
  * The Power applet's popup (262). See pw-popup.h.
  *
  * The table of batteries (263) is built again when what it shows changes, from the rows
- * pw_state_rows() makes; what the user has open (a battery's ⋮ menu) and what is under way
+ * pw_state_rows() makes; what the user has open (a battery's ⋮ menu, its charge limit) and what is under way
  * (the call to UPower for a limit, its error) is kept here between builds.
  */
 
@@ -87,9 +87,11 @@ add_styles (void)
     return;
   added = TRUE;
   provider = gtk_css_provider_new ();
-  /* The warning colour, as in the Bluetooth applet's low batteries. */
+  /* The warning colour, as in the Bluetooth applet's low batteries, and a milder one for a
+     worn battery's health. */
   gtk_css_provider_load_from_data (provider,
                                    ".caminito-power-low { color: #c01c28; }"
+                                   ".caminito-power-worn { color: #c64600; }"
                                    "levelbar.caminito-power-low block.filled {"
                                    " background-image: none; background-color: #c01c28; }"
                                    ".caminito-power-error { color: #c01c28; }",
@@ -175,13 +177,25 @@ menu_new (PwPopup *popup, const PwRow *row)
   GtkWidget *button = gtk_menu_button_new ();
   GtkWidget *menu = gtk_popover_new (button);
   GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 8);
+  GtkWidget *line = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 12);
+  g_autofree char *text = g_strdup_printf ("Limit charging to %u%%", row->limit_end);
+  GtkWidget *toggle = gtk_switch_new ();
   const char *error = g_hash_table_lookup (popup->errors, row->path);
+  int requested = GPOINTER_TO_INT (g_hash_table_lookup (popup->requested, row->path));
+
+  gtk_switch_set_active (GTK_SWITCH (toggle),
+                         requested != REQUESTED_NONE ? requested == REQUESTED_ON
+                                                : row->limit_enabled);
+  gtk_widget_set_valign (toggle, GTK_ALIGN_CENTER);
+  gtk_widget_set_sensitive (toggle, !g_hash_table_contains (popup->busy, row->path));
+  g_signal_connect_data (toggle, "state-set", G_CALLBACK (on_limit_state_set),
+                         row_data_new (popup, row->path), row_data_free, 0);
 
   /* A glyph that every font has, where a themed icon would be one the theme may lack. */
   gtk_container_add (GTK_CONTAINER (button), gtk_label_new ("⋮"));
   gtk_button_set_relief (GTK_BUTTON (button), GTK_RELIEF_NONE);
   gtk_widget_set_valign (button, GTK_ALIGN_CENTER);
-  gtk_widget_set_tooltip_text (button, "Health and charge limit");
+  gtk_widget_set_tooltip_text (button, "Charge limit");
   gtk_menu_button_set_popover (GTK_MENU_BUTTON (button), menu);
   /* A modal popover takes GTK's grab, which closes the applet's popup around it. A click
      on the button, or Escape, closes it, and so does the popup. */
@@ -191,26 +205,9 @@ menu_new (PwPopup *popup, const PwRow *row)
                          row_data_new (popup, row->path), row_data_free, 0);
 
   gtk_container_set_border_width (GTK_CONTAINER (box), 10);
-  gtk_box_pack_start (GTK_BOX (box), label_new (row->health, FALSE), FALSE, FALSE, 0);
-  if (row->limit_supported)
-    {
-      GtkWidget *line = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 12);
-      g_autofree char *text = g_strdup_printf ("Limit charging to %u%%", row->limit_end);
-      GtkWidget *toggle = gtk_switch_new ();
-      int requested;
-
-      requested = GPOINTER_TO_INT (g_hash_table_lookup (popup->requested, row->path));
-      gtk_switch_set_active (GTK_SWITCH (toggle),
-                             requested != REQUESTED_NONE ? requested == REQUESTED_ON
-                                                    : row->limit_enabled);
-      gtk_widget_set_valign (toggle, GTK_ALIGN_CENTER);
-      gtk_widget_set_sensitive (toggle, !g_hash_table_contains (popup->busy, row->path));
-      g_signal_connect_data (toggle, "state-set", G_CALLBACK (on_limit_state_set),
-                             row_data_new (popup, row->path), row_data_free, 0);
-      gtk_box_pack_start (GTK_BOX (line), label_new (text, FALSE), TRUE, TRUE, 0);
-      gtk_box_pack_end (GTK_BOX (line), toggle, FALSE, FALSE, 0);
-      gtk_box_pack_start (GTK_BOX (box), line, FALSE, FALSE, 0);
-    }
+  gtk_box_pack_start (GTK_BOX (line), label_new (text, FALSE), TRUE, TRUE, 0);
+  gtk_box_pack_end (GTK_BOX (line), toggle, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (box), line, FALSE, FALSE, 0);
   if (error != NULL)
     {
       GtkWidget *failure = label_new (error, FALSE);
@@ -236,14 +233,17 @@ icon_new (char **names)
   return image;
 }
 
-/* One row of the table: icon, name with its state under it, bar, percentage, and for a
-   laptop's battery the ⋮. */
+/* One row of the table, on two lines: icon; name, and its state under it; bar and
+   percentage, and a laptop battery's health under them; and where the battery has a charge
+   limit, the ⋮. */
 static void
 attach_row (PwPopup *popup, GtkWidget *table, int line, const PwRow *row)
 {
   GtkWidget *names = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
   GtkWidget *name = label_new (row->name, FALSE);
   GtkWidget *state = label_new (row->state, TRUE);
+  GtkWidget *levels = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *level = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 10);
   GtkWidget *bar = gtk_level_bar_new_for_interval (0, 1);
   GtkWidget *percentage = label_new (row->percentage, FALSE);
 
@@ -252,7 +252,10 @@ attach_row (PwPopup *popup, GtkWidget *table, int line, const PwRow *row)
   gtk_box_pack_start (GTK_BOX (names), name, FALSE, FALSE, 0);
   gtk_box_pack_start (GTK_BOX (names), state, FALSE, FALSE, 0);
   gtk_widget_set_hexpand (names, TRUE);
-  gtk_widget_set_valign (names, GTK_ALIGN_CENTER);
+  /* Both from the top, so that the bar is on the name's line, with or without a health
+     under it. */
+  gtk_widget_set_valign (names, GTK_ALIGN_START);
+  gtk_widget_set_valign (levels, GTK_ALIGN_START);
 
   /* GTK colours a bar by its own steps, 25% and 75%, which would make 73% and 80% look
      unlike one another: it has the one colour, and the warning one below 20%, like the
@@ -272,15 +275,35 @@ attach_row (PwPopup *popup, GtkWidget *table, int line, const PwRow *row)
   if (row->low)
     gtk_style_context_add_class (gtk_widget_get_style_context (percentage), "caminito-power-low");
 
+  gtk_box_pack_start (GTK_BOX (level), bar, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (level), percentage, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (levels), level, FALSE, FALSE, 0);
+  if (row->health != NULL)
+    {
+      GtkWidget *health = label_new (row->health, TRUE);
+
+      gtk_label_set_xalign (GTK_LABEL (health), 1);
+      gtk_widget_set_tooltip_text (health, "What the battery holds, of what it held new");
+      if (row->wear != PW_WEAR_NONE)
+        {
+          GtkStyleContext *style = gtk_widget_get_style_context (health);
+
+          /* Coloured, not dim. */
+          gtk_style_context_remove_class (style, GTK_STYLE_CLASS_DIM_LABEL);
+          gtk_style_context_add_class (style, row->wear == PW_WEAR_POOR ? "caminito-power-low"
+                                                                        : "caminito-power-worn");
+        }
+      gtk_box_pack_start (GTK_BOX (levels), health, FALSE, FALSE, 0);
+    }
+
   gtk_grid_attach (GTK_GRID (table), icon_new (row->icon_names), 0, line, 1, 1);
   gtk_grid_attach (GTK_GRID (table), names, 1, line, 1, 1);
-  gtk_grid_attach (GTK_GRID (table), bar, 2, line, 1, 1);
-  gtk_grid_attach (GTK_GRID (table), percentage, 3, line, 1, 1);
-  if (row->laptop)
+  gtk_grid_attach (GTK_GRID (table), levels, 2, line, 1, 1);
+  if (row->limit_supported)
     {
       GtkWidget *menu = menu_new (popup, row);
 
-      gtk_grid_attach (GTK_GRID (table), menu, 4, line, 1, 1);
+      gtk_grid_attach (GTK_GRID (table), menu, 3, line, 1, 1);
       if (g_strcmp0 (popup->open_path, row->path) == 0)
         popup->open_button = menu;
     }

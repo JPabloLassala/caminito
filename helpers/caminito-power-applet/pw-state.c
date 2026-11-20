@@ -216,6 +216,7 @@ pw_row_equal (const PwRow *a, const PwRow *b)
          && g_strcmp0 (a->percentage, b->percentage) == 0
          && a->low == b->low
          && g_strcmp0 (a->health, b->health) == 0
+         && a->wear == b->wear
          && a->limit_supported == b->limit_supported
          && a->limit_enabled == b->limit_enabled
          && a->limit_end == b->limit_end;
@@ -354,6 +355,10 @@ kind_icon_names (guint type)
 }
 
 #define LOW_PERCENTAGE      20
+/* A battery's health below these is worn, and then poor: the health is in the warning
+   colours. */
+#define WORN_HEALTH         80
+#define POOR_HEALTH         60
 #define DEFAULT_LIMIT_END   80
 
 static gboolean
@@ -406,7 +411,14 @@ row_new (const PwDevice *device, const char *name, gboolean laptop)
         row->state = g_strdup_printf ("%s · limit %u%%", state_name (device->state),
                                       row->limit_end);
       if (device->capacity > 0)
-        row->health = g_strdup_printf ("Health %d%%", percent_of (device->capacity));
+        {
+          int health = percent_of (device->capacity);
+
+          row->health = g_strdup_printf ("Health %d%%", health);
+          row->wear = health < POOR_HEALTH ? PW_WEAR_POOR
+                      : health < WORN_HEALTH ? PW_WEAR_WORN
+                                             : PW_WEAR_NONE;
+        }
       else
         row->health = g_strdup ("Health unknown");
     }
