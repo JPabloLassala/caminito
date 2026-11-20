@@ -35,6 +35,7 @@ use smithay::wayland::xdg_system_bell::XdgSystemBellHandler;
 use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconHandler;
 
 use crate::bell::{BellFor, BellSource};
+use crate::esmeril;
 use crate::input::{GrabKind, KeyboardFocus, MenuGrab};
 use crate::output::output_id;
 use crate::state::{Caminito, State};
@@ -234,6 +235,8 @@ impl XdgShellHandler for State {
             grab.ungrab(PopupUngrabStrategy::All);
             return;
         }
+        // Esmeril goes behind a menu, and not behind a tooltip, which takes no grab.
+        esmeril::mark_grabbed(surface.wl_surface());
         // A menu's pointer grab, as it's replaced, ends the keyboard grab with its serial,
         // and GTK grabs for a submenu with its menu's: the submenu would lose the keyboard
         // grab it was just given, and the window would get the keyboard back (146). So the

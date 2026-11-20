@@ -28,7 +28,7 @@ use smithay::output::Output;
 use smithay::utils::{Physical, Point, Rectangle, Scale};
 
 use super::fixture::{
-    ClientId, ClientWindow, Fixture, KEY_A, KEY_ESC, KEY_F10, KEY_LEFTALT, KEY_LEFTCTRL,
+    BTN_LEFT, ClientId, ClientWindow, Fixture, KEY_A, KEY_ESC, KEY_F10, KEY_LEFTALT, KEY_LEFTCTRL,
     KEY_LEFTMETA, KEY_RIGHT, KEY_TAB, Kind, WindowSpec, on_both_kinds,
 };
 use super::maximise_animation::asked_size;
@@ -1023,22 +1023,48 @@ fn panel_menu() -> Positioner {
     }
 }
 
-/// The Esmeril elements of a bar of `namespace` in `bar` with a popup in `popup`.
-fn esmerils_with_a_popup(namespace: &'static str, bar: u32, popup: u32) -> Vec<Esmeril> {
+/// Maps a popup of `parent` in `color` below it: a menu, with a grab from a click on the bar,
+/// or a tooltip, without one.
+fn map_bar_popup(f: &mut Fixture, id: ClientId, parent: LayerId, menu: bool, color: u32) {
+    let serial = menu.then(|| {
+        f.pointer_move(100., 10.);
+        f.pointer_button(BTN_LEFT, true);
+        f.roundtrip(id);
+        f.client(id).state.last_press_serial.unwrap()
+    });
+    let popup = f
+        .client(id)
+        .create_layer_popup(parent, panel_menu(), serial);
+    f.roundtrip(id);
+    f.client(id).map_popup(popup, color);
+    f.roundtrip(id);
+    if menu {
+        f.pointer_button(BTN_LEFT, false);
+        f.roundtrip(id);
+    }
+}
+
+/// The Esmeril elements of a bar of `namespace` in `bar` with a popup in `popup`, a menu or
+/// a tooltip.
+fn esmerils_with(namespace: &'static str, bar: u32, menu: bool, popup: u32) -> Vec<Esmeril> {
     let mut f = Fixture::with_settings(vec![]);
     let output = f.add_output(OUTPUT, 1.0);
     let id = f.connect(Kind::Xdg);
+    f.client(id).bind_input();
+    f.roundtrip(id);
     let spec = LayerSpec {
         namespace,
         ..LayerSpec::top_bar(28)
     };
     let parent = f.map_layer(id, spec, bar);
-    let menu = f.client(id).create_layer_popup(parent, panel_menu(), None);
-    f.roundtrip(id);
-    f.client(id).map_popup(menu, popup);
-    f.roundtrip(id);
+    map_bar_popup(&mut f, id, parent, menu, popup);
     f.draw(&output);
     esmerils(&mut f, &output)
+}
+
+/// The Esmeril elements of a bar of `namespace` in `bar` with a menu in `popup`.
+fn esmerils_with_a_popup(namespace: &'static str, bar: u32, popup: u32) -> Vec<Esmeril> {
+    esmerils_with(namespace, bar, true, popup)
 }
 
 #[test]
@@ -1057,6 +1083,12 @@ fn an_opaque_popup_and_the_desktops_get_none() {
     assert!(opaque.is_empty(), "{opaque:?}");
     let desktop = esmerils_with_a_popup("desktop", TINT, TINT);
     assert!(desktop.is_empty(), "{desktop:?}");
+}
+
+#[test]
+fn a_panels_see_through_tooltip_gets_none() {
+    let elements = esmerils_with("panel", 0xff_20_40_60, false, TINT);
+    assert!(elements.is_empty(), "a tooltip takes no grab: {elements:?}");
 }
 
 #[test]
@@ -1157,12 +1189,11 @@ fn a_popups_esmeril_slides_with_it_and_rests_at_its_place() {
     )]);
     let output = f.add_output(OUTPUT, 1.0);
     let id = f.connect(Kind::Xdg);
+    f.client(id).bind_input();
+    f.roundtrip(id);
     f.stop_clock();
     let parent = f.map_layer(id, LayerSpec::top_bar(28), 0xff_20_40_60);
-    let popup = f.client(id).create_layer_popup(parent, panel_menu(), None);
-    f.roundtrip(id);
-    f.client(id).map_popup(popup, TINT);
-    f.roundtrip(id);
+    map_bar_popup(&mut f, id, parent, true, TINT);
     f.draw(&output);
     let place = Rectangle::new((50, 28).into(), (200, 100).into());
 

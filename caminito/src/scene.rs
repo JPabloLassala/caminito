@@ -209,10 +209,10 @@ pub(crate) enum SceneLayer {
 /// over (210).
 const WALLPAPER_NAMESPACE: &str = "mate-background";
 
-/// The layer surfaces that get Esmeril behind them and their popups (ADR 0048): mate-panel,
+/// The layer surfaces that get Esmeril behind them and their menus (ADR 0048): mate-panel,
 /// mate-settings-daemon's volume and brightness display, caja's desktop menu, and
 /// caminito-notifications' bubbles, whose namespace is `NAMESPACE` in its `src/bubbles.rs`.
-/// Any other doesn't, the desktop and the wallpaper above all.
+/// Any other doesn't, the desktop and the wallpaper above all. Their tooltips don't either.
 const ESMERIL_NAMESPACES: [&str; 4] =
     ["panel", "mate-osd", "desktop-menu", "caminito-notification"];
 
@@ -1664,8 +1664,10 @@ fn layer_shell_elements<R>(
                 renderer, &popup, location, scale, alpha, slides,
             ));
             let slid = caminito.popup_slides.slid(&Popup::Xdg(popup.clone()), now);
+            // A menu, and not a tooltip, which takes no grab (ADR 0048).
+            let menu = listed && esmeril::took_a_grab(&popup);
             if let Some(place) = esmeril {
-                surface_tree_esmeril(&popup, location, place, listed, slid, elements);
+                surface_tree_esmeril(&popup, location, place, menu, slid, elements);
             }
         }
         if part.contains(WindowSurfaceType::TOPLEVEL) {

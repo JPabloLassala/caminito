@@ -28,8 +28,9 @@
 //! elements are, so it matches them. A closing window's picture keeps its frame's masks, and is
 //! drawn over them so.
 //!
-//! A layer surface and its popups (CMN-232) get it by the same road, once their buffer is known
-//! to have see-through pixels, and fade and slide as they do.
+//! A layer surface and its menus (CMN-232) get it by the same road, once their buffer is known
+//! to have see-through pixels, and fade and slide as they do. Its tooltips don't: a menu is told
+//! from a tooltip by the grab it takes, which a tooltip never does.
 //!
 //! A client that asks through `ext-background-effect-v1` (CMN-238) gets it in its region, under
 //! every pixel there, a wholly clear one too: the region alone says where, and the surface is
@@ -61,7 +62,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::background_effect::BackgroundEffectSurfaceCachedState;
-use smithay::wayland::compositor::{RectangleKind, RegionAttributes, SurfaceData};
+use smithay::wayland::compositor::{RectangleKind, RegionAttributes, SurfaceData, with_states};
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::with_buffer_contents;
 
@@ -248,6 +249,21 @@ fn flattened(region: &RegionAttributes) -> Vec<Rectangle<i32, Logical>> {
         }
     }
     rects
+}
+
+/// That a popup took a grab, as a menu does and a tooltip never does.
+struct Grabbed;
+
+/// Records that `popup` took a grab, so it's a menu.
+pub(crate) fn mark_grabbed(popup: &WlSurface) {
+    with_states(popup, |states| {
+        states.data_map.insert_if_missing(|| Grabbed)
+    });
+}
+
+/// Whether `popup` took a grab: a menu, and not a tooltip, which never does.
+pub(crate) fn took_a_grab(popup: &WlSurface) -> bool {
+    with_states(popup, |states| states.data_map.get::<Grabbed>().is_some())
 }
 
 /// The region the client has committed on this surface, if it has: an empty one asks for none.
