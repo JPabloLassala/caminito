@@ -203,17 +203,24 @@ impl<W: PolicyWindow> Policy<W> {
         self.windows[&root].fullscreen_workspace.then_some(root)
     }
 
-    /// Whether `output` shows the Fullscreen workspace of a window whose family `id` isn't
-    /// of, which takes no other window: a drag, a client or the Overview can't put `id`
-    /// there (ADR 0057).
+    /// Whether `output` shows a Fullscreen workspace that `id` isn't on: that of a window
+    /// that isn't `id`'s transient family's root. It takes no other window, so a drag, a
+    /// client or the Overview can't move `id` onto `output` (ADR 0057).
     pub(super) fn shuts_out(&self, output: OutputId, id: WindowId) -> bool {
         let shown = self.active_workspaces.of(Some(output)).fullscreen;
         shown.is_some_and(|fullscreen| self.fullscreen_workspace_of(id) != Some(fullscreen))
     }
 
-    /// Whether `id`'s frame, at `frame`, would be most on an output that shuts it out.
-    pub(super) fn shut_out_at(&self, id: WindowId, frame: Rectangle<i32, Logical>) -> bool {
-        (self.output_of(frame)).is_some_and(|output| self.shuts_out(output.id, id))
+    /// Whether `id`, whose frame was `from`, has just crossed onto an output that shuts it
+    /// out: its frame is most on another output than it was, and that one shuts it out.
+    pub(super) fn crossed_into_shut_out(
+        &self,
+        id: WindowId,
+        from: Rectangle<i32, Logical>,
+    ) -> bool {
+        let now = self.output_of(self.windows[&id].frame());
+        let was = self.output_of(from).map(|output| output.id);
+        now.is_some_and(|now| Some(now.id) != was && self.shuts_out(now.id, id))
     }
 
     /// The window whose Fullscreen workspace comes right after `output`'s active workspace,

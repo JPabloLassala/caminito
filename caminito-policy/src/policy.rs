@@ -1115,7 +1115,7 @@ impl<W: PolicyWindow> Policy<W> {
             // A window opened from a Fullscreen workspace is on its Home workspace, which
             // the output slides to (ADR 0057).
             if shown.fullscreen.is_some()
-                && self.is_focused_on_map(id)
+                && self.is_of_kind_focused_on_map(id)
                 && let Some(output) = opening.flatten()
             {
                 self.show_fullscreen_workspace(output, None);
@@ -1178,12 +1178,12 @@ impl<W: PolicyWindow> Policy<W> {
 
     /// Whether a window that has just mapped is one Marco's `window_state_on_map` focuses.
     fn focuses_on_map(&self, id: WindowId) -> bool {
-        self.is_on_shown_workspace(id) && self.is_focused_on_map(id)
+        self.is_on_shown_workspace(id) && self.is_of_kind_focused_on_map(id)
     }
 
     /// Whether a window that has just mapped is of a kind Marco's `window_state_on_map`
     /// focuses, wherever it is.
-    fn is_focused_on_map(&self, id: WindowId) -> bool {
+    fn is_of_kind_focused_on_map(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(|managed| {
             managed.window.takes_input()
                 && !matches!(
@@ -1840,13 +1840,12 @@ impl<W: PolicyWindow> Policy<W> {
         if let Some(size) = size {
             managed.geometry.size = managed.hints.clamp(size);
         }
-        let before = managed.geometry.loc;
+        let (before, from) = (managed.geometry.loc, managed.frame());
         if let Some(loc) = loc {
             managed.geometry.loc = loc;
         }
         // Not onto an output that shows another's Fullscreen workspace.
-        let frame = managed.frame();
-        if self.shut_out_at(id, frame) {
+        if self.crossed_into_shut_out(id, from) {
             self.windows.get_mut(&id).unwrap().geometry.loc = before;
         }
         let managed = &self.windows[&id];
@@ -2102,7 +2101,7 @@ impl<W: PolicyWindow> Policy<W> {
         let window = grab.window;
         let edges = self.edges_for(window);
         let managed = self.windows.get_mut(&window).unwrap();
-        let current = managed.geometry;
+        let (current, from) = (managed.geometry, managed.frame());
         match resize {
             None => {
                 let loc = (start.loc.to_f64() + delta).to_i32_round();
@@ -2125,9 +2124,9 @@ impl<W: PolicyWindow> Policy<W> {
             }
         }
         managed.pin_maximized_axes(current);
-        // It stops at the edge of an output that shows another's Fullscreen workspace.
-        let frame = managed.frame();
-        if self.shut_out_at(window, frame) {
+        // A motion that would take it onto an output that shows another's Fullscreen
+        // workspace leaves it where the last one did.
+        if self.crossed_into_shut_out(window, from) {
             self.windows.get_mut(&window).unwrap().geometry = current;
         }
         self.apply();
@@ -2192,6 +2191,10 @@ impl<W: PolicyWindow> Policy<W> {
         }
         let p = Point::<i32, Logical>::new(pointer.x.floor() as i32, pointer.y.floor() as i32);
         let output = self.outputs.iter().find(|o| o.geometry.contains(p))?;
+        // Nothing tiles on an output that shows another's Fullscreen workspace (ADR 0057).
+        if self.shuts_out(output.id, id) {
+            return None;
+        }
         let (o, area) = (output.geometry, Self::work_area(output));
         let zone = 2 * self.config.drag_threshold;
         let can_maximize = self.windows[&id].functions().maximize;

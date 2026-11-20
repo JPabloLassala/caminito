@@ -139,11 +139,15 @@ impl<W: PolicyWindow> Policy<W> {
         }
         let edges = self.edges_for(window);
         let managed = self.windows.get_mut(&window).unwrap();
-        let before = managed.geometry.loc;
+        let (before, from) = (managed.geometry.loc, managed.frame());
         let n = step.pixels();
         let to = before + Point::new(direction.x * n, direction.y * n);
         managed.move_within(to, &edges, step == GrabStep::Snap, By::Keys);
-        let moved = managed.geometry.loc - before;
+        // Not onto an output that shows another's Fullscreen workspace (ADR 0057).
+        if self.crossed_into_shut_out(window, from) {
+            self.windows.get_mut(&window).unwrap().geometry.loc = before;
+        }
+        let moved = self.windows[&window].geometry.loc - before;
         if placing {
             // The pointer goes on moving the window from where the key left it.
             self.grabs.get_mut(&seat).unwrap().start.loc += moved;
