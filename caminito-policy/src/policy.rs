@@ -408,6 +408,13 @@ impl<W: PolicyWindow> Managed<W> {
 }
 
 impl<W> Managed<W> {
+    /// Fullscreen and the root of its transient family, so a Fullscreen workspace is its own
+    /// with `fullscreen-workspaces` on (ADR 0057). A transient goes fullscreen on its
+    /// family's workspace.
+    fn may_have_fullscreen_workspace(&self) -> bool {
+        self.fullscreen && self.parent.is_none()
+    }
+
     /// Maximised both ways, as Marco's `META_WINDOW_MAXIMIZED` has it.
     fn maximized(&self) -> bool {
         self.maximized_horizontally && self.maximized_vertically
@@ -910,7 +917,7 @@ impl<W: PolicyWindow> Policy<W> {
             self.config.fullscreen_workspaces != config.fullscreen_workspaces;
         self.config = config;
         if fullscreen_workspaces_changed {
-            self.give_fullscreen_workspaces(self.config.fullscreen_workspaces);
+            self.follow_fullscreen_workspaces_key(self.config.fullscreen_workspaces);
         }
         match (was_per_output, self.config.workspaces_per_output) {
             (true, false) => self.span_workspaces(),
@@ -1788,10 +1795,8 @@ impl<W: PolicyWindow> Policy<W> {
         // Marco unshades a window it makes fullscreen.
         managed.shaded &= !fullscreen;
         managed.fullscreen_output = output.filter(|_| fullscreen);
-        // A transient goes fullscreen on its family's workspace.
-        let gets_workspace = fullscreen
-            && self.config.fullscreen_workspaces
-            && managed.parent.is_none()
+        let gets_workspace = self.config.fullscreen_workspaces
+            && managed.may_have_fullscreen_workspace()
             && !managed.fullscreen_workspace;
         managed.fullscreen_workspace =
             fullscreen && (managed.fullscreen_workspace || gets_workspace);

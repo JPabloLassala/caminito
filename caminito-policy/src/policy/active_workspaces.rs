@@ -219,9 +219,9 @@ impl<W: PolicyWindow> Policy<W> {
     /// transient family gets a Fullscreen workspace, and no output switches to it; off, each
     /// is back on its Home workspace, still fullscreen, and `apply` switches the outputs that
     /// showed one back there.
-    pub(super) fn give_fullscreen_workspaces(&mut self, on: bool) {
+    pub(super) fn follow_fullscreen_workspaces_key(&mut self, on: bool) {
         for managed in self.windows.values_mut() {
-            managed.fullscreen_workspace = on && managed.fullscreen && managed.parent.is_none();
+            managed.fullscreen_workspace = on && managed.may_have_fullscreen_workspace();
         }
     }
 

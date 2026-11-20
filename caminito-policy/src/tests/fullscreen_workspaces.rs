@@ -275,6 +275,7 @@ fn turning_the_key_on_gives_each_fullscreen_window_a_fullscreen_workspace_and_no
     assert!(!policy.is_showing(id(2)));
     assert!(policy.is_showing(id(3)));
     assert!(policy.is_fullscreen(id(1)));
+    assert_eq!(policy.focus(SEAT), Some(id(3)));
 
     // Each is to the right of its Home workspace.
     policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(10));
@@ -289,6 +290,11 @@ fn turning_the_key_off_returns_each_fullscreen_window_to_its_home_workspace_stil
 
     policy.settings_changed(key(false));
 
+    // The output that showed one slides back to its Home workspace.
+    assert_eq!(
+        policy.take_output_switches(),
+        [switch_between(Some(1), None, -1)]
+    );
     assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
     assert_eq!(active(&policy), (0, 0));
     assert!(policy.is_fullscreen(id(1)));
@@ -302,4 +308,25 @@ fn turning_the_key_off_returns_each_fullscreen_window_to_its_home_workspace_stil
     policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(10));
     assert_eq!(active(&policy), (1, 0));
     assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+}
+
+#[test]
+fn turning_the_key_on_gives_a_fullscreen_transient_no_fullscreen_workspace_of_its_own() {
+    let mut policy = two_outputs_with_key(false);
+    policy.map_window(
+        TestWindow::new(4, 300, 200)
+            .with_parent(1)
+            .with_requested_position(200, 200),
+        ms(10),
+    );
+    policy.set_fullscreen(id(4), true, None);
+    assert!(policy.is_fullscreen(id(4)));
+
+    policy.settings_changed(key(true));
+
+    assert!(policy.is_showing(id(1)));
+    assert!(policy.is_showing(id(4)));
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(11));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+    assert_eq!(active(&policy), (1, 0));
 }
