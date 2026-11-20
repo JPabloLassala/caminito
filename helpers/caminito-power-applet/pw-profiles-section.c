@@ -13,7 +13,7 @@
 #include "pw-ppd.h"
 
 #define TILE_ICON_SIZE 24
-#define POPUP_WIDTH    320
+#define POPUP_WIDTH    360
 
 typedef struct
 {

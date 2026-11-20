@@ -11,7 +11,7 @@
 #include "pw-awake.h"
 #include "pw-profiles-section.h"
 
-#define POPUP_WIDTH   320
+#define POPUP_WIDTH   360
 #define ROW_ICON_SIZE 24
 #define BAR_WIDTH     56
 
