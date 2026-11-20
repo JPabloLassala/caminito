@@ -246,8 +246,9 @@ impl<W: PolicyWindow> Policy<W> {
             .collect()
     }
 
-    /// Every output takes the active and previous workspace of the Active output, that of
-    /// the seat that last acted, as `workspaces-per-output` is turned off (230, 231). No
+    /// Every output takes the numbers of the active and previous workspace of the Active
+    /// output, that of the seat that last acted, as `workspaces-per-output` is turned off
+    /// (230, 231). No
     /// window changes its workspace, and an output that shows another one stops showing
     /// it, as a switch does.
     ///

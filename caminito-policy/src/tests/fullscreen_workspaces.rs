@@ -3,7 +3,8 @@
 //! which its output switches to, and which goes when the window leaves fullscreen or closes.
 //! Each test runs with `workspaces-per-output` on and off: under Spanning workspaces only the
 //! window's output shows its Fullscreen workspace, and a switch to a numbered workspace
-//! moves every output (CMN-309).
+//! moves every output (CMN-309). The headless tests have one output, where the mode makes
+//! no difference.
 
 use super::per_output_workspaces::active;
 use super::*;
@@ -182,6 +183,26 @@ fn a_switch_to_a_numbered_workspace_leaves_the_fullscreen_workspace() {
         assert_eq!(active(&policy), after_switch_to(1, per_output));
         assert!(!policy.is_showing(id(1)));
         assert_eq!(policy.is_showing(id(2)), per_output);
+    }
+}
+
+#[test]
+fn a_switch_from_the_other_output_moves_it_alone_or_every_output() {
+    for per_output in MODES {
+        let mut policy = on_a_fullscreen_workspace(per_output);
+        policy.press_on_output(SEAT, OutputId(2));
+        assert_eq!(policy.active_output(SEAT), Some(OutputId(2)));
+
+        policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(10));
+
+        // With workspaces-per-output on the left output keeps its Fullscreen workspace,
+        // and under Spanning workspaces it moves away from it with the right one.
+        let expected = if per_output { (0, 1) } else { (1, 1) };
+        assert_eq!(active(&policy), expected);
+        let kept = per_output.then_some(id(1));
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), kept);
+        assert_eq!(policy.is_showing(id(1)), per_output);
+        assert!(!policy.is_showing(id(2)));
     }
 }
 
