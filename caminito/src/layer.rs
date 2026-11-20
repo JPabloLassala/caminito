@@ -223,6 +223,16 @@ impl Caminito {
         self.keyboard_layer = None;
     }
 
+    /// The topmost mapped layer surface of the overlay and top layers that takes the keyboard
+    /// whatever else wants it, as mate-screenshot's area picker does.
+    pub(crate) fn exclusive_layer(&self) -> Option<LayerSurface> {
+        scene::layer_surfaces_above_windows(self)
+            .into_iter()
+            .find(|layer| {
+                is_mapped(layer) && interactivity(layer) == KeyboardInteractivity::Exclusive
+            })
+    }
+
     /// The layer surface that has the keyboard rather than policy's focused window, which
     /// keeps the focus meanwhile, and its frame drawn focused, as under Marco while the
     /// panel's menu is open. It's the topmost mapped `exclusive` one of the overlay and top
@@ -230,11 +240,7 @@ impl Caminito {
     /// policy's focus changes or it can't have the keyboard any more. One that
     /// `switch-panels` or `cycle-panels` chose has it as the clicked one has (163).
     pub(crate) fn layer_with_keyboard(&mut self) -> Option<LayerSurface> {
-        let exclusive = scene::layer_surfaces_above_windows(self)
-            .into_iter()
-            .find(|layer| {
-                is_mapped(layer) && interactivity(layer) == KeyboardInteractivity::Exclusive
-            });
+        let exclusive = self.exclusive_layer();
         if exclusive.is_some() {
             return exclusive;
         }

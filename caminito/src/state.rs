@@ -417,6 +417,9 @@ pub struct Caminito {
     /// The keyboard grab an override-redirect window took through Xwayland, if any, and the
     /// serial the keyboard knows it by (36).
     pub(crate) xwayland_keyboard_grab: Option<(ZwpXwaylandKeyboardGrabV1, Serial)>,
+    /// The grab of the menu open on a Wayland client, if any, and whether a layer surface
+    /// that takes the keyboard holds it off for now (`input::grab::refresh_menu_grab`).
+    pub(crate) menu_grab: Option<crate::input::MenuGrab>,
     /// The variables Caminito sets for the clients it spawns (08), such as `DISPLAY`. They're
     /// kept here rather than set with `set_var`, which isn't safe once the settings and
     /// D-Bus threads run.
@@ -717,6 +720,9 @@ impl State {
         // After the views, which move the windows a panel hides for, and before the
         // pointer's focus, which finds a panel where it is drawn (CMN-224).
         self.caminito.refresh_intellihide();
+        // Before the pointer's focus and the keyboard's, which go to an area picker over a
+        // menu once its grab is held off.
+        self.refresh_menu_grab();
         self.update_pointer_focus();
         self.caminito.update_button_states();
         // Before the Frames are drawn in a new state, from which a maximised window's
@@ -1140,6 +1146,7 @@ impl Caminito {
             xwayland_shell_state,
             xwayland_keyboard_grab_state,
             xwayland_keyboard_grab: None,
+            menu_grab: None,
             environment: BTreeMap::new(),
             workspace_rename: None,
             not_responding: NotResponding::default(),

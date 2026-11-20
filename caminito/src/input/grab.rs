@@ -6,6 +6,7 @@
 use caminito_policy::{Crossing, GrabKey, GrabStep, ResizeEdges, WindowId};
 use caminito_theme::ButtonFunction;
 use smithay::backend::input::{ButtonState, InputTime, Keycode};
+use smithay::desktop::{PopupGrab, PopupKeyboardGrab, PopupPointerGrab};
 use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, Focus, GestureHoldBeginEvent, GestureHoldEndEvent,
@@ -13,10 +14,30 @@ use smithay::input::pointer::{
     GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData, MotionEvent, PointerGrab,
     PointerInnerHandle, RelativeMotionEvent,
 };
+use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER, Serial};
+use smithay::wayland::seat::WaylandFocus;
 
 use super::{Bound, PointerFocus};
 use crate::state::{Caminito, SEAT, State};
+
+/// The grab a Wayland client's menu took, kept so that it can be held off while a layer
+/// surface of another client takes the keyboard, as mate-screenshot's area picker does, and
+/// given back once that's gone. The menu stays open meanwhile, so that it's in the screenshot,
+/// as under macOS, and the picker has the press that starts its drag.
+pub(crate) struct MenuGrab {
+    grab: PopupGrab<State>,
+    held_off: bool,
+}
+
+impl MenuGrab {
+    pub(crate) fn new(grab: &PopupGrab<State>) -> Self {
+        MenuGrab {
+            grab: grab.clone(),
+            held_off: false,
+        }
+    }
+}
 
 /// What an interactive grab does to its window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,6 +254,52 @@ impl State {
         };
         pointer.set_grab(self, grab, SERIAL_COUNTER.next_serial(), Focus::Clear);
         self.warp_pointer_for_grab();
+    }
+
+    /// Holds a menu's grab off while a layer surface of another client takes the keyboard
+    /// exclusively, and gives it back once there's none. The seat's grabs are let go without
+    /// dismissing the menu, so the pointer and the keyboard go to the layer surface as they
+    /// would with no menu open. One held off while a grab of Caminito's has the pointer, a
+    /// button held on the picker, waits for it to end.
+    pub(crate) fn refresh_menu_grab(&mut self) {
+        let Some(menu) = &self.caminito.menu_grab else {
+            return;
+        };
+        if menu.grab.has_ended() {
+            self.caminito.menu_grab = None;
+            return;
+        }
+        let client = menu
+            .grab
+            .current_grab()
+            .and_then(|focus| focus.wl_surface()?.client());
+        let covered = self
+            .caminito
+            .exclusive_layer()
+            .is_some_and(|layer| layer.wl_surface().client() != client);
+        let pointer = self.caminito.seat.get_pointer().unwrap();
+        let keyboard = self.caminito.seat.get_keyboard().unwrap();
+        let grab = menu.grab.clone();
+        let serial = grab.serial();
+        match (menu.held_off, covered) {
+            (false, true) if pointer.has_grab(serial) => {
+                // The keyboard's first, which the pointer's would otherwise let go of by
+                // giving the keyboard to the menu's window on its way to the layer surface.
+                if keyboard.is_grabbed() {
+                    keyboard.unset_grab(self);
+                }
+                let time = InputTime::from_micros(self.caminito.now().as_micros() as u64);
+                pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
+                self.caminito.menu_grab.as_mut().unwrap().held_off = true;
+            }
+            (true, false) if !pointer.is_grabbed() && !keyboard.is_grabbed() => {
+                pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+                keyboard.set_focus(self, grab.current_grab(), serial);
+                keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
+                self.caminito.menu_grab.as_mut().unwrap().held_off = false;
+            }
+            _ => {}
+        }
     }
 
     /// A key pressed during a keyboard move or resize, or a manual placement. One that ends
