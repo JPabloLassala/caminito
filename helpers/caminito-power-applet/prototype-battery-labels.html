@@ -1,0 +1,393 @@
+<title>Power Popup Battery Labels</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<!--
+  PROTOTYPE — throwaway. Four layouts of the Power popup's battery rows (pw-popup.c attach_row),
+  each with the charging state under the battery and its health on the right. Switch with the bottom
+  bar, ← →, or #A..#D. Fake batteries; nothing talks to UPower.
+  Question it answers: where do the state and the health labels go in a battery row? (2026-11-20)
+-->
+<style>
+/* Layout: page header, then a mock desktop (MATE top panel, the Power popup under its icon) beside a
+   side panel with the variant's notes, the simulation switches and the rows' model. */
+:root {
+  --page: #eef0f3; --ink: #1d2128; --ink-soft: #5b6472; --rule: #d5dae1;
+  --wall: #4f6b73; --wall-2: #5b7880;
+  --panel: #2a2e35; --panel-ink: #e8eaee; --panel-hover: #3b414b;
+  --pop: #fafafa; --pop-ink: #2e3436; --pop-soft: #7b8186; --pop-line: #dcdcdc; --pop-hover: #ececec; --pop-sunk: #f0f0f0;
+  --accent: #3584e4; --accent-ink: #ffffff; --accent-soft: #dbe8fa;
+  --trough: #d8d8d8; --low: #c01c28; --charge: #26a269; --charge-soft: #dcf2e4; --warn: #c66a00; --warn-soft: #fbecd6;
+  --bar: #14171c; --bar-ink: #f4f5f7;
+  --shadow: 0 10px 30px rgba(10, 15, 25, .28), 0 2px 6px rgba(10, 15, 25, .18);
+  --f-ui: "Noto Sans", "Cantarell", "DejaVu Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #15181d; --ink: #e6e9ee; --ink-soft: #9aa3b1; --rule: #2c323b;
+  --wall: #22343a; --wall-2: #2a3f46;
+  --panel: #1b1e23; --panel-ink: #e1e4e9; --panel-hover: #2d323a;
+  --pop: #2d2d2d; --pop-ink: #eeeeec; --pop-soft: #9a9e9f; --pop-line: #404040; --pop-hover: #3a3a3a; --pop-sunk: #262626;
+  --accent: #62a0ea; --accent-ink: #0d1420; --accent-soft: #23344d;
+  --trough: #4a4a4a; --low: #f06a6a; --charge: #57c785; --charge-soft: #1f3a2a; --warn: #f0a24b; --warn-soft: #3d2d17;
+  --bar: #f1f3f6; --bar-ink: #14171c;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #15181d; --ink: #e6e9ee; --ink-soft: #9aa3b1; --rule: #2c323b;
+  --wall: #22343a; --wall-2: #2a3f46;
+  --panel: #1b1e23; --panel-ink: #e1e4e9; --panel-hover: #2d323a;
+  --pop: #2d2d2d; --pop-ink: #eeeeec; --pop-soft: #9a9e9f; --pop-line: #404040; --pop-hover: #3a3a3a; --pop-sunk: #262626;
+  --accent: #62a0ea; --accent-ink: #0d1420; --accent-soft: #23344d;
+  --trough: #4a4a4a; --low: #f06a6a; --charge: #57c785; --charge-soft: #1f3a2a; --warn: #f0a24b; --warn-soft: #3d2d17;
+  --bar: #f1f3f6; --bar-ink: #14171c;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+  color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font-family: var(--f-ui); font-size: 14px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 96px }
+button, select, input { font: inherit; color: inherit }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+
+.page { max-width: 1180px; margin: 0 auto; display: grid; gap: 18px }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px }
+.head h1 { font-size: 20px; font-weight: 700; margin: 0; text-wrap: balance }
+.head p { margin: 0; color: var(--ink-soft); max-width: 72ch; line-height: 1.5 }
+.tag { font: 600 11px var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--warn);
+  border: 1px solid currentColor; border-radius: 3px; padding: 1px 6px }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr) } }
+
+/* ---- mock desktop ---- */
+.stage { position: relative; border-radius: 8px; overflow: hidden; min-height: 600px;
+  background: repeating-linear-gradient(135deg, var(--wall) 0 22px, var(--wall-2) 22px 44px); border: 1px solid var(--rule) }
+.mpanel { height: 28px; background: var(--panel); color: var(--panel-ink); display: flex; align-items: center;
+  padding: 0 6px; gap: 2px; font-size: 13px; user-select: none }
+.mpanel .menu { padding: 0 8px; font-weight: 600 }
+.mpanel .spacer { flex: 1 }
+.mpanel .ic { height: 28px; min-width: 28px; display: grid; place-items: center; border-radius: 3px; border: 0; background: none; padding: 0 5px }
+.mpanel .ic svg { width: 16px; height: 16px; fill: currentColor }
+.mpanel .ic.power { cursor: pointer; gap: 4px; display: flex; align-items: center }
+.mpanel .ic.power:hover, .mpanel .ic.power.on { background: var(--panel-hover) }
+.mpanel .clock { padding: 0 10px; font-variant-numeric: tabular-nums }
+
+/* the popup: 360 px as POPUP_WIDTH, 8 px border as the box's */
+.pop { position: absolute; top: 32px; right: 70px; width: 360px; max-width: calc(100% - 16px); background: var(--pop); color: var(--pop-ink);
+  border-radius: 6px; box-shadow: var(--shadow); border: 1px solid var(--pop-line); font-size: 13.5px; padding: 8px }
+@media (max-width: 520px) { .pop { right: 8px } }
+.pop[hidden] { display: none }
+.prof { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--pop-line); border-radius: 5px; overflow: hidden; margin-bottom: 6px }
+.prof button { border: 0; background: var(--pop); padding: 5px 0; font-size: 12.5px; cursor: pointer }
+.prof button + button { border-left: 1px solid var(--pop-line) }
+.prof button.on { background: var(--accent); color: var(--accent-ink) }
+.awake { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: center; padding: 4px 6px 8px }
+.awake svg { width: 20px; height: 20px; fill: var(--pop-ink) }
+.dim { color: var(--pop-soft) }
+.gsw { width: 46px; height: 24px; border-radius: 12px; background: var(--trough); position: relative; border: 0; cursor: pointer; padding: 0 }
+.gsw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--pop); box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .12s }
+.gsw.on { background: var(--accent) }
+.gsw.on::after { left: 24px }
+.sep { height: 1px; background: var(--pop-line); margin: 2px 0 6px }
+.configure { border: 0; background: none; padding: 6px 8px; border-radius: 4px; cursor: pointer; margin-top: 2px }
+.configure:hover { background: var(--pop-hover) }
+
+/* shared row parts */
+.bico { width: 24px; height: 24px; display: block }
+.lvl { height: 6px; border-radius: 3px; background: var(--trough); overflow: hidden; width: 56px }
+.lvl i { display: block; height: 100%; background: var(--accent); border-radius: 3px }
+.lvl.low i { background: var(--low) }
+.pct { font-variant-numeric: tabular-nums; text-align: right; min-width: 4ch }
+.pct.low { color: var(--low) }
+.kebab { width: 24px; height: 28px; border: 0; background: none; border-radius: 4px; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 }
+.kebab:hover, .kebab.on { background: var(--pop-hover) }
+.t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.s { font-size: 12.5px; color: var(--pop-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.s.charging { color: var(--charge) }
+.hl { font-size: 12.5px; color: var(--pop-soft); white-space: nowrap; font-variant-numeric: tabular-nums }
+.hl.worn { color: var(--warn) }
+.hl.poor { color: var(--low) }
+.menu-pop { margin: 2px 0 6px 34px; padding: 10px; border: 1px solid var(--pop-line); border-radius: 6px; background: var(--pop-sunk);
+  display: grid; gap: 8px; animation: in .12s ease-out }
+.menu-pop .line { display: flex; justify-content: space-between; align-items: center; gap: 12px }
+@keyframes in { from { opacity: 0; transform: translateY(-3px) } }
+.bolt { width: 10px; height: 10px; fill: currentColor; vertical-align: -1px; margin-right: 3px }
+
+/* A: two lines, health under the bar */
+.ta { display: grid; grid-template-columns: 28px minmax(0, 1fr) 56px auto 24px; column-gap: 8px; row-gap: 0; align-items: center; padding: 0 2px }
+.ta .ico { grid-row: span 2; align-self: center }
+.ta .r2 { grid-column: 3 / 5; text-align: right; align-self: start }
+.ta .gap { grid-column: 1 / -1; height: 8px }
+.ta .k { grid-row: span 2 }
+
+/* B: a table with headings */
+.tb { display: grid; grid-template-columns: 28px minmax(0, 1fr) 56px auto 58px 24px; column-gap: 8px; row-gap: 8px; align-items: center; padding: 0 2px }
+.tb .th { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--pop-soft) }
+.tb .th.r { text-align: right }
+.tb .hcol { text-align: right; font-variant-numeric: tabular-nums }
+.tb .hcol.worn { color: var(--warn) } .tb .hcol.poor { color: var(--low) }
+.tb .full { grid-column: 1 / -1 }
+
+/* C: a block per battery, the bar across */
+.blk { padding: 6px 4px 8px; display: grid; gap: 5px }
+.blk + .blk { border-top: 1px solid var(--pop-line) }
+.blk .top { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto 24px; gap: 8px; align-items: center }
+.blk .wide { height: 8px; border-radius: 4px; background: var(--trough); overflow: hidden; margin-left: 32px }
+.blk .wide i { display: block; height: 100%; background: var(--accent) }
+.blk .wide.low i { background: var(--low) }
+.blk .wide.charging i { background: var(--charge) }
+.blk .bot { display: flex; justify-content: space-between; gap: 10px; margin-left: 32px; min-width: 0 }
+.blk .pct { font-weight: 600 }
+
+/* D: a chip for the state, a ring for the health */
+.td { display: grid; grid-template-columns: 28px minmax(0, 1fr) 56px auto 30px 24px; column-gap: 8px; row-gap: 10px; align-items: center; padding: 0 2px }
+.chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; border-radius: 999px; padding: 0 7px; line-height: 18px;
+  background: var(--pop-sunk); color: var(--pop-soft); border: 1px solid var(--pop-line); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px }
+.chip.charging { background: var(--charge-soft); color: var(--charge); border-color: transparent }
+.chip.full { background: var(--accent-soft); color: var(--accent); border-color: transparent }
+.chip.held { background: var(--warn-soft); color: var(--warn); border-color: transparent }
+.ring { width: 30px; height: 30px; display: block }
+.ring text { font: 600 9.5px var(--f-ui); fill: var(--pop-ink) }
+.td .full { grid-column: 1 / -1 }
+
+/* ---- side panel ---- */
+.side { display: grid; gap: 14px; min-width: 0 }
+.card { border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; display: grid; gap: 8px; min-width: 0 }
+.card h2 { margin: 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft) }
+.card p, .card li { margin: 0; line-height: 1.5 }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px }
+.state { font: 11.5px/1.55 var(--f-mono); white-space: pre; margin: 0; overflow-x: auto; color: var(--ink) }
+.sim { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; align-items: center }
+.sim label { color: var(--ink-soft); font-size: 13px }
+.sim select { padding: 2px 4px; border: 1px solid var(--rule); border-radius: 4px; background: var(--page); min-width: 0; max-width: 100% }
+.sw { display: flex; gap: 8px; align-items: center; cursor: pointer; grid-column: 1 / -1 }
+
+.switcher { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 4px; background: var(--bar); color: var(--bar-ink); border-radius: 999px; padding: 5px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 10; max-width: calc(100% - 32px) }
+.switcher button { border: 0; background: none; color: inherit; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 16px }
+.switcher button:hover { background: rgba(127,127,127,.25) }
+.switcher .lbl { padding: 0 10px; font: 600 13px var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+</style>
+
+<div class="page">
+  <div class="head">
+    <h1>Power popup: battery labels</h1>
+    <span class="tag">Prototype · throwaway</span>
+    <p>Four layouts for a battery row with its charging state below it and its health on the right. The popup is the real 360&nbsp;px wide. Change the batteries under Simulate. The batteries are made up.</p>
+  </div>
+  <div class="grid">
+    <div class="stage">
+      <div class="mpanel">
+        <span class="menu">Applications</span><span class="menu">Places</span><span class="menu">System</span>
+        <span class="spacer"></span>
+        <button class="ic power on" id="picon" aria-label="Power" aria-expanded="true"></button>
+        <span class="clock">Fri 20 Nov&nbsp; 14:32</span>
+      </div>
+      <div class="pop" id="pop"></div>
+    </div>
+
+    <aside class="side">
+      <div class="card"><h2 id="vname">Variant</h2><ul id="vnotes"></ul></div>
+      <div class="card">
+        <h2>Simulate</h2>
+        <div class="sim">
+          <label for="s-word">Not charging reads</label>
+          <select id="s-word"><option>Discharging</option><option>Not charging</option><option>On battery</option></select>
+          <label for="s-b1">Battery 1</label>
+          <select id="s-b1"><option value="charging">Charging</option><option value="discharging">Discharging</option><option value="full">Fully charged</option><option value="pending">Held (pending)</option></select>
+          <label for="s-h1">Health 1</label>
+          <select id="s-h1"><option value="94">94%</option><option value="76">76%</option><option value="52">52%</option><option value="0">Unknown</option></select>
+          <label for="s-b2">Battery 2</label>
+          <select id="s-b2"><option value="none">None</option><option value="charging">Charging</option><option value="discharging">Discharging</option><option value="full">Fully charged</option></select>
+          <label for="s-h2">Health 2</label>
+          <select id="s-h2"><option value="94">94%</option><option value="76" selected>76%</option><option value="52">52%</option><option value="0">Unknown</option></select>
+          <label class="sw"><input type="checkbox" id="s-limit"> Charge limit on (80%)</label>
+          <label class="sw"><input type="checkbox" id="s-nolimit"> Battery 1 has no charge limit</label>
+          <label class="sw"><input type="checkbox" id="s-low"> Battery 1 at 12%</label>
+          <label class="sw"><input type="checkbox" id="s-mouse" checked> A wireless mouse</label>
+        </div>
+      </div>
+      <div class="card"><h2>Rows (pw_state_rows)</h2><pre class="state" id="state"></pre></div>
+    </aside>
+  </div>
+</div>
+
+<div class="switcher" role="toolbar" aria-label="Prototype variants">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="lbl" id="vlabel"></span>
+  <button id="next" aria-label="Next variant">→</button>
+</div>
+
+<script>
+// ---------- model ----------
+const S = { word: 'Discharging', b1: 'charging', h1: 94, b2: 'none', h2: 76, limit: false, nolimit: false, low: false, mouse: true, profile: 1, awake: false };
+const UI = { variant: 'A', menu: null };
+
+const VARIANTS = {
+  A: { name: 'Two lines', notes: [
+    'Closest to today: the state stays under the name, and the health takes the empty space under the bar and percentage.',
+    'Each row is two lines tall, as now, so the popup doesn\'t grow.',
+    'The health is dim like the state. Below 80% it turns amber, below 60% red.',
+    'The ⋮ keeps only the charge limit, so a battery without one has no ⋮.'] },
+  B: { name: 'Table with headings', notes: [
+    'A real table: Battery, Charge and Health headings over the columns.',
+    'The health is a plain number in its own column, aligned with the percentages.',
+    'The headings say what the numbers are, so the cells drop the word "Health".',
+    'Costs a line for the headings and 58 px of width for the column.'] },
+  C: { name: 'Block per battery', notes: [
+    'Each battery is a block: name and percentage, a bar across the whole width, then state on the left and health on the right.',
+    'The bar is green while charging, so the state also shows in the bar.',
+    'The health says what the number means: Good, Worn or Replace soon.',
+    'The tallest of the four: three lines a battery.'] },
+  D: { name: 'Chip and ring', notes: [
+    'The state is a coloured chip under the name: green while charging, blue when full, amber when held by the limit, grey otherwise.',
+    'The health is a small ring on the right, filled to the health and coloured the same way as A\'s text.',
+    'Readable at a glance, but the ring needs its tooltip to say what it is.',
+    'A peripheral keeps its plain state line and has no ring: UPower has no capacity for it.'] },
+};
+const ORDER = Object.keys(VARIANTS);
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function rows() {
+  const r = [];
+  const two = S.b2 !== 'none';
+  const bat = (n, st, pct, health, limitOk) => {
+    const limited = S.limit && limitOk;
+    const name = { charging: 'Charging', discharging: S.word, full: 'Fully charged', pending: 'Not charging' }[st];
+    return { kind: 'battery', name: two ? `Battery ${n}` : 'Battery', st, pct, health,
+      state: limited ? `${name} · limit 80%` : name, limitOk, limited };
+  };
+  const p1 = S.low ? 12 : S.b1 === 'full' ? 100 : S.b1 === 'pending' ? 80 : 73;
+  r.push(bat(1, S.b1, p1, S.h1, !S.nolimit));
+  if (two) r.push(bat(2, S.b2, S.b2 === 'full' ? 100 : 80, S.h2, true));
+  if (S.mouse) r.push({ kind: 'mouse', name: 'MX Master 3', st: 'unknown', pct: 64, health: null, state: 'Mouse', limitOk: false });
+  return r;
+}
+const healthClass = h => !h ? '' : h < 60 ? 'poor' : h < 80 ? 'worn' : '';
+const healthWord = h => !h ? '' : h < 60 ? 'Replace soon' : h < 80 ? 'Worn' : 'Good';
+const healthText = h => h ? `Health ${h}%` : 'Health unknown';
+const bolt = '<svg class="bolt" viewBox="0 0 10 10"><path d="M6 0L1.5 5.6h3L3.6 10 8.5 4h-3z"/></svg>';
+
+function batIcon(r) {
+  if (r.kind === 'mouse') return `<svg class="bico" viewBox="0 0 24 24"><path fill="var(--pop-ink)" d="M12 2.5a6 6 0 0 0-6 6v7a6 6 0 0 0 12 0v-7a6 6 0 0 0-6-6zm-.7 1.6v5h-3.6v-.6a4.3 4.3 0 0 1 3.6-4.4zm1.4 0a4.3 4.3 0 0 1 3.6 4.4v.6h-3.6zM7.7 10.5h8.6v5a4.3 4.3 0 0 1-8.6 0z"/></svg>`;
+  const w = Math.max(1, Math.round(10 * r.pct / 100)), low = r.pct < 20;
+  return `<svg class="bico" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2" fill="none" stroke="var(--pop-ink)" stroke-width="1.6"/>
+    <rect x="10" y="1.5" width="4" height="2" fill="var(--pop-ink)"/>
+    <rect x="9" y="${19 - 14 * r.pct / 100}" width="6" height="${14 * r.pct / 100}" fill="${low ? 'var(--low)' : 'var(--pop-ink)'}"/>
+    ${r.st === 'charging' ? '<path d="M13 6.5l-3.5 6h2.4l-1 5 3.6-6.2h-2.4z" fill="var(--pop)" stroke="var(--pop-ink)" stroke-width=".8"/>' : ''}</svg>`;
+}
+const lvl = (r, cls = 'lvl') => `<div class="${cls} ${r.pct < 20 ? 'low' : ''}"><i style="width:${r.pct}%"></i></div>`;
+const pct = r => `<span class="pct ${r.pct < 20 ? 'low' : ''}">${r.pct}%</span>`;
+const kebab = (r, i) => r.kind === 'battery' && r.limitOk
+  ? `<button class="kebab ${UI.menu === i ? 'on' : ''}" data-act="menu" data-v="${i}" title="Charge limit" aria-expanded="${UI.menu === i}">⋮</button>` : '<span></span>';
+const menu = (r, i, cls = 'full') => UI.menu === i && r.limitOk ? `<div class="${cls} menu-pop">
+    <div class="line"><span>Limit charging to 80%</span><button class="gsw ${S.limit ? 'on' : ''}" data-act="limit" aria-label="Limit charging to 80%"></button></div>
+    <span class="s">Keeps the battery from charging past 80%, which makes it last longer.</span></div>` : '';
+const stateLine = r => `<span class="s ${r.st === 'charging' ? 'charging' : ''}" title="${esc(r.state)}">${r.st === 'charging' ? bolt : ''}${esc(r.state)}</span>`;
+
+// ---------- A ----------
+function renderA() {
+  return `<div class="ta">${rows().map((r, i) => `
+    ${i ? '<span class="gap"></span>' : ''}
+    <span class="ico">${batIcon(r)}</span>
+    <span class="t">${esc(r.name)}</span>${lvl(r)}${pct(r)}<span class="k">${kebab(r, i)}</span>
+    ${stateLine(r)}
+    <span class="r2 hl ${healthClass(r.health)}" title="What the battery holds, of what it held new">${r.kind === 'battery' ? healthText(r.health) : ''}</span>
+    ${menu(r, i)}`).join('')}</div>`;
+}
+// ---------- B ----------
+function renderB() {
+  return `<div class="tb">
+    <span></span><span class="th">Battery</span><span class="th" style="grid-column:span 2">Charge</span><span class="th r" title="What the battery holds, of what it held new">Health</span><span></span>
+    ${rows().map((r, i) => `
+      ${batIcon(r)}
+      <div style="min-width:0"><div class="t">${esc(r.name)}</div>${stateLine(r)}</div>
+      ${lvl(r)}${pct(r)}
+      <span class="hcol ${healthClass(r.health)}">${r.kind !== 'battery' ? '<span class="dim">—</span>' : r.health ? r.health + '%' : '<span class="dim">?</span>'}</span>
+      ${kebab(r, i)}${menu(r, i)}`).join('')}</div>`;
+}
+// ---------- C ----------
+function renderC() {
+  return rows().map((r, i) => `<div class="blk">
+    <div class="top">${batIcon(r)}<span class="t">${esc(r.name)}</span>${pct(r)}${kebab(r, i)}</div>
+    <div class="wide ${r.pct < 20 ? 'low' : r.st === 'charging' ? 'charging' : ''}"><i style="width:${r.pct}%"></i></div>
+    <div class="bot">${stateLine(r)}${r.kind === 'battery'
+      ? `<span class="hl ${healthClass(r.health)}">${r.health ? `Health ${r.health}% · ${healthWord(r.health)}` : 'Health unknown'}</span>` : ''}</div>
+    ${menu(r, i, '')}</div>`).join('');
+}
+// ---------- D ----------
+function chip(r) {
+  if (r.kind !== 'battery') return `<div class="s">${esc(r.state)}</div>`;
+  const cls = r.st === 'charging' ? 'charging' : r.st === 'full' ? 'full' : r.st === 'pending' || r.limited && r.st !== 'discharging' ? 'held' : '';
+  return `<span class="chip ${cls}" title="${esc(r.state)}">${r.st === 'charging' ? bolt : ''}${esc(r.state)}</span>`;
+}
+function ring(r) {
+  if (r.kind !== 'battery') return '<span></span>';
+  const h = r.health, C = 2 * Math.PI * 12, col = !h ? 'var(--pop-soft)' : h < 60 ? 'var(--low)' : h < 80 ? 'var(--warn)' : 'var(--charge)';
+  return `<svg class="ring" viewBox="0 0 30 30" role="img" aria-label="${healthText(h)}"><title>${healthText(h)} of what it held new</title>
+    <circle cx="15" cy="15" r="12" fill="none" stroke="var(--trough)" stroke-width="3"/>
+    ${h ? `<circle cx="15" cy="15" r="12" fill="none" stroke="${col}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${C * h / 100} ${C}" transform="rotate(-90 15 15)"/>` : ''}
+    <text x="15" y="18.3" text-anchor="middle">${h || '?'}</text></svg>`;
+}
+function renderD() {
+  return `<div class="td">${rows().map((r, i) => `
+    ${batIcon(r)}<div style="min-width:0"><div class="t">${esc(r.name)}</div>${chip(r)}</div>
+    ${lvl(r)}${pct(r)}${ring(r)}${kebab(r, i)}${menu(r, i)}`).join('')}</div>`;
+}
+
+const RENDER = { A: renderA, B: renderB, C: renderC, D: renderD };
+
+function render() {
+  const r1 = rows()[0];
+  $('#picon').innerHTML = `<svg viewBox="0 0 16 16"><path d="M5 2h6v1h1.5v12h-9V3H5zm-.2 2.3v9.4h6.4V4.3z"/><rect x="5.8" y="${13 - 8 * r1.pct / 100}" width="4.4" height="${8 * r1.pct / 100}"/></svg><span style="font-size:12px">${r1.pct}%</span>`;
+  $('#pop').innerHTML = `
+    <div class="prof">${['Power Saver', 'Balanced', 'Performance'].map((p, i) => `<button class="${S.profile === i ? 'on' : ''}" data-act="prof" data-v="${i}">${p}</button>`).join('')}</div>
+    <div class="awake"><svg viewBox="0 0 20 20"><path d="M10 2a4 4 0 0 0-4 4v2H5v9h10V8h-1V6a4 4 0 0 0-4-4zm-2.6 4a2.6 2.6 0 0 1 5.2 0v2H7.4z"/></svg>
+      <div><div>Stay awake</div><div class="s">Don't sleep or lock the screen</div></div>
+      <button class="gsw ${S.awake ? 'on' : ''}" data-act="awake" aria-label="Stay awake"></button></div>
+    <div class="sep"></div>
+    ${RENDER[UI.variant]()}
+    <button class="configure" data-act="none">Configure Power Management…</button>`;
+  const v = VARIANTS[UI.variant];
+  $('#vlabel').textContent = `${UI.variant} (${v.name})`;
+  $('#vname').textContent = `${UI.variant}: ${v.name}`;
+  $('#vnotes').innerHTML = v.notes.map(n => `<li>${esc(n)}</li>`).join('');
+  $('#state').textContent = rows().map(r => [
+    `${r.name}`,
+    `  state   "${r.state}"`,
+    `  percent ${r.pct}%`,
+    `  health  ${r.kind === 'battery' ? (r.health ? r.health + '%' : 'unknown') : '— (peripheral)'}`,
+    `  ⋮       ${r.limitOk ? 'charge limit' : 'none'}`].join('\n')).join('\n');
+}
+
+// ---------- events ----------
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const a = b.dataset.act, v = b.dataset.v;
+  if (a === 'menu') UI.menu = UI.menu === +v ? null : +v;
+  if (a === 'limit') { S.limit = !S.limit; $('#s-limit').checked = S.limit; }
+  if (a === 'prof') S.profile = +v;
+  if (a === 'awake') S.awake = !S.awake;
+  render();
+});
+const bind = (id, key, conv = x => x) => $(id).addEventListener('change', e => { S[key] = conv(e.target.type === 'checkbox' ? e.target.checked : e.target.value); UI.menu = null; render(); });
+bind('#s-word', 'word'); bind('#s-b1', 'b1'); bind('#s-h1', 'h1', Number); bind('#s-b2', 'b2'); bind('#s-h2', 'h2', Number);
+bind('#s-limit', 'limit'); bind('#s-nolimit', 'nolimit'); bind('#s-low', 'low'); bind('#s-mouse', 'mouse');
+
+function go(d) {
+  const i = (ORDER.indexOf(UI.variant) + d + ORDER.length) % ORDER.length;
+  location.hash = ORDER[i];
+}
+function fromHash() { const h = location.hash.slice(1).toUpperCase(); UI.variant = ORDER.includes(h) ? h : 'A'; UI.menu = null; render(); }
+$('#prev').onclick = () => go(-1); $('#next').onclick = () => go(1);
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, select, textarea, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') go(-1); if (e.key === 'ArrowRight') go(1);
+});
+window.addEventListener('hashchange', fromHash);
+fromHash();
+</script>
