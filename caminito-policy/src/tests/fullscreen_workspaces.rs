@@ -344,7 +344,7 @@ fn turning_workspaces_per_output_off_leaves_a_fullscreen_workspace_on_its_own_ou
 
 #[test]
 fn a_window_that_goes_fullscreen_without_focus_gets_a_fullscreen_workspace_and_no_switch() {
-    let mut policy = two_outputs_with_key(true);
+    let mut policy = two_outputs_with_key(true, true);
 
     policy.set_fullscreen(id(3), true, None);
 
@@ -362,7 +362,7 @@ fn a_window_that_goes_fullscreen_without_focus_gets_a_fullscreen_workspace_and_n
 
 #[test]
 fn moving_a_fullscreen_window_to_a_workspace_makes_that_its_home_workspace() {
-    let mut policy = on_a_fullscreen_workspace();
+    let mut policy = on_a_fullscreen_workspace(true);
 
     policy.move_to_workspace(id(1), 2);
 
@@ -382,7 +382,7 @@ fn moving_a_fullscreen_window_to_a_workspace_makes_that_its_home_workspace() {
 
 #[test]
 fn the_move_binding_takes_a_fullscreen_window_to_another_home_workspace_and_no_switch() {
-    let mut policy = on_a_fullscreen_workspace();
+    let mut policy = on_a_fullscreen_workspace(true);
 
     policy.action(SEAT, Action::MoveToWorkspaceRight, ms(10));
 
@@ -436,7 +436,7 @@ fn a_fullscreen_window_doesnt_keep_its_home_workspace_and_takes_the_last_when_it
 
 #[test]
 fn an_unplugged_outputs_fullscreen_workspace_goes_to_the_primary_output_and_stays_there() {
-    let mut policy = two_outputs_with_key(true);
+    let mut policy = two_outputs_with_key(true, true);
     policy.move_to_workspace(id(2), 1);
     policy.activate(SEAT, id(2), ms(10));
     policy.set_fullscreen(id(2), true, None);
