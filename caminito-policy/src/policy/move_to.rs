@@ -114,7 +114,9 @@ impl<W: PolicyWindow> Policy<W> {
         else {
             return;
         };
-        let Some(to) = self.output_beside(&from, direction).copied() else {
+        // Not onto an output that shows another's Fullscreen workspace (ADR 0057).
+        let beside = self.output_beside(&from, direction).copied();
+        let Some(to) = beside.filter(|to| !self.shuts_out(to.id, id)) else {
             return;
         };
         let scale = |geometry, _| transform_to_output(geometry, from.geometry, to.geometry);

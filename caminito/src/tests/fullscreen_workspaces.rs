@@ -135,3 +135,21 @@ on_both_kinds! {
         assert_eq!(fullscreen_workspace(&f), Some(f.pid(window).0));
     }
 }
+
+on_both_kinds! {
+    fn a_window_opened_from_a_fullscreen_workspace_opens_on_its_home_workspace(kind: Kind) {
+        let (mut f, client) = desk(kind, true);
+        let other = f.map(client, WindowSpec::plain((400, 300)));
+        let game = f.map(client, WindowSpec { fullscreen: true, ..WindowSpec::plain(OUTPUT) });
+        assert_eq!(fullscreen_workspace(&f), Some(f.pid(game).0));
+
+        let window = f.map(client, WindowSpec::plain((400, 300)));
+
+        assert_eq!(fullscreen_workspace(&f), None);
+        assert!(slides_with(&f, other), "{:?}", slides(&f));
+        let policy = &f.state.caminito.policy;
+        assert!(policy.is_showing(f.pid(window)));
+        assert!(!policy.is_showing(f.pid(game)));
+        assert_eq!(policy.focus(SEAT), Some(f.pid(window)));
+    }
+}

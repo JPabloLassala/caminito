@@ -19,11 +19,16 @@ const MODES: [bool; 2] = [true, false];
 /// as `on` says: windows 1 and 3 on the left one, window 1 focused, and window 2 on the
 /// right one.
 fn two_outputs_with_key(on: bool, per_output: bool) -> Policy<TestWindow> {
-    let mut policy = Policy::new(Config {
+    two_outputs_with(Config {
         workspaces_per_output: per_output,
         fullscreen_workspaces: on,
         ..Config::default()
-    });
+    })
+}
+
+/// `two_outputs_with_key`'s outputs and windows, with `config`.
+fn two_outputs_with(config: Config) -> Policy<TestWindow> {
+    let mut policy = Policy::new(config);
     policy.add_output(output(1, 0, 0, 1920, 1080));
     policy.add_output(output(2, 1920, 0, 1280, 1024));
     policy.map_window(
@@ -750,5 +755,180 @@ fn turning_the_key_on_gives_a_fullscreen_transient_no_fullscreen_workspace_of_it
         policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(11));
         assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
         assert_eq!(active(&policy), after_switch_to(1, per_output));
+    }
+}
+
+#[test]
+fn a_window_opened_from_a_fullscreen_workspace_opens_on_its_home_workspace_the_output_slides_to() {
+    for per_output in MODES {
+        let mut policy = on_a_fullscreen_workspace(per_output);
+
+        policy.map_window(
+            TestWindow::new(4, 400, 300).with_requested_position(200, 200),
+            ms(10),
+        );
+
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+        assert_eq!(policy.workspace_of(id(4)), Some(0));
+        assert!(policy.is_showing(id(4)));
+        assert!(!policy.is_showing(id(1)));
+        assert_eq!(policy.focus(SEAT), Some(id(4)));
+        assert_eq!(
+            policy.take_output_switches(),
+            [switch_between(Some(1), None, -1)]
+        );
+    }
+}
+
+#[test]
+fn a_sticky_window_doesnt_show_on_a_fullscreen_workspace_and_shows_again_on_the_home_workspace() {
+    for per_output in MODES {
+        let mut policy = two_outputs_with_key(true, per_output);
+        policy.set_sticky(id(3), true);
+        policy.set_fullscreen(id(1), true, None);
+
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+        assert!(!policy.is_showing(id(3)));
+
+        policy.action(SEAT, Action::SwitchToWorkspaceLeft, ms(10));
+
+        assert!(policy.is_showing(id(3)));
+        assert_eq!(policy.focus(SEAT), Some(id(3)));
+    }
+}
+
+#[test]
+fn a_fullscreen_windows_transient_is_on_its_fullscreen_workspace() {
+    for per_output in MODES {
+        let mut policy = on_a_fullscreen_workspace(per_output);
+
+        policy.map_window(TestWindow::new(4, 200, 100).with_parent(1), ms(10));
+
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+        assert!(policy.is_showing(id(4)));
+        assert_eq!(policy.focus(SEAT), Some(id(4)));
+        assert_eq!(policy.take_output_switches(), []);
+
+        policy.action(SEAT, Action::SwitchToWorkspaceLeft, ms(11));
+        assert!(!policy.is_showing(id(4)));
+    }
+}
+
+#[test]
+fn a_window_cant_be_dragged_onto_an_output_that_shows_a_fullscreen_workspace() {
+    for per_output in MODES {
+        let mut policy = on_a_fullscreen_workspace(per_output);
+        assert!(policy.begin_move(SEAT, id(2), Point::new(2200.0, 150.0)));
+
+        policy.grab_motion(SEAT, Point::new(800.0, 150.0), false);
+        policy.end_grab(SEAT);
+
+        assert_eq!(policy.main_output_of(id(2)), Some(OutputId(2)));
+        assert!(policy.is_showing(id(2)));
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+        assert!(policy.is_showing(id(1)));
+    }
+}
+
+#[test]
+fn a_client_cant_move_its_window_onto_an_output_that_shows_a_fullscreen_workspace() {
+    for per_output in MODES {
+        let mut policy = on_a_fullscreen_workspace(per_output);
+
+        policy.request_geometry(id(2), Some(Point::new(300, 100)), None);
+
+        assert_eq!(policy.main_output_of(id(2)), Some(OutputId(2)));
+        assert!(policy.is_showing(id(2)));
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+
+        // Within its own output it moves.
+        policy.request_geometry(id(2), Some(Point::new(2300, 200)), None);
+        assert_eq!(
+            policy.geometry(id(2)).map(|g| g.loc),
+            Some(Point::new(2300, 200))
+        );
+    }
+}
+
+#[test]
+fn a_window_cant_be_dropped_in_the_overview_onto_an_output_that_shows_a_fullscreen_workspace() {
+    for per_output in MODES {
+        let mut policy = on_a_fullscreen_workspace(per_output);
+        policy.action(SEAT, Action::Overview, ms(10));
+        assert!(policy.overview().is_some());
+
+        for target in [None, Some(1)] {
+            policy.overview_press(id(2), Point::new(2200.0, 150.0));
+            policy.overview_pointer_on(Point::new(800.0, 150.0), Some(OutputId(1)), target);
+            policy.overview_release(ms(11));
+
+            assert_eq!(policy.main_output_of(id(2)), Some(OutputId(2)));
+            assert_eq!(policy.workspace_of(id(2)), Some(0));
+            assert!(policy.is_showing(id(2)));
+        }
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+    }
+}
+
+#[test]
+fn a_drag_let_go_in_a_tiling_zone_of_an_output_that_shows_a_fullscreen_workspace_tiles_nothing() {
+    for per_output in MODES {
+        let mut policy = two_outputs_with(Config {
+            workspaces_per_output: per_output,
+            fullscreen_workspaces: true,
+            allow_tiling: true,
+            ..Config::default()
+        });
+        policy.set_fullscreen(id(1), true, None);
+        assert!(policy.begin_move(SEAT, id(2), Point::new(2200.0, 150.0)));
+
+        policy.grab_motion(SEAT, Point::new(5.0, 500.0), false);
+        policy.end_grab(SEAT);
+
+        assert_eq!(policy.tile(id(2)), None);
+        assert_eq!(policy.main_output_of(id(2)), Some(OutputId(2)));
+    }
+}
+
+#[test]
+fn the_home_workspaces_windows_still_move_within_its_output() {
+    for per_output in MODES {
+        let mut policy = on_a_fullscreen_workspace(per_output);
+
+        policy.request_geometry(id(3), Some(Point::new(700, 200)), None);
+        assert_eq!(
+            policy.geometry(id(3)).map(|g| g.loc),
+            Some(Point::new(700, 200))
+        );
+
+        // And to another workspace in the Overview's bar of their own output.
+        policy.action(SEAT, Action::Overview, ms(10));
+        policy.overview_press(id(3), Point::new(700.0, 200.0));
+        policy.overview_pointer_on(Point::new(900.0, 50.0), Some(OutputId(1)), Some(1));
+        policy.overview_release(ms(11));
+        assert_eq!(policy.workspace_of(id(3)), Some(1));
+    }
+}
+
+#[test]
+fn a_keyboard_move_cant_take_a_window_onto_an_output_that_shows_a_fullscreen_workspace() {
+    for per_output in MODES {
+        let mut policy = on_a_fullscreen_workspace(per_output);
+        assert!(policy.begin_keyboard_move(SEAT, id(2)));
+
+        for _ in 0..100 {
+            policy.grab_key(
+                SEAT,
+                crate::GrabKey::Arrow {
+                    x: -1,
+                    y: 0,
+                    step: crate::GrabStep::Normal,
+                },
+            );
+        }
+        policy.end_grab(SEAT);
+
+        assert_eq!(policy.main_output_of(id(2)), Some(OutputId(2)));
+        assert!(policy.is_showing(id(2)));
     }
 }

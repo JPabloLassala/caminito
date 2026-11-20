@@ -472,7 +472,8 @@ impl<W: PolicyWindow> Policy<W> {
     /// Dropped on another output (246), the window goes there as `move_to_output` moves
     /// it, which brings it to that output's active workspace. Dropped on a cell of that
     /// output's bar, it then goes to that cell's workspace as the Window menu's move takes
-    /// it, if that isn't the active one. The Overview stays open after a drop.
+    /// it, if that isn't the active one. The Overview stays open after a drop. A drop on another
+    /// output that shows the Fullscreen workspace of another window does nothing (ADR 0057).
     pub fn overview_release(&mut self, now: Duration) {
         let Some(open) = &mut self.overview else {
             return;
@@ -488,6 +489,10 @@ impl<W: PolicyWindow> Policy<W> {
         let Some(onto) = drag.onto else {
             return;
         };
+        // Nothing is dropped onto an output that shows another's Fullscreen workspace.
+        if Some(onto) != own && self.shuts_out(onto, drag.window) {
+            return;
+        }
         if Some(onto) != own {
             self.move_to_output(drag.window, onto);
         }
