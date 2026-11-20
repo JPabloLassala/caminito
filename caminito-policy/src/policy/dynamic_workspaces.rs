@@ -10,9 +10,13 @@ impl<W: PolicyWindow> Policy<W> {
     /// Whether a window keeps its workspace from counting as empty: one that isn't on every
     /// workspace, as Marco's `workspace_has_non_sticky_windows` has it (screen.c:1214-1226).
     /// The desktop and docks are always on every workspace in Marco (window.c:6793-6795).
+    /// A window on a Fullscreen workspace, with its family, doesn't keep its Home
+    /// workspace (ADR 0057).
     fn keeps_workspace(&self, id: WindowId) -> bool {
         let managed = &self.windows[&id];
-        !managed.sticky && !matches!(managed.window_type, WindowType::Desktop | WindowType::Dock)
+        !managed.sticky
+            && !matches!(managed.window_type, WindowType::Desktop | WindowType::Dock)
+            && self.fullscreen_workspace_of(id).is_none()
     }
 
     /// Adds and removes workspaces for the windows they have, while `dynamic-workspaces` is
@@ -48,11 +52,17 @@ impl<W: PolicyWindow> Policy<W> {
         // A workspace with windows takes its place in order. What's left on a removed
         // workspace is on every workspace, and goes to the first, Marco's `safe_target` when
         // there are windows, as it is when there are none. The stacking order is one across
-        // workspaces, and stays as it is.
-        for managed in self.windows.values_mut() {
+        // workspaces, and stays as it is. A Fullscreen workspace's family whose Home
+        // workspace has gone takes the last, the empty one (ADR 0057).
+        let on_fullscreen: BTreeSet<WindowId> = (self.windows.keys())
+            .filter(|id| self.fullscreen_workspace_of(**id).is_some())
+            .copied()
+            .collect();
+        for (id, managed) in self.windows.iter_mut() {
             let from = managed.workspace;
             managed.workspace = match occupied.iter().position(|o| *o == from) {
                 Some(to) => to,
+                None if on_fullscreen.contains(id) => count - 1,
                 None if from < count => from,
                 None => 0,
             };
@@ -70,8 +80,11 @@ impl<W: PolicyWindow> Policy<W> {
         // Whether a workspace is removed with no windows to follow down.
         let goes = |workspace: usize| !occupied.contains(&workspace) && workspace >= count;
         // Whether an output showed one. What stands for the outputs counts only while
-        // policy has none: no output shows it.
-        let removed = (self.active_workspaces.each()).any(|shown| goes(shown.active));
+        // policy has none: no output shows it. One that shows a Fullscreen workspace still
+        // does after, with its window's Home workspace, which `apply` gives it next.
+        let leaves =
+            |shown: active_workspaces::Shown| shown.fullscreen.is_none() && goes(shown.active);
+        let removed = (self.active_workspaces.each()).any(leaves);
         // Worked out on a copy, so that the switcher closes on the workspaces it was open
         // over, as before the count changed.
         let mut active_workspaces = self.active_workspaces.clone();
@@ -98,10 +111,11 @@ impl<W: PolicyWindow> Policy<W> {
             // the way between the two cells of the grid as it was. One whose active
             // workspace followed its windows down shows what it did, and has no switch.
             for output in &self.outputs {
-                let from = self.active_workspaces.of(Some(output.id)).active;
-                if !goes(from) {
+                let shown = self.active_workspaces.of(Some(output.id));
+                if !leaves(shown) {
                     continue;
                 }
+                let from = shown.active;
                 self.output_switches.push(OutputSwitch {
                     output: output.id,
                     from,
@@ -117,7 +131,11 @@ impl<W: PolicyWindow> Policy<W> {
         // show what they did, so their seats keep their focus (225).
         let spanning = !self.config.workspaces_per_output;
         let refocused: Vec<SeatId> = (self.seats.iter().copied())
-            .filter(|seat| removed && (spanning || goes(self.active_shown(*seat).active)))
+            // A seat on a Fullscreen workspace keeps its focus there.
+            .filter(|seat| {
+                let shown = self.active_shown(*seat);
+                removed && ((spanning && shown.fullscreen.is_none()) || leaves(shown))
+            })
             .collect();
         self.active_workspaces = active_workspaces;
         for seat in refocused {

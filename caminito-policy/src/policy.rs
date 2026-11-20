@@ -1504,7 +1504,15 @@ impl<W: PolicyWindow> Policy<W> {
             return;
         };
         self.move_tree(root, workspace);
-        self.switch_shown(self.output_switched_for(root), workspace, Some(direction));
+        // A window on the Fullscreen workspace its output shows stays there, after its new
+        // Home workspace, so the output doesn't switch (ADR 0057).
+        let output = self.output_showing(root);
+        let shown = output.is_some_and(|output| self.fullscreen_workspace_on(output) == Some(root));
+        if shown {
+            self.apply();
+        } else {
+            self.switch_shown(self.output_switched_for(root), workspace, Some(direction));
+        }
         if self.focus_window(seat, id, now) {
             self.raise_family(id);
         }
@@ -3436,6 +3444,8 @@ impl<W: PolicyWindow> Policy<W> {
         self.leave_gone_fullscreen_workspaces();
         // First, as Marco runs it once the windows have moved (screen.c:1360-1371).
         self.update_dynamic_workspaces();
+        // After `update_dynamic_workspaces`, which can move a Home workspace.
+        self.follow_fullscreen_homes();
         self.end_stale_grabs();
         self.close_stale_window_menu();
         self.refresh_overview();

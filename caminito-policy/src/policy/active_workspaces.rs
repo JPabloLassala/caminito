@@ -239,6 +239,51 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// Each output that shows a window's Fullscreen workspace has the window's Home
+    /// workspace active, after a move of the window or `dynamic-workspaces` changed it
+    /// (ADR 0057). The output still shows the Fullscreen workspace, so that's no switch.
+    /// Under Spanning workspaces the other outputs keep showing the Home workspace's
+    /// number, so they switch to the new one.
+    pub(super) fn follow_fullscreen_homes(&mut self) {
+        let grid = self.workspace_grid();
+        let spanning = !self.config.workspaces_per_output;
+        for output in self.outputs.clone() {
+            let Some(shown) = self.active_workspaces.of_mut(output.id) else {
+                continue;
+            };
+            let home = (shown.fullscreen)
+                .and_then(|fullscreen| self.windows.get(&fullscreen))
+                .map(|managed| managed.workspace);
+            let Some(home) = home.filter(|home| *home != shown.active) else {
+                continue;
+            };
+            shown.active = home;
+            if !spanning {
+                continue;
+            }
+            for other in &self.outputs {
+                let shown = self.active_workspaces.of(Some(other.id));
+                if shown.fullscreen.is_some() || shown.active == home {
+                    continue;
+                }
+                self.output_switches.push(OutputSwitch {
+                    output: other.id,
+                    from: shown.active,
+                    to: home,
+                    from_fullscreen: None,
+                    to_fullscreen: None,
+                    cells: grid.cells_between(shown.active, home),
+                });
+            }
+            for shown in self.active_workspaces.each_mut() {
+                if shown.fullscreen.is_none() && shown.active != home {
+                    shown.previous = Some(shown.active);
+                    shown.active = home;
+                }
+            }
+        }
+    }
+
     /// The seats whose Active output `output` is, which a switch of it alone refocuses.
     pub(super) fn seats_on(&self, output: OutputId) -> Vec<SeatId> {
         (self.seats.iter().copied())
