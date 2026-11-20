@@ -2,6 +2,10 @@
 //! output, whether its last frame was one opaque fullscreen window that covers it with
 //! nothing drawn over it, and why not. What was drawn over it gone, the next frame is
 //! eligible again.
+//!
+//! The windows are xdg toplevels alone: what sets each rule apart, the opaque region, the
+//! buffer's size and the popup, is the Wayland test client's to set, and the scene draws an
+//! XWayland window's surface as it draws an xdg one's.
 
 use caminito_test_client::layer_shell::{Layer, LayerSpec};
 use caminito_test_client::{Anchor, ConstraintAdjustment, Gravity, Positioner};
@@ -52,7 +56,12 @@ fn drawn_over(over: &str) -> Eligibility {
 fn eligibility(f: &mut Fixture, output: &Output) -> Eligibility {
     f.draw(output);
     let dump: serde_json::Value = serde_json::from_str(&f.state.caminito.state_dump()).unwrap();
-    let fast_path = &dump["outputs"][0]["fast_path"];
+    let outputs = dump["outputs"].as_array().unwrap();
+    let name = output.name();
+    let dumped = outputs
+        .iter()
+        .find(|dumped| dumped["name"] == name.as_str());
+    let fast_path = &dumped.expect("the dump has the output")["fast_path"];
     let text = |name: &str| fast_path[name].as_str().map(str::to_owned);
     if fast_path["eligible"].as_bool().unwrap() {
         return Eligibility::Eligible(fast_path["window"].as_u64().unwrap());
@@ -196,4 +205,23 @@ fn a_workspace_slide_takes_eligibility_until_it_ends() {
         eligibility(&mut f, &output),
         Eligibility::Eligible(f.pid(window).0)
     );
+}
+
+#[test]
+fn each_output_has_its_own_eligibility() {
+    let (mut f, client, left) = desk();
+    let right = f.add_output(OUTPUT, 1.0);
+    let window = fullscreen(&mut f, client, OUTPUT, WHOLE);
+    let shown_on = f.geometry(window).loc;
+    let (on, off) = if shown_on.x == 0 {
+        (left, right)
+    } else {
+        (right, left)
+    };
+
+    assert_eq!(
+        eligibility(&mut f, &on),
+        Eligibility::Eligible(f.pid(window).0)
+    );
+    assert_eq!(eligibility(&mut f, &off), not("no-fullscreen-window"));
 }

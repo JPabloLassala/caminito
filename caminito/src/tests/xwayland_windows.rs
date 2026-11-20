@@ -173,7 +173,7 @@ fn a_configure_request_is_honoured_for_a_floating_window_and_refused_for_a_maxim
 /// window being resized is, rather than black where it hasn't drawn yet.
 #[test]
 fn a_window_that_takes_sync_requests_and_asks_for_a_new_size_keeps_its_size_until_it_has_drawn_it()
-{
+ {
     let (mut f, x) = Fixture::connected(Kind::X11);
     let window = f.map(
         x,

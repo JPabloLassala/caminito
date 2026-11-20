@@ -6,7 +6,7 @@
 //!
 //! The pointer's cursor doesn't count as drawn over the window: it goes on its own plane.
 
-use caminito_policy::{Layer as StackLayer, WindowId};
+use caminito_policy::WindowId;
 use smithay::backend::renderer::element::{Element, Id};
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer};
 use smithay::desktop::PopupManager;
@@ -18,7 +18,7 @@ use smithay::wayland::seat::WaylandFocus;
 
 use crate::esmeril::DrawsEsmeril;
 use crate::output::{output_geometry, output_id};
-use crate::scene::{SceneElement, SceneLayer};
+use crate::scene::{SceneElement, SceneLayer, window_is_in};
 use crate::state::Caminito;
 
 /// Whether an output's frame can take the fast path.
@@ -57,59 +57,6 @@ pub(crate) enum Over {
     Layer(SceneLayer),
 }
 
-impl FastPath {
-    /// Why not, as the debug dump names it; `None` if it's eligible.
-    pub(crate) fn reason(self) -> Option<&'static str> {
-        match self {
-            FastPath::Eligible(_) => None,
-            FastPath::NotEligible(reason) => Some(match reason {
-                NotEligible::NoFullscreenWindow => "no-fullscreen-window",
-                NotEligible::DoesNotCover => "does-not-cover",
-                NotEligible::Translucent => "translucent",
-                NotEligible::DrawnOver(_) => "drawn-over",
-            }),
-        }
-    }
-
-    /// What's drawn over the window, as the debug dump names it.
-    pub(crate) fn over(self) -> Option<&'static str> {
-        let FastPath::NotEligible(NotEligible::DrawnOver(over)) = self else {
-            return None;
-        };
-        Some(match over {
-            Over::WorkspaceSlide => "workspace-slide",
-            Over::Popup => "popup",
-            Over::Subsurface => "subsurface",
-            Over::Window => "window",
-            Over::Layer(layer) => layer_name(layer),
-        })
-    }
-}
-
-/// A scene layer as the debug dump names it.
-fn layer_name(layer: SceneLayer) -> &'static str {
-    match layer {
-        SceneLayer::Blank => "blank",
-        SceneLayer::Cursor => "cursor",
-        SceneLayer::DragIcon => "drag-icon",
-        SceneLayer::Lock => "lock",
-        SceneLayer::BellFlash => "bell-flash",
-        SceneLayer::Switcher => "switcher",
-        SceneLayer::WorkspacePopup => "workspace-popup",
-        SceneLayer::WindowMenu => "window-menu",
-        SceneLayer::Overlay => "overlay",
-        SceneLayer::OverrideRedirect => "override-redirect",
-        SceneLayer::FullscreenWindows => "fullscreen-windows",
-        SceneLayer::Overview => "overview",
-        SceneLayer::Top => "top",
-        SceneLayer::LayerPopups => "layer-popups",
-        SceneLayer::Minimizing => "minimizing",
-        SceneLayer::Windows => "windows",
-        SceneLayer::Bottom => "bottom",
-        SceneLayer::Background => "background",
-    }
-}
-
 /// Whether the frame of `output` made of `elements`, front to back, each of the scene layer
 /// `layers` has at its index, can take the fast path.
 pub(crate) fn fast_path<R>(
@@ -123,7 +70,7 @@ where
     R::TextureId: Send + Clone + 'static,
 {
     let not = FastPath::NotEligible;
-    // Where it goes, every window of the output is away from its place.
+    // A Workspace slide moves every window of the output off its place (233).
     if caminito
         .workspace_slides
         .on(output_id(output), caminito.now())
@@ -180,7 +127,7 @@ fn fullscreen_window(caminito: &Caminito, output: &Output) -> Option<WindowId> {
     stacking.iter().rev().copied().find(|&id| {
         policy.is_showing(id)
             && policy.is_fullscreen(id)
-            && policy.layer(id) == Some(StackLayer::Fullscreen)
+            && window_is_in(caminito, id, SceneLayer::FullscreenWindows)
             && policy
                 .geometry(id)
                 .is_some_and(|geometry| geometry.overlaps(output_geometry))

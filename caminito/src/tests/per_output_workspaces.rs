@@ -452,11 +452,7 @@ fn a_drag_released_over_a_window_or_a_panel_on_the_other_output_makes_it_the_act
         let key = format!("workspaces-per-output {per_output}");
         drag_from(&mut f, client, on_left);
         drop_at(&mut f, (2700., 700.));
-        assert_eq!(
-            dump(&f)["active_output"],
-            right.name(),
-            "over the window, {key}"
-        );
+        assert_eq!(dump(&f)["active_output"], right.name(), "over the window, {key}");
         assert_eq!(dump(&f)["focus"], f.pid(on_left).0);
 
         // The press that starts the next drag makes the left output the Active output
@@ -464,11 +460,7 @@ fn a_drag_released_over_a_window_or_a_panel_on_the_other_output_makes_it_the_act
         drag_from(&mut f, client, on_left);
         assert_eq!(dump(&f)["active_output"], left.name());
         drop_at(&mut f, (2700., 10.));
-        assert_eq!(
-            dump(&f)["active_output"],
-            right.name(),
-            "over the panel, {key}"
-        );
+        assert_eq!(dump(&f)["active_output"], right.name(), "over the panel, {key}");
         assert_eq!(opens(&mut f, client).0, right.name(), "{key}");
     }
 }

@@ -16,10 +16,10 @@ use smithay::utils::{FrameExtents, Logical, Point, Rectangle};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, KeyboardInteractivity, Layer};
 
 use crate::decoration::memory_buffer;
-use crate::fast_path::FastPath;
+use crate::fast_path::{FastPath, NotEligible, Over};
 use crate::output::{output_geometry, output_id};
 use crate::popup_slide::DrawnSlide;
-use crate::scene;
+use crate::scene::{self, SceneLayer};
 use crate::state::{Caminito, SEAT};
 use crate::switcher::layout::CellStyle;
 use crate::window::{Strut, with_x_facts};
@@ -744,14 +744,55 @@ struct FastPathDump {
 impl From<FastPath> for FastPathDump {
     fn from(fast_path: FastPath) -> Self {
         FastPathDump {
-            eligible: fast_path.reason().is_none(),
+            eligible: matches!(fast_path, FastPath::Eligible(_)),
             window: match fast_path {
                 FastPath::Eligible(window) => Some(window.0),
                 FastPath::NotEligible(_) => None,
             },
-            reason: fast_path.reason(),
-            over: fast_path.over(),
+            reason: match fast_path {
+                FastPath::Eligible(_) => None,
+                FastPath::NotEligible(reason) => Some(match reason {
+                    NotEligible::NoFullscreenWindow => "no-fullscreen-window",
+                    NotEligible::DoesNotCover => "does-not-cover",
+                    NotEligible::Translucent => "translucent",
+                    NotEligible::DrawnOver(_) => "drawn-over",
+                }),
+            },
+            over: match fast_path {
+                FastPath::NotEligible(NotEligible::DrawnOver(over)) => Some(match over {
+                    Over::WorkspaceSlide => "workspace-slide",
+                    Over::Popup => "popup",
+                    Over::Subsurface => "subsurface",
+                    Over::Window => "window",
+                    Over::Layer(layer) => scene_layer_name(layer),
+                }),
+                _ => None,
+            },
         }
+    }
+}
+
+/// A scene layer as the debug dump names it.
+fn scene_layer_name(layer: SceneLayer) -> &'static str {
+    match layer {
+        SceneLayer::Blank => "blank",
+        SceneLayer::Cursor => "cursor",
+        SceneLayer::DragIcon => "drag-icon",
+        SceneLayer::Lock => "lock",
+        SceneLayer::BellFlash => "bell-flash",
+        SceneLayer::Switcher => "switcher",
+        SceneLayer::WorkspacePopup => "workspace-popup",
+        SceneLayer::WindowMenu => "window-menu",
+        SceneLayer::Overlay => "overlay",
+        SceneLayer::OverrideRedirect => "override-redirect",
+        SceneLayer::FullscreenWindows => "fullscreen-windows",
+        SceneLayer::Overview => "overview",
+        SceneLayer::Top => "top",
+        SceneLayer::LayerPopups => "layer-popups",
+        SceneLayer::Minimizing => "minimizing",
+        SceneLayer::Windows => "windows",
+        SceneLayer::Bottom => "bottom",
+        SceneLayer::Background => "background",
     }
 }
 
