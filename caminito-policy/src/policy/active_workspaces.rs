@@ -250,6 +250,9 @@ impl<W: PolicyWindow> Policy<W> {
     /// the seat that last acted, as `workspaces-per-output` is turned off (230, 231). No
     /// window changes its workspace, and an output that shows another one stops showing
     /// it, as a switch does.
+    ///
+    /// A Fullscreen workspace stays on the output that shows it, if that output's number
+    /// stays, and the others keep showing its Home workspace's number (ADR 0057).
     pub(super) fn span_workspaces(&mut self) {
         let active = self.active_shown(self.last_seat);
         let switches = self
@@ -257,7 +260,11 @@ impl<W: PolicyWindow> Policy<W> {
             .each()
             .any(|shown| shown.active != active.active);
         for shown in self.active_workspaces.each_mut() {
-            *shown = active;
+            let fullscreen = shown.fullscreen.filter(|_| shown.active == active.active);
+            *shown = Shown {
+                fullscreen,
+                ..active
+            };
         }
         // The one workspace of a number shows its desktop if the Active output's did.
         self.give_shown_desktops(self.active_output(self.last_seat), &[None]);
