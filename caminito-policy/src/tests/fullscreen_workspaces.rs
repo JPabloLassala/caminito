@@ -664,3 +664,91 @@ fn a_numbered_workspace_binding_reaches_that_workspace_from_a_fullscreen_workspa
         assert!(!policy.is_showing(id(1)));
     }
 }
+
+/// `config` with `fullscreen-workspaces` as `on` says and `workspaces-per-output` as
+/// `per_output` says, as `two_outputs_with_key` has them.
+fn key(on: bool, per_output: bool) -> Config {
+    Config {
+        workspaces_per_output: per_output,
+        fullscreen_workspaces: on,
+        ..Config::default()
+    }
+}
+
+#[test]
+fn turning_the_key_on_gives_each_fullscreen_window_a_fullscreen_workspace_and_no_output_switches() {
+    for per_output in MODES {
+        let mut policy = two_outputs_with_key(false, per_output);
+        policy.set_fullscreen(id(1), true, None);
+        policy.set_fullscreen(id(2), true, None);
+        policy.take_output_switches();
+
+        policy.settings_changed(key(true, per_output));
+
+        assert_eq!(policy.take_output_switches(), []);
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+        assert_eq!(active(&policy), (0, 0));
+        assert!(!policy.is_showing(id(1)));
+        assert!(!policy.is_showing(id(2)));
+        assert!(policy.is_showing(id(3)));
+        assert!(policy.is_fullscreen(id(1)));
+        assert_eq!(policy.focus(SEAT), Some(id(3)));
+
+        // Each is to the right of its Home workspace.
+        policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(10));
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+        assert!(policy.is_showing(id(1)));
+    }
+}
+
+#[test]
+fn turning_the_key_off_returns_each_fullscreen_window_to_its_home_workspace_still_fullscreen() {
+    for per_output in MODES {
+        let mut policy = on_a_fullscreen_workspace(per_output);
+        policy.set_fullscreen(id(2), true, None);
+
+        policy.settings_changed(key(false, per_output));
+
+        // The output that showed one slides back to its Home workspace.
+        assert_eq!(
+            policy.take_output_switches(),
+            [switch_between(Some(1), None, -1)]
+        );
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+        assert_eq!(active(&policy), (0, 0));
+        assert!(policy.is_fullscreen(id(1)));
+        assert!(policy.is_fullscreen(id(2)));
+        assert!(policy.is_showing(id(1)));
+        assert!(policy.is_showing(id(2)));
+        assert!(policy.is_showing(id(3)));
+        assert_eq!(policy.focus(SEAT), Some(id(1)));
+
+        // Right is the grid's next.
+        policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(10));
+        assert_eq!(active(&policy), after_switch_to(1, per_output));
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+    }
+}
+
+#[test]
+fn turning_the_key_on_gives_a_fullscreen_transient_no_fullscreen_workspace_of_its_own() {
+    for per_output in MODES {
+        let mut policy = two_outputs_with_key(false, per_output);
+        policy.map_window(
+            TestWindow::new(4, 300, 200)
+                .with_parent(1)
+                .with_requested_position(200, 200),
+            ms(10),
+        );
+        policy.set_fullscreen(id(4), true, None);
+        assert!(policy.is_fullscreen(id(4)));
+
+        policy.settings_changed(key(true, per_output));
+
+        assert!(policy.is_showing(id(1)));
+        assert!(policy.is_showing(id(4)));
+        policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(11));
+        assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+        assert_eq!(active(&policy), after_switch_to(1, per_output));
+    }
+}

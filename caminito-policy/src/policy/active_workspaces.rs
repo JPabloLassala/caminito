@@ -223,6 +223,22 @@ impl<W: PolicyWindow> Policy<W> {
         after.into_iter().map(|(_, id)| id).collect()
     }
 
+    /// The key was turned on or off (ADR 0057): on, each fullscreen window that heads its
+    /// transient family gets a Fullscreen workspace, and no output switches to it; off, each
+    /// is back on its Home workspace, still fullscreen, and `apply` switches the outputs that
+    /// showed one back there. They're made in stacking order, so the topmost is the newest.
+    pub(super) fn follow_fullscreen_workspaces_key(&mut self, on: bool) {
+        for id in &self.stack {
+            let managed = self.windows.get_mut(id).unwrap();
+            managed.fullscreen_workspace = if on && managed.may_have_fullscreen_workspace() {
+                self.fullscreen_workspaces_made += 1;
+                Some(self.fullscreen_workspaces_made)
+            } else {
+                None
+            };
+        }
+    }
+
     /// Each output that shows the Fullscreen workspace of a window that has none any more,
     /// because it left fullscreen or closed, switches back to the Home workspace, with the
     /// window focused there if it's still open (ADR 0057).
