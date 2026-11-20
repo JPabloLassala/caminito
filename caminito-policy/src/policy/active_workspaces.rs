@@ -203,6 +203,19 @@ impl<W: PolicyWindow> Policy<W> {
         self.windows[&root].fullscreen_workspace.then_some(root)
     }
 
+    /// Whether `output` shows the Fullscreen workspace of a window whose family `id` isn't
+    /// of, which takes no other window: a drag, a client or the Overview can't put `id`
+    /// there (ADR 0057).
+    pub(super) fn shuts_out(&self, output: OutputId, id: WindowId) -> bool {
+        let shown = self.active_workspaces.of(Some(output)).fullscreen;
+        shown.is_some_and(|fullscreen| self.fullscreen_workspace_of(id) != Some(fullscreen))
+    }
+
+    /// Whether `id`'s frame, at `frame`, would be most on an output that shuts it out.
+    pub(super) fn shut_out_at(&self, id: WindowId, frame: Rectangle<i32, Logical>) -> bool {
+        (self.output_of(frame)).is_some_and(|output| self.shuts_out(output.id, id))
+    }
+
     /// The window whose Fullscreen workspace comes right after `output`'s active workspace,
     /// its Home workspace, if one does.
     pub(super) fn fullscreen_workspace_after(&self, output: OutputId) -> Option<WindowId> {
