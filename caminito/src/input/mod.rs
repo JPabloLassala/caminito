@@ -1383,6 +1383,12 @@ impl Caminito {
         }
     }
 
+    /// A drag was released at `location`, whatever it's dropped on: its output becomes the
+    /// Active output, as at a press on no window (CMN-339).
+    pub(crate) fn drag_released(&mut self, location: Point<f64, Logical>) {
+        self.output_pressed(location);
+    }
+
     /// A binding that switches the workspace is about to run: the output under the pointer
     /// becomes the Active output, unless an Interaction holds one of its own.
     pub(crate) fn pointer_output_switches(&mut self) {

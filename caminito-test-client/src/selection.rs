@@ -103,6 +103,17 @@ impl Client {
             serial,
         );
         self.state.drag_icon = icon;
+        self.state.drag_source = Some(source);
+    }
+
+    /// Destroys the last drag's source, as GTK gives up a drag the user cancels with
+    /// Escape while the button is still held.
+    pub fn destroy_drag_source(&mut self) {
+        self.state
+            .drag_source
+            .take()
+            .expect("a drag was started")
+            .destroy();
     }
 
     /// Moves the last drag's icon by `(dx, dy)` with `wl_surface.offset`, and commits.

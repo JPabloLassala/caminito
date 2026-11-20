@@ -28,7 +28,7 @@ use smithay::reexports::wayland_server::backend::{
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
-use smithay::utils::{Clock, Logical, Monotonic, Point, Serial};
+use smithay::utils::{Clock, IsAlive, Logical, Monotonic, Point, Serial};
 use smithay::wayland::alpha_modifier::AlphaModifierState;
 use smithay::wayland::commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState};
 use smithay::wayland::compositor::{
@@ -339,6 +339,9 @@ pub struct Caminito {
     pub client_cursor: CursorImageStatus,
     /// The icon of the Wayland drag in progress, if it has one (48).
     pub(crate) drag_icon: Option<DragIcon>,
+    /// The source of the Wayland drag in progress, to tell at the drop whether its client
+    /// gave the drag up (CMN-339).
+    pub(crate) drag_source: Option<Arc<dyn IsAlive + Send + Sync>>,
     /// Caminito's own cursors.
     pub cursors: Cursors,
 
@@ -1108,6 +1111,7 @@ impl Caminito {
             window_menu: None,
             client_cursor: CursorImageStatus::default_named(),
             drag_icon: None,
+            drag_source: None,
             cursors,
             clock,
             display_handle,

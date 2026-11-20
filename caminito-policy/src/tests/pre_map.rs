@@ -57,7 +57,7 @@ fn the_bounds_are_those_of_the_output_the_window_will_be_placed_on() {
         ("a dialog with a parent", Automatic, Dialog, Some(1), MapStates::default(), second),
         ("a modal dialog with a parent", Automatic, ModalDialog, Some(1), MapStates::default(), second),
         ("a dialog with a parent, pointer", Pointer, Dialog, Some(1), MapStates::default(), second),
-        // One with no parent is centred on the focused window's output, in every mode.
+        // One with no parent is centred on the Active output, in every mode.
         ("a dialog with none", Automatic, Dialog, None, MapStates::default(), first),
         ("a dialog with none, pointer", Pointer, Dialog, None, MapStates::default(), first),
         ("a splash screen, manual", Manual, Splashscreen, None, MapStates::default(), first),

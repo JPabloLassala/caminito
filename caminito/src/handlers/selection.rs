@@ -12,17 +12,29 @@
 //! A Wayland drag's icon is kept here from the drag's start until it's dropped or
 //! cancelled (48). An X client's drag has none: it draws its own, in an override-redirect
 //! window, and Smithay's XDND bridge starts the grab without asking for one.
+//!
+//! A drag released on another output makes that one the Active output, whatever it's
+//! dropped on (CMN-339): a client that opens a window for a drop on nothing, as Firefox
+//! does for a tab, has it open there. A drag cancelled, or given up by its Wayland client
+//! with the button still held, as GTK does at an Escape, changes nothing. An X client's
+//! drag reaches the same `dropped` through the bridge's grab, once it has left the X
+//! windows; one dropped on another X window stays within Xwayland, as a plain press and
+//! release, and isn't told from one.
 
+use std::any::Any;
 use std::os::fd::OwnedFd;
+use std::sync::Arc;
 use std::time::Duration;
 
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::input::Seat;
-use smithay::input::dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source};
+use smithay::input::dnd::{
+    DnDGrab, DndAction, DndGrabHandler, DndTarget, GrabType, Source, SourceMetadata,
+};
 use smithay::input::pointer::Focus;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Monotonic, Point, Serial, Time};
+use smithay::utils::{IsAlive, Logical, Monotonic, Point, Serial, Time};
 use smithay::wayland::compositor::{
     SurfaceAttributes, TraversalAction, with_states, with_surface_tree_downward,
 };
@@ -131,9 +143,47 @@ impl State {
     }
 
     fn drag_ended(&mut self) {
+        self.caminito.drag_source = None;
         if self.caminito.drag_icon.take().is_some() {
             self.caminito.queue_redraw_all();
         }
+    }
+}
+
+/// A drag's source, shared between the grab and `Caminito::drag_source`, which only asks
+/// whether it's alive.
+struct SharedSource<S>(Arc<S>);
+
+impl<S: Source> IsAlive for SharedSource<S> {
+    fn alive(&self) -> bool {
+        self.0.alive()
+    }
+}
+
+impl<S: Source> Source for SharedSource<S> {
+    fn is_client_local(&self, target: &dyn Any) -> bool {
+        self.0.is_client_local(target)
+    }
+    fn metadata(&self) -> Option<SourceMetadata> {
+        self.0.metadata()
+    }
+    fn accepted(&self, mime_type: Option<String>) {
+        self.0.accepted(mime_type);
+    }
+    fn choose_action(&self, action: DndAction) {
+        self.0.choose_action(action);
+    }
+    fn send(&self, mime_type: &str, fd: OwnedFd) {
+        self.0.send(mime_type, fd);
+    }
+    fn drop_performed(&self) {
+        self.0.drop_performed();
+    }
+    fn cancel(&self) {
+        self.0.cancel();
+    }
+    fn finished(&self) {
+        self.0.finished();
     }
 }
 
@@ -156,11 +206,14 @@ impl WaylandDndGrabHandler for State {
             && let Some(pointer) = seat.get_pointer()
             && let Some(start_data) = pointer.grab_start_data()
         {
+            let source = Arc::new(source);
+            let shared = SharedSource(source.clone());
             let grab =
-                DnDGrab::new_pointer(&self.caminito.display_handle, start_data, source, seat);
-            // A drag this one replaces is cancelled here, and takes its icon with it, so
-            // the new icon is kept only after.
+                DnDGrab::new_pointer(&self.caminito.display_handle, start_data, shared, seat);
+            // A drag this one replaces is cancelled here, and takes its icon and source
+            // with it, so the new ones are kept only after.
             pointer.set_grab(self, grab, serial, Focus::Keep);
+            self.caminito.drag_source = Some(source);
             // The icon may have committed its first offset before the drag began, as GTK's
             // does; the surface is new, so that offset is its only one.
             self.caminito.drag_icon = icon.map(|surface| DragIcon {
@@ -178,8 +231,17 @@ impl DndGrabHandler for State {
         _target: Option<DndTarget<'_, Self>>,
         _validated: bool,
         _seat: Seat<Self>,
-        _location: Point<f64, Logical>,
+        location: Point<f64, Logical>,
     ) {
+        // An X client's drag has no source kept here.
+        let given_up = self
+            .caminito
+            .drag_source
+            .as_ref()
+            .is_some_and(|source| !source.alive());
+        if !given_up {
+            self.caminito.drag_released(location);
+        }
         self.drag_ended();
     }
 

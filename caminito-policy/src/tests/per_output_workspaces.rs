@@ -680,21 +680,22 @@ fn activating_the_focused_window_brings_the_active_output_back_to_it() {
 }
 
 #[test]
-fn with_the_key_off_a_new_window_opens_on_the_focused_windows_output_or_the_primary() {
+fn with_the_key_off_a_new_window_opens_on_the_active_output_too() {
     let mut policy = two_outputs(false);
     policy.press_on_output(SEAT, OutputId(1));
 
-    // On the output of window 2, which has the focus, whatever was pressed.
+    // On the pressed output, and not that of window 2, which has the focus (CMN-339).
     policy.map_window(TestWindow::new(3, 400, 300), ms(3));
-    assert_eq!(policy.output_showing(id(3)), Some(OutputId(2)));
+    assert_eq!(policy.output_showing(id(3)), Some(OutputId(1)));
 
-    // With no window left, on the primary output, and not the one that had the focus last.
+    // With no window left, on the output a press made the Active output.
     policy.unmap_window(id(1));
     policy.unmap_window(id(3));
     policy.unmap_window(id(2));
     assert_eq!(policy.focus(SEAT), None);
+    policy.press_on_output(SEAT, OutputId(2));
     policy.map_window(TestWindow::new(4, 400, 300), ms(4));
-    assert_eq!(policy.output_showing(id(4)), Some(OutputId(1)));
+    assert_eq!(policy.output_showing(id(4)), Some(OutputId(2)));
 }
 
 #[test]

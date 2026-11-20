@@ -372,21 +372,124 @@ on_both_kinds! {
 }
 
 on_both_kinds! {
-    fn with_the_key_off_a_new_window_opens_on_the_focused_windows_output(kind: Kind) {
+    fn with_the_key_off_a_new_window_opens_on_the_active_output_too(kind: Kind) {
         let (mut f, client, left, right) = two_outputs_with(kind, false, vec![]);
         window_at(&mut f, client, (100, 100), 0);
         let on_right = window_at(&mut f, client, (2500, 600), 0);
-        // A press on the left output's background, which with the key on would say where.
+        // A press on the left output's background, which leaves the focus on the right.
         f.click(900., 900.);
         assert_eq!(dump(&f)["focus"], f.pid(on_right).0);
+        assert_eq!(dump(&f)["active_output"], left.name());
 
-        assert_eq!(opens(&mut f, client), (right.name(), Some(0), true));
+        assert_eq!(opens(&mut f, client), (left.name(), Some(0), true));
 
-        // And on the primary output with no window left.
+        // And with no window focused, after a press on the right output's background.
+        f.wait_between_inputs(1000);
+        f.click(3000., 1000.);
         switch_right(&mut f);
         assert_eq!(dump(&f)["focus"], serde_json::Value::Null);
-        assert_eq!(opens(&mut f, client), (left.name(), Some(1), true));
+        assert_eq!(opens(&mut f, client), (right.name(), Some(1), true));
     }
+}
+
+// A drag released on another output makes it the Active output, whatever it's dropped on
+// (CMN-339), so the window a client opens for a dropped tab opens there. Only an xdg client
+// drags here: the test client has no XDND, which reaches the same handler through
+// Smithay's bridge.
+
+/// A press in the middle of `window`, an xdg window of `client`, that starts a drag. The
+/// client must have bound its input before the window was mapped.
+fn drag_from(f: &mut Fixture, client: ClientId, window: ClientWindow) {
+    let geometry = f.geometry(window);
+    let middle = geometry.loc + geometry.size.downscale(2).to_point();
+    f.pointer_move(middle.x.into(), middle.y.into());
+    f.wait_between_inputs(1000);
+    f.pointer_button(BTN_LEFT, true);
+    f.roundtrip(client);
+    let serial = f.client_state(client).last_press_serial.unwrap();
+    f.client(client)
+        .start_drag(window.xdg(), serial, "dragged", None);
+    f.roundtrip(client);
+}
+
+/// Moves the dragging pointer to the global point `at`, and releases the button there.
+fn drop_at(f: &mut Fixture, at: (f64, f64)) {
+    f.pointer_move(at.0, at.1);
+    f.pointer_button(BTN_LEFT, false);
+}
+
+#[test]
+fn a_drag_released_over_nothing_on_the_other_output_makes_it_the_active_output() {
+    for per_output in [true, false] {
+        let (mut f, client, left, right) = two_outputs_with(Kind::Xdg, per_output, vec![]);
+        f.client(client).bind_input();
+        let on_left = window_at(&mut f, client, (100, 100), 0);
+        assert_eq!(dump(&f)["active_output"], left.name());
+
+        drag_from(&mut f, client, on_left);
+        drop_at(&mut f, (3000., 900.));
+
+        let key = format!("workspaces-per-output {per_output}");
+        assert_eq!(dump(&f)["active_output"], right.name(), "{key}");
+        assert_eq!(dump(&f)["focus"], f.pid(on_left).0, "{key}");
+        assert_eq!(opens(&mut f, client).0, right.name(), "{key}");
+    }
+}
+
+#[test]
+fn a_drag_released_over_a_window_or_a_panel_on_the_other_output_makes_it_the_active_output() {
+    let (mut f, client, left, right) = two_outputs(Kind::Xdg);
+    f.client(client).bind_input();
+    window_at(&mut f, client, (2500, 600), 0);
+    // A panel along the top of the right output, the one the pointer is on.
+    f.pointer_move(3000., 900.);
+    let panel = f.connect(Kind::Xdg);
+    f.map_layer(panel, LayerSpec::top_bar(28), 0xff40_4040);
+    let on_left = window_at(&mut f, client, (100, 100), 0);
+    assert_eq!(dump(&f)["active_output"], left.name());
+
+    drag_from(&mut f, client, on_left);
+    drop_at(&mut f, (2700., 700.));
+    assert_eq!(dump(&f)["active_output"], right.name(), "over the window");
+    assert_eq!(dump(&f)["focus"], f.pid(on_left).0);
+
+    // The press that starts the next drag makes the left output the Active output again.
+    drag_from(&mut f, client, on_left);
+    assert_eq!(dump(&f)["active_output"], left.name());
+    drop_at(&mut f, (2700., 10.));
+    assert_eq!(dump(&f)["active_output"], right.name(), "over the panel");
+}
+
+#[test]
+fn a_drag_released_on_its_own_output_leaves_the_active_output_there() {
+    let (mut f, client, left, _right) = two_outputs(Kind::Xdg);
+    f.client(client).bind_input();
+    let on_left = window_at(&mut f, client, (100, 100), 0);
+
+    drag_from(&mut f, client, on_left);
+    // Through the other output and back.
+    f.pointer_move(3000., 900.);
+    drop_at(&mut f, (900., 900.));
+
+    assert_eq!(dump(&f)["active_output"], left.name());
+    assert_eq!(opens(&mut f, client).0, left.name());
+}
+
+#[test]
+fn a_drag_its_client_gives_up_leaves_the_active_output_where_it_was() {
+    let (mut f, client, left, _right) = two_outputs(Kind::Xdg);
+    f.client(client).bind_input();
+    let on_left = window_at(&mut f, client, (100, 100), 0);
+
+    drag_from(&mut f, client, on_left);
+    f.pointer_move(3000., 900.);
+    // As GTK does at an Escape.
+    f.client(client).destroy_drag_source();
+    f.roundtrip(client);
+    f.pointer_button(BTN_LEFT, false);
+
+    assert_eq!(dump(&f)["active_output"], left.name());
+    assert_eq!(opens(&mut f, client).0, left.name());
 }
 
 // On one kind: what the switcher lists goes by the workspaces, whatever the windows are.

@@ -52,6 +52,7 @@ use wayland_client::protocol::wl_callback::{self, WlCallback};
 use wayland_client::protocol::wl_compositor::{self, WlCompositor};
 use wayland_client::protocol::wl_data_device::WlDataDevice;
 use wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager;
+use wayland_client::protocol::wl_data_source::WlDataSource;
 use wayland_client::protocol::wl_keyboard::{self, WlKeyboard};
 use wayland_client::protocol::wl_output::{self, WlOutput};
 use wayland_client::protocol::wl_pointer::{self, WlPointer};
@@ -210,6 +211,8 @@ pub struct State {
     offers: selection::Offers,
     /// The drag the client last started, if it gave it an icon.
     drag_icon: Option<selection::DragIcon>,
+    /// The source of the drag the client last started.
+    drag_source: Option<WlDataSource>,
     /// The data-control device, and the selections it was last offered.
     data_control: data_control::DataControl,
     /// How many frame callbacks the drag icon has had.
