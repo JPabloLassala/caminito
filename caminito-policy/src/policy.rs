@@ -1468,15 +1468,20 @@ impl<W: PolicyWindow> Policy<W> {
         if let Some(output) = self.active_output(seat) {
             // The Home workspace, None, and then its Fullscreen workspaces.
             let after = self.fullscreen_workspaces_after(output);
-            let cells: Vec<Option<WindowId>> = std::iter::once(None)
+            let home_then_fullscreen: Vec<Option<WindowId>> = std::iter::once(None)
                 .chain(after.into_iter().map(Some))
                 .collect();
-            let here = cells.iter().position(|cell| *cell == shown.fullscreen);
-            let next = here.and_then(|here| match direction {
-                Direction::Right => cells.get(here + 1).copied(),
-                Direction::Left => here.checked_sub(1).map(|before| cells[before]),
-                Direction::Up | Direction::Down => None,
-            });
+            let here = (home_then_fullscreen.iter()).position(|shows| *shows == shown.fullscreen);
+            let next = match (here, direction) {
+                (Some(here), Direction::Right) => home_then_fullscreen.get(here + 1).copied(),
+                (Some(here), Direction::Left) => here
+                    .checked_sub(1)
+                    .map(|before| home_then_fullscreen[before]),
+                // A Fullscreen workspace that isn't after the active workspace any more, as
+                // its window moved, still goes back to it.
+                (None, Direction::Left) => Some(None),
+                _ => None,
+            };
             if let Some(fullscreen) = next {
                 self.show_fullscreen_workspace(output, fullscreen);
                 self.apply();

@@ -157,7 +157,8 @@ impl<W: PolicyWindow> Policy<W> {
     /// Switches `output` from its active workspace to the Fullscreen workspace of
     /// `fullscreen` after it, or back from one for none, as a switch does: the switcher and
     /// the window menu close, and the seats whose Active output it is take its default
-    /// focus. Its Fullscreen workspace is to the right of the Home workspace (ADR 0057).
+    /// focus. A Fullscreen workspace is to the right of the Home workspace, and of a newer
+    /// one of the same Home workspace (ADR 0057).
     pub(super) fn show_fullscreen_workspace(
         &mut self,
         output: OutputId,
@@ -174,7 +175,8 @@ impl<W: PolicyWindow> Policy<W> {
         let workspace = shown.active;
         self.close_switcher(switcher::Close::Dropped);
         self.window_menu = None;
-        // A newer one is to the left of an older one.
+        // A newer one is to the left of an older one, as `fullscreen_workspaces_after`
+        // orders them.
         let made = |window: WindowId| self.windows.get(&window)?.fullscreen_workspace;
         let towards = match (from, fullscreen) {
             (Some(from), Some(to)) if made(to) > made(from) => Direction::Left,
@@ -217,7 +219,7 @@ impl<W: PolicyWindow> Policy<W> {
                 here.then_some((made, *id))
             })
             .collect();
-        after.sort_by(|a, b| b.cmp(a));
+        after.sort_by_key(|&(made, _)| std::cmp::Reverse(made));
         after.into_iter().map(|(_, id)| id).collect()
     }
 

@@ -1,8 +1,8 @@
 //! Fullscreen workspaces (ADR 0057, CMN-304): with `fullscreen-workspaces` on, a focused
 //! window that goes fullscreen is on a workspace of its own, right after its Home workspace,
-//! which its output switches to, and which goes when the window leaves fullscreen or closes. Several from one Home workspace
-//! come newest first, and up, down and the numbered bindings go as from the Home
-//! workspace (CMN-307).
+//! which its output switches to, and which goes when the window leaves fullscreen or closes.
+//! Several from one Home workspace come newest first, and up, down and the numbered bindings
+//! go as from the Home workspace (CMN-307).
 
 use super::per_output_workspaces::active;
 use super::*;
@@ -382,4 +382,34 @@ fn a_numbered_workspace_binding_reaches_that_workspace_from_a_fullscreen_workspa
     policy.action(SEAT, Action::SwitchToWorkspace(1), ms(13));
     assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
     assert_eq!(policy.active_workspace_on(OutputId(1)), 1);
+}
+
+#[test]
+fn a_numbered_workspace_binding_reaches_that_workspace_from_either_of_two_fullscreen_workspaces() {
+    let mut policy = two_fullscreen_workspaces();
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(20));
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(21));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+
+    policy.action(SEAT, Action::SwitchToWorkspace(0), ms(22));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+    assert_eq!(active(&policy), (0, 0));
+
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(23));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(3)));
+    policy.action(SEAT, Action::SwitchToWorkspace(1), ms(24));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+    assert_eq!(active(&policy), (1, 0));
+}
+
+#[test]
+fn left_from_the_fullscreen_workspace_of_a_window_moved_away_goes_to_the_active_workspace() {
+    let mut policy = on_a_fullscreen_workspace();
+
+    policy.action(SEAT, Action::MoveToWorkspace(2), ms(10));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+    policy.action(SEAT, Action::SwitchToWorkspaceLeft, ms(11));
+
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+    assert_eq!(active(&policy), (0, 0));
 }
