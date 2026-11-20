@@ -158,10 +158,11 @@ impl State {
         }
     }
 
-    /// Lets a commit with a commit-timing timestamp through at that time. `post_render`
-    /// lets through the ones that are due when an output is drawn, but nothing draws one
-    /// for a commit that's held back, so a client that times every frame needs this to
-    /// be shown at all while nothing else changes (93). Smithay's hook, added with the
+    /// Lets a commit with a commit-timing timestamp through at that time, if its window is
+    /// drawn: one that isn't has its barriers released at a reduced rate (CMN-316).
+    /// `post_render` lets through the ones that are due when an output is drawn, but
+    /// nothing draws one for a commit that's held back, so a client that times every frame
+    /// needs this to be shown at all while nothing else changes (93). Smithay's hook, added with the
     /// surface's timer and so run after this one, takes the timestamp and holds the
     /// commit back.
     fn release_at_commit_time(&mut self, surface: &WlSurface) {
@@ -189,7 +190,7 @@ impl State {
 
     /// Lets through `surface`'s commits timed for `timestamp` or earlier.
     fn commit_time_reached(&mut self, surface: &WlSurface, timestamp: Timestamp) {
-        if !surface.is_alive() {
+        if !surface.is_alive() || !self.caminito.releases_at_frames(surface) {
             return;
         }
         let signalled = with_states(surface, |states| {
@@ -204,7 +205,7 @@ impl State {
     }
 
     /// Lets through the commits of `client` that nothing holds back any more.
-    fn blocker_cleared(&mut self, client: &Client) {
+    pub(crate) fn blocker_cleared(&mut self, client: &Client) {
         let dh = self.caminito.display_handle.clone();
         self.client_compositor_state(client)
             .blocker_cleared(self, &dh);

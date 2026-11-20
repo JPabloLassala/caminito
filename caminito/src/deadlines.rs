@@ -29,12 +29,14 @@ use crate::state::{Caminito, State};
 ///    animations (251), the Maximise animations (CMN-174), the Popup slides
 ///    (ADR 0037) and the Intellihide panels' slides (CMN-224), which only draw.
 /// 9. The Overview's bar (244), which only sends frame callbacks to the windows it alone
-///    shows.
-/// 10. Night Light (138), which only moves the outputs' temperatures.
+///    shows and releases their barriers.
+/// 10. The barriers of the windows that aren't showing (CMN-316), which only lets their
+///     commits through.
+/// 11. Night Light (138), which only moves the outputs' temperatures.
 ///
 /// A periodic holder that's late runs one time, and is next due a period after the `now`
 /// it ran at (176).
-const HOLDERS: [Holder; 18] = [
+const HOLDERS: [Holder; 19] = [
     Holder::Policy,
     Holder::ClosePings,
     Holder::Idle,
@@ -52,6 +54,7 @@ const HOLDERS: [Holder; 18] = [
     Holder::PopupSlides,
     Holder::IntellihideSlides,
     Holder::OverviewBar,
+    Holder::ThrottledBarriers,
     Holder::NightLight,
 ];
 
@@ -74,6 +77,7 @@ enum Holder {
     PopupSlides,
     IntellihideSlides,
     OverviewBar,
+    ThrottledBarriers,
     NightLight,
 }
 
@@ -100,6 +104,7 @@ impl Holder {
             Holder::PopupSlides => caminito.popup_slides.deadline(),
             Holder::IntellihideSlides => caminito.intellihide_slides.deadline(),
             Holder::OverviewBar => caminito.overview_deadline(),
+            Holder::ThrottledBarriers => caminito.throttled_barriers_deadline(),
             Holder::NightLight => caminito.night_light.deadline(caminito.now()),
         }
     }
@@ -125,7 +130,11 @@ impl Holder {
             Holder::MaximizeAnimations => state.caminito.maximize_animation_elapse(now),
             Holder::PopupSlides => state.caminito.popup_slide_elapse(now),
             Holder::IntellihideSlides => state.caminito.intellihide_elapse(now),
-            Holder::OverviewBar => state.caminito.overview_elapse(now),
+            Holder::OverviewBar => {
+                let let_through = state.caminito.overview_elapse(now);
+                state.let_through(let_through);
+            }
+            Holder::ThrottledBarriers => state.throttled_barriers_elapse(now),
             Holder::NightLight => state.caminito.night_light_elapse(now),
         }
     }

@@ -45,6 +45,7 @@ mod grabs;
 mod gtk_shell;
 mod headless;
 mod headless_gles;
+mod hidden_throttle;
 mod hot_corners;
 mod idle;
 mod image_capture;
