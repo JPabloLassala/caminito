@@ -215,6 +215,16 @@ impl<W: PolicyWindow> Policy<W> {
         })
     }
 
+    /// The key was turned on or off (ADR 0057): on, each fullscreen window that heads its
+    /// transient family gets a Fullscreen workspace, and no output switches to it; off, each
+    /// is back on its Home workspace, still fullscreen, and `apply` switches the outputs that
+    /// showed one back there.
+    pub(super) fn give_fullscreen_workspaces(&mut self, on: bool) {
+        for managed in self.windows.values_mut() {
+            managed.fullscreen_workspace = on && managed.fullscreen && managed.parent.is_none();
+        }
+    }
+
     /// Each output that shows the Fullscreen workspace of a window that has none any more,
     /// because it left fullscreen or closed, switches back to the Home workspace, with the
     /// window focused there if it's still open (ADR 0057).

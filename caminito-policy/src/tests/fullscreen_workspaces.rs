@@ -249,3 +249,57 @@ fn under_spanning_workspaces_only_the_windows_output_shows_its_fullscreen_worksp
     assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
     assert_eq!(active(&policy), (1, 1));
 }
+
+/// `config` with `fullscreen-workspaces` as `on` says, as `two_outputs_with_key` has it.
+fn key(on: bool) -> Config {
+    Config {
+        workspaces_per_output: true,
+        fullscreen_workspaces: on,
+        ..Config::default()
+    }
+}
+
+#[test]
+fn turning_the_key_on_gives_each_fullscreen_window_a_fullscreen_workspace_and_no_output_switches() {
+    let mut policy = two_outputs_with_key(false);
+    policy.set_fullscreen(id(1), true, None);
+    policy.set_fullscreen(id(2), true, None);
+    policy.take_output_switches();
+
+    policy.settings_changed(key(true));
+
+    assert_eq!(policy.take_output_switches(), []);
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+    assert_eq!(active(&policy), (0, 0));
+    assert!(!policy.is_showing(id(1)));
+    assert!(!policy.is_showing(id(2)));
+    assert!(policy.is_showing(id(3)));
+    assert!(policy.is_fullscreen(id(1)));
+
+    // Each is to the right of its Home workspace.
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(10));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+    assert!(policy.is_showing(id(1)));
+}
+
+#[test]
+fn turning_the_key_off_returns_each_fullscreen_window_to_its_home_workspace_still_fullscreen() {
+    let mut policy = on_a_fullscreen_workspace();
+    policy.set_fullscreen(id(2), true, None);
+
+    policy.settings_changed(key(false));
+
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+    assert_eq!(active(&policy), (0, 0));
+    assert!(policy.is_fullscreen(id(1)));
+    assert!(policy.is_fullscreen(id(2)));
+    assert!(policy.is_showing(id(1)));
+    assert!(policy.is_showing(id(2)));
+    assert!(policy.is_showing(id(3)));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+
+    // Right is the grid's next.
+    policy.action(SEAT, Action::SwitchToWorkspaceRight, ms(10));
+    assert_eq!(active(&policy), (1, 0));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), None);
+}

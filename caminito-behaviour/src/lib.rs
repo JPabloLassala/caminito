@@ -11,6 +11,7 @@ pub mod open_windows;
 pub mod remap_templates;
 pub mod screen_locking;
 pub mod system_shortcuts;
+pub mod windows;
 
 #[cfg(test)]
 mod testing;

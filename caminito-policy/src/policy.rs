@@ -182,8 +182,9 @@ pub struct Config {
     /// own active workspace. Off, every switch switches them all: Spanning workspaces.
     pub workspaces_per_output: bool,
     /// `org.mate.Caminito`'s `fullscreen-workspaces` (ADR 0057): a window that goes
-    /// fullscreen gets a Fullscreen workspace of its own. It's read as a window goes
-    /// fullscreen.
+    /// fullscreen gets a Fullscreen workspace of its own. Turning it on gives the windows
+    /// already fullscreen one each, and no output switches; turning it off returns them to
+    /// their Home workspaces, still fullscreen.
     pub fullscreen_workspaces: bool,
 }
 
@@ -905,7 +906,12 @@ impl<W: PolicyWindow> Policy<W> {
         let attach_modal_dialogs = config.attach_modal_dialogs;
         let attaches_changed = self.config.attach_modal_dialogs != attach_modal_dialogs;
         let was_per_output = self.config.workspaces_per_output;
+        let fullscreen_workspaces_changed =
+            self.config.fullscreen_workspaces != config.fullscreen_workspaces;
         self.config = config;
+        if fullscreen_workspaces_changed {
+            self.give_fullscreen_workspaces(self.config.fullscreen_workspaces);
+        }
         match (was_per_output, self.config.workspaces_per_output) {
             (true, false) => self.span_workspaces(),
             (false, true) => self.give_shown_desktops(None, &self.desktop_outputs()),
