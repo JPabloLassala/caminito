@@ -70,6 +70,8 @@ use wayland_protocols::wp::commit_timing::v1::client::wp_commit_timer_v1::{
 use wayland_protocols::wp::commit_timing::v1::client::wp_commit_timing_manager_v1::{
     self, WpCommitTimingManagerV1,
 };
+use wayland_protocols::wp::fifo::v1::client::wp_fifo_manager_v1::{self, WpFifoManagerV1};
+use wayland_protocols::wp::fifo::v1::client::wp_fifo_v1::{self, WpFifoV1};
 use wayland_protocols::xdg::system_bell::v1::client::xdg_system_bell_v1::{
     self, XdgSystemBellV1,
 };
@@ -158,6 +160,7 @@ pub struct State {
     decoration_manager: Option<ZxdgDecorationManagerV1>,
     fractional_scale_manager: Option<WpFractionalScaleManagerV1>,
     commit_timing_manager: Option<WpCommitTimingManagerV1>,
+    fifo_manager: Option<WpFifoManagerV1>,
     system_bell: Option<XdgSystemBellV1>,
     shortcuts_inhibit_manager: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
     pointer_constraints: Option<ZwpPointerConstraintsV1>,
@@ -292,6 +295,7 @@ pub struct Window {
     kde_decoration: Option<OrgKdeKwinServerDecoration>,
     gtk_surface: Option<gtk_shell::raw::gtk_surface1::GtkSurface1>,
     appmenu: Option<appmenu::raw::org_kde_kwin_appmenu::OrgKdeKwinAppmenu>,
+    fifo: Option<WpFifoV1>,
     subsurfaces: Vec<WlSubsurface>,
     /// The buffers attached so far, kept alive until the window is dropped.
     buffers: Vec<Buffer>,
@@ -470,6 +474,7 @@ impl Client {
             kde_decoration: None,
             gtk_surface: None,
             appmenu: None,
+            fifo: None,
             subsurfaces: Vec::new(),
             buffers: Vec::new(),
         });
@@ -940,6 +945,20 @@ impl Client {
         timer.set_timestamp((secs >> 32) as u32, secs as u32, time.subsec_nanos());
         // The timestamp stays with the commit.
         timer.destroy();
+    }
+
+    /// Commits the window as a client presenting in FIFO mode does, as Mesa's Vulkan WSI
+    /// does with fifo-v1: the commit waits on the barrier the last one set, and sets its
+    /// own.
+    pub fn fifo_commit(&mut self, id: WindowId) {
+        let manager = self.global(|state| &mut state.fifo_manager, 1);
+        let window = &mut self.state.windows[id.0];
+        let fifo = window
+            .fifo
+            .get_or_insert_with(|| manager.get_fifo(&window.surface, &self.qh, ()));
+        fifo.wait_barrier();
+        fifo.set_barrier();
+        window.surface.commit();
     }
 
     /// Rings the bell with xdg-system-bell, for a window or for none, as GTK4's
@@ -1666,6 +1685,8 @@ ignore_events!(
     WpFractionalScaleManagerV1 => wp_fractional_scale_manager_v1::Event,
     WpCommitTimingManagerV1 => wp_commit_timing_manager_v1::Event,
     WpCommitTimerV1 => wp_commit_timer_v1::Event,
+    WpFifoManagerV1 => wp_fifo_manager_v1::Event,
+    WpFifoV1 => wp_fifo_v1::Event,
     XdgSystemBellV1 => xdg_system_bell_v1::Event,
     ZwpPointerConstraintsV1 => zwp_pointer_constraints_v1::Event,
     ZwpKeyboardShortcutsInhibitManagerV1 => zwp_keyboard_shortcuts_inhibit_manager_v1::Event,
