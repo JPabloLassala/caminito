@@ -3082,16 +3082,12 @@ impl<W: PolicyWindow> Policy<W> {
     }
 
     /// The output a new window goes on with nothing else to go by: the Active output of
-    /// the seat that last acted (222). With `workspaces-per-output` off it's the focused
-    /// window's, else the primary output, as Marco's.
+    /// the seat that last acted (222), with `workspaces-per-output` on or off. Marco's is
+    /// the focused window's, which a press or a drop on another output doesn't move
+    /// (CMN-339).
     fn placement_output(&self) -> Option<&Output> {
-        if self.config.workspaces_per_output {
-            let active = self.active_output(self.last_seat);
-            return self.outputs.iter().find(|o| Some(o.id) == active);
-        }
-        self.focus(self.last_seat)
-            .and_then(|f| self.output_of(self.windows[&f].frame()))
-            .or(self.primary_output())
+        let active = self.active_output(self.last_seat);
+        self.outputs.iter().find(|o| Some(o.id) == active)
     }
 
     /// Places a window with the automatic mode on `output`, in the middle of its work area if

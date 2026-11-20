@@ -90,7 +90,7 @@ fn a_window_dragged_onto_a_denser_output_prefers_its_scale_past_twice_the_visibl
     ");
 }
 
-/// Policy places a new window on the focused window's output, or the first, so this one
+/// Policy places a new window on the Active output, or the primary, so this one
 /// maps on the 1.0 output and takes its scale once drawn there.
 #[test]
 fn a_new_window_first_prefers_the_scale_of_the_output_under_the_pointer() {
