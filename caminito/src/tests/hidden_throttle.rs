@@ -1,7 +1,8 @@
 //! Windows that aren't showing are held to the throttled rate (CMN-316): a game on a
 //! workspace the user has left has its fifo and commit-timing barriers released once a
 //! second, not at each frame of its output, and at each frame again once it shows. One
-//! that only the Overview's bar shows has them at the bar's rate.
+//! that only the Overview's bar shows has them at the bar's rate. xdg only: fifo-v1 and
+//! commit-timing are Wayland's, and Xwayland uses neither here.
 
 use std::time::Duration;
 
@@ -116,7 +117,8 @@ fn a_timed_commit_of_a_window_that_is_not_showing_waits_for_the_throttle() {
     scene.step();
     let start = scene.game_frames();
 
-    let time = Duration::from(scene.f.state.caminito.clock.now()) + Duration::from_millis(30);
+    // Timed for now: a window that shows would have it through at its next frame.
+    let time = Duration::from(scene.f.state.caminito.clock.now());
     let client = scene.f.client(scene.id);
     client.set_commit_time(scene.game.xdg(), time);
     client.request_frame(scene.game.xdg());

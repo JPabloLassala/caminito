@@ -158,11 +158,11 @@ impl State {
         }
     }
 
-    /// Lets a commit with a commit-timing timestamp through at that time, if its window
-    /// shows: one that doesn't has its barriers released at a reduced rate (CMN-316).
-    /// `post_render` lets through the ones that are due when an output is drawn, but nothing draws one
-    /// for a commit that's held back, so a client that times every frame needs this to
-    /// be shown at all while nothing else changes (93). Smithay's hook, added with the
+    /// Lets a commit with a commit-timing timestamp through at that time, if its window is
+    /// drawn: one that isn't has its barriers released at a reduced rate (CMN-316).
+    /// `post_render` lets through the ones that are due when an output is drawn, but
+    /// nothing draws one for a commit that's held back, so a client that times every frame
+    /// needs this to be shown at all while nothing else changes (93). Smithay's hook, added with the
     /// surface's timer and so run after this one, takes the timestamp and holds the
     /// commit back.
     fn release_at_commit_time(&mut self, surface: &WlSurface) {

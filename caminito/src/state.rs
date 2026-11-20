@@ -81,7 +81,7 @@ use caminito_theme::{PaletteCache, PaletteColors, ThemeDirs, Variant};
 
 use crate::appearance::{self, Appearances};
 use crate::backend::{self, Backend};
-use crate::barriers::{self, BarrierRate};
+use crate::barriers::{BarrierRate, LetThrough};
 use crate::bell::Bells;
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
@@ -839,15 +839,8 @@ impl State {
             .map(|mode| Refresh::fixed(Duration::from_secs_f64(1000. / f64::from(mode.refresh))))
             .unwrap_or(Refresh::Unknown);
         let mut feedback = OutputPresentationFeedback::new(output);
-        let mut cleared = Vec::new();
-
-        let mut release_barriers = |surface: &WlSurface, states: &SurfaceData| {
-            barriers::note_cleared(
-                &mut cleared,
-                surface,
-                barriers::release_barriers(states, now),
-            );
-        };
+        let mut let_through = LetThrough::default();
+        let rates = self.caminito.barrier_rates();
         let main = |_: &WlSurface, _: &SurfaceData| Some(output.clone());
         let no_flags = |_: &WlSurface, _: &SurfaceData| wp_presentation_feedback::Kind::empty();
         // Those that only the Overview's bar shows get theirs at a reduced rate (244), from
@@ -859,8 +852,8 @@ impl State {
                 continue;
             }
             let window = mapped.window();
-            if self.caminito.barrier_rate(mapped.id()) == BarrierRate::Frame {
-                window.with_surfaces(&mut release_barriers);
+            if rates[&mapped.id()] == BarrierRate::Frame {
+                let_through.release_window(window, now);
             }
             if !bar_only.contains(&mapped.id()) {
                 window.send_frame(output, now, FRAME_CALLBACK_THROTTLE, main);
@@ -870,13 +863,15 @@ impl State {
         }
         // A layer surface is drawn on its one output.
         for layer in layer_map_for_output(output).layers() {
-            layer.with_surfaces(&mut release_barriers);
+            layer.with_surfaces(|surface, states| let_through.release(surface, states, now));
             layer.send_frame(output, now, FRAME_CALLBACK_THROTTLE, main);
             layer.take_presentation_feedback(&mut feedback, main, no_flags);
         }
         if let Some(surface) = self.caminito.lock.surface_on(output) {
             let surface = surface.wl_surface();
-            with_surfaces_surface_tree(surface, &mut release_barriers);
+            with_surfaces_surface_tree(surface, |surface, states| {
+                let_through.release(surface, states, now);
+            });
             send_frames_surface_tree(surface, output, now, FRAME_CALLBACK_THROTTLE, main);
             take_presentation_feedback_surface_tree(surface, &mut feedback, main, no_flags);
         }
@@ -901,7 +896,7 @@ impl State {
         }
         feedback.presented(now, refresh, 0, wp_presentation_feedback::Kind::empty());
 
-        self.blockers_cleared(cleared);
+        self.let_through(let_through);
     }
 }
 

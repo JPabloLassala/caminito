@@ -131,8 +131,8 @@ impl Holder {
             Holder::PopupSlides => state.caminito.popup_slide_elapse(now),
             Holder::IntellihideSlides => state.caminito.intellihide_elapse(now),
             Holder::OverviewBar => {
-                let cleared = state.caminito.overview_elapse(now);
-                state.blockers_cleared(cleared);
+                let let_through = state.caminito.overview_elapse(now);
+                state.let_through(let_through);
             }
             Holder::ThrottledBarriers => state.throttled_barriers_elapse(now),
             Holder::NightLight => state.caminito.night_light_elapse(now),

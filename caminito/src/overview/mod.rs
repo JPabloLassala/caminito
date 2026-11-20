@@ -71,7 +71,6 @@ use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::input::keyboard::{FilterResult, Keysym, KeysymHandle, ModifiersState};
 use smithay::output::Output;
-use smithay::reexports::wayland_server::Client;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use self::bar::Bar;
@@ -80,7 +79,7 @@ use self::draw::Label;
 use self::layout::Layout;
 use self::reflow::Reflow;
 use self::transition::{Heading, Transition};
-use crate::barriers;
+use crate::barriers::LetThrough;
 use crate::decoration::IconSource;
 use crate::input::bindings::Binding;
 use crate::input::{BTN_LEFT, BTN_MIDDLE, Bound, press_keysyms};
@@ -1279,12 +1278,12 @@ impl Caminito {
     /// Sends the windows that only the Overview's bar shows their frame callbacks on each
     /// output where they're due at `now`, and releases their barriers (CMN-316): at
     /// [`BAR_FRAME_INTERVAL`], in place of each frame of the output, which the windows of
-    /// the layout get theirs at (`State::post_render`). Returns the clients whose commits
-    /// that lets through.
-    pub(crate) fn overview_elapse(&mut self, now: Duration) -> Vec<Client> {
+    /// the layout get theirs at (`State::post_render`). Returns the commits that lets
+    /// through.
+    pub(crate) fn overview_elapse(&mut self, now: Duration) -> LetThrough {
         // What a client is told, as after a frame.
         let time = self.clock.now();
-        let mut cleared = Vec::new();
+        let mut let_through = LetThrough::default();
         for open in &self.overview {
             if now < open.next_bar_frames {
                 continue;
@@ -1293,10 +1292,7 @@ impl Caminito {
             for id in self.bar_only_windows_of(open) {
                 if let Some(mapped) = self.policy.window(id) {
                     let window = mapped.window();
-                    window.with_surfaces(|surface, states| {
-                        let signalled = barriers::release_barriers(states, time);
-                        barriers::note_cleared(&mut cleared, surface, signalled);
-                    });
+                    let_through.release_window(window, time);
                     let main = |_: &_, _: &_| Some(output.clone());
                     window.send_frame(output, time, None, main);
                 }
@@ -1307,7 +1303,7 @@ impl Caminito {
                 open.next_bar_frames = now + BAR_FRAME_INTERVAL;
             }
         }
-        cleared
+        let_through
     }
 }
 
