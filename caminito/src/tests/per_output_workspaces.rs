@@ -393,7 +393,7 @@ on_both_kinds! {
 }
 
 // A drag released on another output makes it the Active output, whatever it's dropped on
-// (CMN-339), so the window a client opens for a dropped tab opens there. Only an xdg client
+// (CMN-339, ADR 0060), so the window a client opens for a dropped tab opens there. Only an xdg client
 // drags here: the test client has no XDND, which reaches the same handler through
 // Smithay's bridge.
 
@@ -438,26 +438,31 @@ fn a_drag_released_over_nothing_on_the_other_output_makes_it_the_active_output()
 
 #[test]
 fn a_drag_released_over_a_window_or_a_panel_on_the_other_output_makes_it_the_active_output() {
-    let (mut f, client, left, right) = two_outputs(Kind::Xdg);
-    f.client(client).bind_input();
-    window_at(&mut f, client, (2500, 600), 0);
-    // A panel along the top of the right output, the one the pointer is on.
-    f.pointer_move(3000., 900.);
-    let panel = f.connect(Kind::Xdg);
-    f.map_layer(panel, LayerSpec::top_bar(28), 0xff40_4040);
-    let on_left = window_at(&mut f, client, (100, 100), 0);
-    assert_eq!(dump(&f)["active_output"], left.name());
+    for per_output in [true, false] {
+        let (mut f, client, left, right) = two_outputs_with(Kind::Xdg, per_output, vec![]);
+        f.client(client).bind_input();
+        window_at(&mut f, client, (2500, 600), 0);
+        // A panel along the top of the right output, the one the pointer is on.
+        f.pointer_move(3000., 900.);
+        let panel = f.connect(Kind::Xdg);
+        f.map_layer(panel, LayerSpec::top_bar(28), 0xff40_4040);
+        let on_left = window_at(&mut f, client, (100, 100), 0);
+        assert_eq!(dump(&f)["active_output"], left.name());
 
-    drag_from(&mut f, client, on_left);
-    drop_at(&mut f, (2700., 700.));
-    assert_eq!(dump(&f)["active_output"], right.name(), "over the window");
-    assert_eq!(dump(&f)["focus"], f.pid(on_left).0);
+        let key = format!("workspaces-per-output {per_output}");
+        drag_from(&mut f, client, on_left);
+        drop_at(&mut f, (2700., 700.));
+        assert_eq!(dump(&f)["active_output"], right.name(), "over the window, {key}");
+        assert_eq!(dump(&f)["focus"], f.pid(on_left).0);
 
-    // The press that starts the next drag makes the left output the Active output again.
-    drag_from(&mut f, client, on_left);
-    assert_eq!(dump(&f)["active_output"], left.name());
-    drop_at(&mut f, (2700., 10.));
-    assert_eq!(dump(&f)["active_output"], right.name(), "over the panel");
+        // The press that starts the next drag makes the left output the Active output
+        // again.
+        drag_from(&mut f, client, on_left);
+        assert_eq!(dump(&f)["active_output"], left.name());
+        drop_at(&mut f, (2700., 10.));
+        assert_eq!(dump(&f)["active_output"], right.name(), "over the panel, {key}");
+        assert_eq!(opens(&mut f, client).0, right.name(), "{key}");
+    }
 }
 
 #[test]

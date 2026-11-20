@@ -14,12 +14,12 @@
 //! window, and Smithay's XDND bridge starts the grab without asking for one.
 //!
 //! A drag released on another output makes that one the Active output, whatever it's
-//! dropped on (CMN-339): a client that opens a window for a drop on nothing, as Firefox
-//! does for a tab, has it open there. A drag cancelled, or given up by its Wayland client
-//! with the button still held, as GTK does at an Escape, changes nothing. An X client's
-//! drag reaches the same `dropped` through the bridge's grab, once it has left the X
-//! windows; one dropped on another X window stays within Xwayland, as a plain press and
-//! release, and isn't told from one.
+//! dropped on (CMN-339, ADR 0060): a client that opens a window for a drop on nothing, as
+//! Firefox does for a tab, has it open there. A drag cancelled, or given up by its Wayland
+//! client with the button still held, as GTK does at an Escape, changes nothing. An X
+//! client's drag is Smithay's XDND bridge's grab from its start, so its release reaches
+//! the same `dropped` wherever it is, on an X window or not. The bridge keeps no source
+//! Caminito can ask about, so an X drag given up at an Escape still counts at the release.
 
 use std::any::Any;
 use std::os::fd::OwnedFd;
@@ -233,14 +233,14 @@ impl DndGrabHandler for State {
         _seat: Seat<Self>,
         location: Point<f64, Logical>,
     ) {
-        // An X client's drag has no source kept here.
+        // An X client's drag keeps no source here, and so counts as not given up.
         let given_up = self
             .caminito
             .drag_source
             .as_ref()
             .is_some_and(|source| !source.alive());
         if !given_up {
-            self.caminito.drag_released(location);
+            self.caminito.output_pressed(location);
         }
         self.drag_ended();
     }

@@ -339,8 +339,8 @@ pub struct Caminito {
     pub client_cursor: CursorImageStatus,
     /// The icon of the Wayland drag in progress, if it has one (48).
     pub(crate) drag_icon: Option<DragIcon>,
-    /// The source of the Wayland drag in progress, to tell at the drop whether its client
-    /// gave the drag up (CMN-339).
+    /// The source of the Wayland drag in progress, kept only to tell at the drop whether
+    /// its client gave the drag up (CMN-339): the grab holds the source itself.
     pub(crate) drag_source: Option<Arc<dyn IsAlive + Send + Sync>>,
     /// Caminito's own cursors.
     pub cursors: Cursors,

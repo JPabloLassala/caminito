@@ -1369,7 +1369,8 @@ impl Caminito {
     /// A button was pressed at `location` on what's no managed window: a panel or any
     /// other layer surface, caja's desktop, the wallpaper or an output's bare background.
     /// Its output becomes the Active output (ADR 0032), and the focus stays where it is.
-    /// The lock screen's press says nothing.
+    /// The lock screen's press says nothing. A drag's release anywhere counts as one too
+    /// (CMN-339).
     pub(crate) fn output_pressed(&mut self, location: Point<f64, Logical>) {
         if self.lock.is_locked() {
             return;
@@ -1381,12 +1382,6 @@ impl Caminito {
         if let Some(output) = pressed {
             self.policy.press_on_output(SEAT, output_id(output));
         }
-    }
-
-    /// A drag was released at `location`, whatever it's dropped on: its output becomes the
-    /// Active output, as at a press on no window (CMN-339).
-    pub(crate) fn drag_released(&mut self, location: Point<f64, Logical>) {
-        self.output_pressed(location);
     }
 
     /// A binding that switches the workspace is about to run: the output under the pointer
