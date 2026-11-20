@@ -239,6 +239,23 @@ impl<W: PolicyWindow> Policy<W> {
         }
     }
 
+    /// Each output that shows a window's Fullscreen workspace has the window's Home
+    /// workspace active, after a move of the window or `dynamic-workspaces` changed it
+    /// (ADR 0057). The output still shows the Fullscreen workspace, so that's no switch.
+    pub(super) fn follow_fullscreen_homes(&mut self) {
+        for output in &self.outputs {
+            let Some(shown) = self.active_workspaces.of_mut(output.id) else {
+                continue;
+            };
+            let home = (shown.fullscreen)
+                .and_then(|fullscreen| self.windows.get(&fullscreen))
+                .map(|managed| managed.workspace);
+            if let Some(home) = home {
+                shown.active = home;
+            }
+        }
+    }
+
     /// The seats whose Active output `output` is, which a switch of it alone refocuses.
     pub(super) fn seats_on(&self, output: OutputId) -> Vec<SeatId> {
         (self.seats.iter().copied())
