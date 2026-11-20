@@ -13,6 +13,7 @@ mod serials;
 
 pub use focus::{KeyboardFocus, PointerFocus};
 pub use grab::GrabKind;
+pub(crate) use grab::MenuGrab;
 pub(crate) use serials::InputSerials;
 
 use caminito_policy::{

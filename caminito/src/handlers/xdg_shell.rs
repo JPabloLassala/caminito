@@ -35,7 +35,7 @@ use smithay::wayland::xdg_system_bell::XdgSystemBellHandler;
 use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconHandler;
 
 use crate::bell::{BellFor, BellSource};
-use crate::input::{GrabKind, KeyboardFocus};
+use crate::input::{GrabKind, KeyboardFocus, MenuGrab};
 use crate::output::output_id;
 use crate::state::{Caminito, State};
 use crate::window::{StateRequest, WindowKey, owe_configure};
@@ -250,6 +250,7 @@ impl XdgShellHandler for State {
             keyboard.set_focus(self, grab.current_grab(), serial);
             keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
         }
+        self.caminito.menu_grab = Some(MenuGrab::new(&grab));
     }
 }
 

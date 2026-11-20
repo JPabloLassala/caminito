@@ -722,3 +722,65 @@ on_both_kinds! {
         );
     }
 }
+
+/// mate-screenshot's area picker: a surface covering its output on the overlay layer, which
+/// takes the keyboard to hear Escape. gtk-layer-shell names it so when its client doesn't.
+fn area_picker() -> LayerSpec {
+    exclusive(LayerSpec::covering(Layer::Overlay, "gtk-layer-shell"))
+}
+
+/// A window with a menu open on it, which took its grab with the press that opened it and is
+/// held no more, and the window's client.
+fn a_window_with_its_menu_open() -> (Fixture, ClientId, PopupId) {
+    let (mut f, id, window) = with_a_focused_window();
+    let corner = f.geometry(window).loc;
+    f.click(f64::from(corner.x + 10), f64::from(corner.y + 10));
+    f.roundtrip(id);
+    let serial = f.client(id).state.last_press_serial.unwrap();
+    let place = Positioner {
+        size: (300, 200),
+        anchor_rect: (10, 10, 1, 1),
+        anchor: Anchor::BottomRight,
+        gravity: Gravity::BottomRight,
+        constraint_adjustment: ConstraintAdjustment::None,
+    };
+    let menu = f.client(id).create_popup(window.xdg(), place);
+    f.client(id).grab_popup(menu, serial);
+    f.roundtrip(id);
+    f.client(id).map_popup(menu, RED);
+    f.roundtrip(id);
+    keyboard_events(&mut f, id);
+    (f, id, menu)
+}
+
+#[test]
+fn an_area_picker_has_the_input_while_a_menu_stays_open_under_it() {
+    let (mut f, id, menu) = a_window_with_its_menu_open();
+    let screenshot = f.connect(Kind::Xdg);
+    f.client(screenshot).bind_input();
+
+    // The shortcut's picker maps under the pointer, which doesn't move before the drag.
+    let picker = f.map_layer(screenshot, area_picker(), BLUE);
+    f.pointer_button(BTN_LEFT, true);
+    f.pointer_move_by(50., 50.);
+    f.pointer_button(BTN_LEFT, false);
+
+    f.roundtrip(screenshot);
+    let picked = format_input(&std::mem::take(&mut f.client(screenshot).state.input));
+    assert!(
+        picked.contains("keyboard enters layer surface 0")
+            && picked.contains("button 0x110 pressed"),
+        "the picker had: {picked}"
+    );
+    assert_snapshot!(keyboard_events(&mut f, id), @"keyboard leaves popup 0");
+    assert!(!f.client(id).popup(menu).done);
+
+    // Once it's gone, the menu has its grab again: a press away from it dismisses it.
+    f.client(screenshot).unmap_layer_surface(picker);
+    f.roundtrip(screenshot);
+    f.dispatch();
+    assert_snapshot!(keyboard_events(&mut f, id), @"keyboard enters popup 0");
+    assert!(!f.client(id).popup(menu).done);
+    f.click(1900., 1060.);
+    assert!(f.client(id).popup(menu).done);
+}
