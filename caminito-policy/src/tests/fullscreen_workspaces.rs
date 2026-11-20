@@ -375,3 +375,41 @@ fn an_unplugged_outputs_fullscreen_workspace_goes_to_the_primary_output_and_stay
     assert_eq!(policy.fullscreen_workspace_on(OutputId(2)), None);
     assert!(policy.is_showing(id(2)));
 }
+
+#[test]
+fn under_spanning_workspaces_the_other_outputs_follow_a_fullscreen_windows_new_home_workspace() {
+    let mut policy = Policy::new(Config {
+        fullscreen_workspaces: true,
+        ..Config::default()
+    });
+    policy.add_output(output(1, 0, 0, 1920, 1080));
+    policy.add_output(output(2, 1920, 0, 1280, 1024));
+    policy.map_window(
+        TestWindow::new(2, 400, 300).with_requested_position(2100, 100),
+        ms(1),
+    );
+    policy.map_window(
+        TestWindow::new(1, 400, 300).with_requested_position(100, 100),
+        ms(2),
+    );
+    policy.set_fullscreen(id(1), true, None);
+    policy.take_output_switches();
+
+    policy.move_to_workspace(id(1), 2);
+
+    assert_eq!(active(&policy), (2, 2));
+    assert_eq!(policy.fullscreen_workspace_on(OutputId(1)), Some(id(1)));
+    assert!(!policy.is_showing(id(2)));
+    assert_eq!(policy.focus(SEAT), Some(id(1)));
+    assert_eq!(
+        policy.take_output_switches(),
+        [OutputSwitch {
+            output: OutputId(2),
+            from: 0,
+            to: 2,
+            from_fullscreen: None,
+            to_fullscreen: None,
+            cells: (2, 0),
+        }]
+    );
+}

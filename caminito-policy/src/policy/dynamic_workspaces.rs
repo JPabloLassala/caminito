@@ -131,7 +131,11 @@ impl<W: PolicyWindow> Policy<W> {
         // show what they did, so their seats keep their focus (225).
         let spanning = !self.config.workspaces_per_output;
         let refocused: Vec<SeatId> = (self.seats.iter().copied())
-            .filter(|seat| removed && (spanning || leaves(self.active_shown(*seat))))
+            // A seat on a Fullscreen workspace keeps its focus there.
+            .filter(|seat| {
+                let shown = self.active_shown(*seat);
+                removed && ((spanning && shown.fullscreen.is_none()) || leaves(shown))
+            })
             .collect();
         self.active_workspaces = active_workspaces;
         for seat in refocused {
