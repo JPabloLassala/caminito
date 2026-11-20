@@ -27,16 +27,16 @@ use smithay::reexports::wayland_server::backend::{
 };
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::{Display, DisplayHandle, Resource};
+use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Clock, IsAlive, Logical, Monotonic, Point, Serial};
 use smithay::wayland::alpha_modifier::AlphaModifierState;
-use smithay::wayland::commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState};
+use smithay::wayland::commit_timing::CommitTimingManagerState;
 use smithay::wayland::compositor::{
-    CompositorClientState, CompositorHandler, CompositorState, SurfaceData,
+    CompositorClientState, CompositorState, SurfaceData,
 };
 use smithay::wayland::content_type::ContentTypeState;
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
-use smithay::wayland::fifo::{FifoBarrierCachedState, FifoManagerState};
+use smithay::wayland::fifo::FifoManagerState;
 use smithay::wayland::foreign_toplevel_list::{ForeignToplevelHandle, ForeignToplevelListState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
@@ -81,6 +81,7 @@ use caminito_theme::{PaletteCache, PaletteColors, ThemeDirs, Variant};
 
 use crate::appearance::{self, Appearances};
 use crate::backend::{self, Backend};
+use crate::barriers::{self, BarrierRate};
 use crate::bell::Bells;
 use crate::cursor::{CursorSource, Cursors};
 use crate::dbus::Dbus;
@@ -142,7 +143,7 @@ use crate::workspace_slide::WorkspaceSlides;
 use crate::xwayland::{self, RunningXwayland, WaylandSelections};
 
 /// How long a window that isn't redrawn waits for a frame callback anyway.
-const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_secs(1));
+pub(crate) const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_secs(1));
 
 /// The tests' wall clock at Caminito's start: 2026-10-10 at 12:00 UTC (138).
 #[cfg(test)]
@@ -242,6 +243,8 @@ pub struct Caminito {
     pub(crate) idle: Idle,
     /// The loop timer for the earliest deadline of what waits on Caminito's clock (174).
     pub(crate) deadline_timer: DeadlineTimer,
+    /// When the barriers of the windows that aren't showing are next released (CMN-316).
+    pub(crate) throttled_barriers_due: Duration,
     /// Night Light's temperatures and fades (ADR 0023).
     pub(crate) night_light: NightLight,
     /// wlr-gamma-control, offered only by a backend with gamma tables (141).
@@ -828,7 +831,7 @@ impl State {
 
     /// After `output` is drawn: frame callbacks and presentation feedback for the windows
     /// whose main output it is, for its layer surfaces and for its lock surface, and their
-    /// fifo and commit-timing barriers released.
+    /// fifo and commit-timing barriers released: a window's only if it shows (CMN-316).
     fn post_render(&mut self, output: &Output) {
         let now = self.caminito.clock.now();
         let refresh = output
@@ -836,26 +839,14 @@ impl State {
             .map(|mode| Refresh::fixed(Duration::from_secs_f64(1000. / f64::from(mode.refresh))))
             .unwrap_or(Refresh::Unknown);
         let mut feedback = OutputPresentationFeedback::new(output);
-        let mut blocked = HashMap::new();
+        let mut cleared = Vec::new();
 
         let mut release_barriers = |surface: &WlSurface, states: &SurfaceData| {
-            let mut signalled = false;
-            if let Some(timer) = states.data_map.get::<CommitTimerBarrierStateUserData>() {
-                signalled |= timer.lock().unwrap().signal_until(now);
-            }
-            let fifo = states
-                .cached_state
-                .get::<FifoBarrierCachedState>()
-                .current()
-                .barrier
-                .take();
-            if let Some(fifo) = fifo {
-                fifo.signal();
-                signalled = true;
-            }
-            if signalled && let Some(client) = surface.client() {
-                blocked.insert(client.id(), client);
-            }
+            barriers::note_cleared(
+                &mut cleared,
+                surface,
+                barriers::release_barriers(states, now),
+            );
         };
         let main = |_: &WlSurface, _: &SurfaceData| Some(output.clone());
         let no_flags = |_: &WlSurface, _: &SurfaceData| wp_presentation_feedback::Kind::empty();
@@ -868,7 +859,9 @@ impl State {
                 continue;
             }
             let window = mapped.window();
-            window.with_surfaces(&mut release_barriers);
+            if self.caminito.barrier_rate(mapped.id()) == BarrierRate::Frame {
+                window.with_surfaces(&mut release_barriers);
+            }
             if !bar_only.contains(&mapped.id()) {
                 window.send_frame(output, now, FRAME_CALLBACK_THROTTLE, main);
             }
@@ -908,11 +901,7 @@ impl State {
         }
         feedback.presented(now, refresh, 0, wp_presentation_feedback::Kind::empty());
 
-        let dh = self.caminito.display_handle.clone();
-        for client in blocked.into_values() {
-            self.client_compositor_state(&client)
-                .blocker_cleared(self, &dh);
-        }
+        self.blockers_cleared(cleared);
     }
 }
 
@@ -1062,6 +1051,7 @@ impl Caminito {
             idle_inhibit_state: IdleInhibitManagerState::new::<State>(dh),
             idle: Idle::new(settings.idle, clock.now().into()),
             deadline_timer: DeadlineTimer::default(),
+            throttled_barriers_due: Duration::ZERO,
             night_light: NightLight::new(settings.night_light),
             gamma_control_state: GammaControlState::default(),
             #[cfg(test)]

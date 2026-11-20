@@ -2,6 +2,7 @@
 
 mod appearance;
 pub mod backend;
+mod barriers;
 mod bell;
 mod capture;
 mod commands;
