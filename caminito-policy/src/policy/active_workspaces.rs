@@ -174,9 +174,12 @@ impl<W: PolicyWindow> Policy<W> {
         let workspace = shown.active;
         self.close_switcher(switcher::Close::Dropped);
         self.window_menu = None;
-        let towards = match fullscreen {
-            Some(_) => Direction::Right,
-            None => Direction::Left,
+        // A newer one is to the left of an older one.
+        let made = |window: WindowId| self.windows.get(&window)?.fullscreen_workspace;
+        let towards = match (from, fullscreen) {
+            (Some(from), Some(to)) if made(to) > made(from) => Direction::Left,
+            (_, Some(_)) => Direction::Right,
+            (_, None) => Direction::Left,
         };
         self.switches.push(towards);
         self.output_switches.push(OutputSwitch {
@@ -200,19 +203,22 @@ impl<W: PolicyWindow> Policy<W> {
     /// that has one (ADR 0057).
     pub(super) fn fullscreen_workspace_of(&self, id: WindowId) -> Option<WindowId> {
         let root = self.root(id);
-        self.windows[&root].fullscreen_workspace.then_some(root)
+        self.windows[&root].fullscreen_workspace.map(|_| root)
     }
 
-    /// The window whose Fullscreen workspace comes right after `output`'s active workspace,
-    /// its Home workspace, if one does.
-    pub(super) fn fullscreen_workspace_after(&self, output: OutputId) -> Option<WindowId> {
+    /// The windows whose Fullscreen workspaces come after `output`'s active workspace, their
+    /// Home workspace, in order: the newest first.
+    pub(super) fn fullscreen_workspaces_after(&self, output: OutputId) -> Vec<WindowId> {
         let home = self.active_workspaces.of(Some(output)).active;
-        (self.stack.iter().rev().copied()).find(|id| {
-            let managed = &self.windows[id];
-            managed.fullscreen_workspace
-                && managed.workspace == home
-                && self.output_showing(*id) == Some(output)
-        })
+        let mut after: Vec<(u64, WindowId)> = (self.windows.iter())
+            .filter_map(|(id, managed)| {
+                let made = managed.fullscreen_workspace?;
+                let here = managed.workspace == home && self.output_showing(*id) == Some(output);
+                here.then_some((made, *id))
+            })
+            .collect();
+        after.sort_by(|a, b| b.cmp(a));
+        after.into_iter().map(|(_, id)| id).collect()
     }
 
     /// Each output that shows the Fullscreen workspace of a window that has none any more,
@@ -225,7 +231,7 @@ impl<W: PolicyWindow> Policy<W> {
                 let has_one = self
                     .windows
                     .get(&fullscreen)
-                    .is_some_and(|managed| managed.fullscreen_workspace);
+                    .is_some_and(|managed| managed.fullscreen_workspace.is_some());
                 (!has_one).then_some((output.id, fullscreen))
             })
             .collect();

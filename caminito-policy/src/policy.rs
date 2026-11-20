@@ -279,8 +279,9 @@ struct Managed<W> {
     /// The output a client asked to be fullscreen on.
     fullscreen_output: Option<OutputId>,
     /// On a Fullscreen workspace of its own, after its Home workspace, `workspace` (ADR
-    /// 0057), while it's fullscreen.
-    fullscreen_workspace: bool,
+    /// 0057), while it's fullscreen: the how-manyth Policy has made, so the newest of a
+    /// Home workspace's comes first.
+    fullscreen_workspace: Option<u64>,
     minimized: bool,
     /// Kept above the windows of the normal layer (155).
     above: bool,
@@ -703,6 +704,8 @@ pub struct Policy<W: PolicyWindow> {
     /// Each output's switch since `take_output_switches` last took them, for the
     /// compositor's Workspace slide (233).
     output_switches: Vec<OutputSwitch>,
+    /// How many Fullscreen workspaces have been made, which orders them (ADR 0057).
+    fullscreen_workspaces_made: u64,
     /// The workspaces that show their desktop (94), as Marco's `showing_desktop` marks them
     /// (workspace.h:79). Each output's workspaces show theirs for themselves (224).
     showing_desktop: BTreeMap<DesktopOf, ShownDesktop>,
@@ -769,6 +772,7 @@ impl<W: PolicyWindow> Policy<W> {
             active_workspaces: Default::default(),
             switches: Vec::new(),
             output_switches: Vec::new(),
+            fullscreen_workspaces_made: 0,
             showing_desktop: BTreeMap::new(),
             workspace_names: Vec::new(),
             outputs: Vec::new(),
@@ -1086,7 +1090,7 @@ impl<W: PolicyWindow> Policy<W> {
                 shaded: false,
                 fullscreen: false,
                 fullscreen_output: None,
-                fullscreen_workspace: false,
+                fullscreen_workspace: None,
                 minimized: false,
                 above: false,
                 below: false,
@@ -1456,18 +1460,25 @@ impl<W: PolicyWindow> Policy<W> {
     /// Switches `seat`'s Active output to the workspace beside its active one in the grid,
     /// if there is one.
     ///
-    /// The Fullscreen workspace of a window is to the right of its Home workspace, and the
-    /// grid's next to the right of it; left from it goes back to the Home workspace (ADR
-    /// 0057).
+    /// The Fullscreen workspaces of a Home workspace are to the right of it, the newest
+    /// first, and the grid's next to the right of the last; left goes back through them to
+    /// the Home workspace. Up and down from one go as from its Home workspace (ADR 0057).
     fn switch_workspace_towards(&mut self, seat: SeatId, direction: Direction) {
         let shown = self.active_shown(seat);
         if let Some(output) = self.active_output(seat) {
-            let back_home = shown.fullscreen.is_some() && direction == Direction::Left;
-            let after_home = (shown.fullscreen.is_none() && direction == Direction::Right)
-                .then(|| self.fullscreen_workspace_after(output))
-                .flatten();
-            if back_home || after_home.is_some() {
-                self.show_fullscreen_workspace(output, after_home);
+            // The Home workspace, None, and then its Fullscreen workspaces.
+            let after = self.fullscreen_workspaces_after(output);
+            let cells: Vec<Option<WindowId>> = std::iter::once(None)
+                .chain(after.into_iter().map(Some))
+                .collect();
+            let here = cells.iter().position(|cell| *cell == shown.fullscreen);
+            let next = here.and_then(|here| match direction {
+                Direction::Right => cells.get(here + 1).copied(),
+                Direction::Left => here.checked_sub(1).map(|before| cells[before]),
+                Direction::Up | Direction::Down => None,
+            });
+            if let Some(fullscreen) = next {
+                self.show_fullscreen_workspace(output, fullscreen);
                 self.apply();
                 return;
             }
@@ -1786,9 +1797,13 @@ impl<W: PolicyWindow> Policy<W> {
         let gets_workspace = fullscreen
             && self.config.fullscreen_workspaces
             && managed.parent.is_none()
-            && !managed.fullscreen_workspace;
-        managed.fullscreen_workspace =
-            fullscreen && (managed.fullscreen_workspace || gets_workspace);
+            && managed.fullscreen_workspace.is_none();
+        if !fullscreen {
+            managed.fullscreen_workspace = None;
+        } else if gets_workspace {
+            self.fullscreen_workspaces_made += 1;
+            managed.fullscreen_workspace = Some(self.fullscreen_workspaces_made);
+        }
         self.relayout(id);
         // A focused window's output switches to it (ADR 0057). One that leaves it is
         // `apply`'s.
