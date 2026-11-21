@@ -104,6 +104,10 @@ _Avoid_: screensaver, locker (for what's on screen)
 The Lock screen while nobody is using it: each output's wallpaper and clock, and on the output under the pointer any notifications its mode allows.
 _Avoid_: shield, curtain
 
+**Lock wallpaper**:
+The picture the Idle view shows on an output: that output's desktop wallpaper, unless the user has chosen one picture for the Lock screen, which every output then shows zoomed. Esmeril blurs it behind the Unlock dialog.
+_Avoid_: lock background, screensaver picture
+
 **Unlock dialog**:
 The Lock screen's password prompt, shown on the output under the pointer at a key or a click until it times out.
 _Avoid_: lock dialog, password dialog, lock plug
@@ -120,6 +124,18 @@ _Avoid_: display (that's the word the user reads in caminito-displays, and nowhe
 An output whose monitor idle has put to standby (DPMS) after mate-power-manager's `sleep-display` time. It keeps its mode, its place and its output scale, and clients see no change; activity powers it on. It isn't a disabled output.
 _Avoid_: DPMS (the mechanism, on the tty only), asleep
 
+**Blank**:
+The outputs drawn black once the session has gone the Blank delay without activity. The session isn't locked yet, unless the Lock delay is zero, and activity brings the desktop back. It isn't powered off: that comes later, at mate-power-manager's time.
+_Avoid_: screensaver, idle (that's the state, not what's shown), powered off
+
+**Blank delay**:
+How long the session goes without activity before the Blank, set by the user, or Never, when the outputs don't blank at all and so the session doesn't lock by itself.
+_Avoid_: idle delay, idle time, screensaver timeout
+
+**Lock delay**:
+How long the Blank lasts before the session locks, set by the user: zero locks with the Blank, and Never leaves the Blank unlocked. A lock from the menu, a key or a Hot corner doesn't wait for it.
+_Avoid_: lock timeout, grace period
+
 **Primary output**:
 The one output the user chooses as primary. The panel and caja's desktop go there, new windows open there while a session has no Active output yet, and X11 apps see it as the RandR primary. When it is unplugged or disabled, the built-in panel stands in, else the leftmost output, until it returns.
 _Avoid_: main output, default output
@@ -129,7 +145,7 @@ The output a surface is mostly on, which decides the scale the surface is asked 
 _Avoid_: primary output (that's the user's choice; Smithay's name for this is "primary scanout output")
 
 **Active output**:
-The output a seat's workspace bindings act on, the one the Workspace popup opens on, and the one a new window opens on. It is the focused window's Main output. When a workspace switch leaves no window focused it stays the same output, until a window on another output is focused, the user clicks on anything on another output (a window, a panel, caja's desktop, the wallpaper or a workspace of the Overview's bar), or a binding that switches the workspace runs with the pointer on another output, which it then switches. Moving the pointer there alone doesn't change it. While the Overview is open, the output its selection is on is the Active output: its shortcut opens it on the pointer's output, and a binding that switches the workspace takes the selection to the pointer's output.
+The output a seat's workspace bindings act on, the one the Workspace popup opens on, and the one a new window opens on. It is the focused window's Main output. When a workspace switch leaves no window focused it stays the same output, until a window on another output is focused, the user clicks on anything on another output (a window, a panel, caja's desktop, the wallpaper or a workspace of the Overview's bar), a drag ends with its release on another output, whatever it is dropped on (a drag cancelled with Escape doesn't count), or a binding that switches the workspace runs with the pointer on another output, which it then switches. Moving the pointer there alone doesn't change it. While the Overview is open, the output its selection is on is the Active output: its shortcut opens it on the pointer's output, and a binding that switches the workspace takes the selection to the pointer's output.
 _Avoid_: current output, focused output (an output has no focus), primary output (that's the user's choice)
 
 **Layout**:
@@ -249,7 +265,7 @@ How long the pointer rests in a Hot corner before the corner fires, the same for
 _Avoid_: threshold (it could be a distance or a pressure), rest (that's what the pointer does, not how long), reactivation delay (that's the fixed time before a corner fires again)
 
 **caminito-behaviour**:
-Caminito's settings program for how Caminito itself behaves, beyond what MATE's capplets set: the Hot corners, the animations and Esmeril's settings now, and later Per-output workspaces. The user reads it as Workspace Behaviour, Plasma's name for the section that holds these.
+Caminito's settings program for how Caminito itself behaves, beyond what MATE's capplets set or where Caminito has taken over from the capplet: the Hot corners, the animations, Esmeril's settings and Screen Locking now, and later Per-output workspaces. The user reads it as Workspace Behaviour, Plasma's name for the section that holds these.
 _Avoid_: Caminito settings, desktop effects (hot corners aren't an effect), the Windows dialog (that's MATE's, for Marco's keys)
 
 **Workspace slide**:
@@ -403,6 +419,10 @@ _Avoid_: sensors applet (MATE's own mate-sensors-applet), temperature applet, th
 **Panel sensor**:
 One of the temperatures, two at most, that the Thermal applet shows in the panel, chosen by pinning it in the popup. By default they're the CPU's and, when there's a GPU, the GPU's.
 _Avoid_: main sensor, primary temperature, pinned sensor
+
+**Square applet**:
+An icon-only applet of Caminito's whose space in the panel is a square as wide as the panel is thick, with its icon centred at the size the theme draws. Each Bluetooth, Network, Notifications, Power and Sound applet is one unless the user turns it off for that applet; the Power applet is one only while it hides its percentage, and the Thermal applet, which always shows text, never is.
+_Avoid_: square icon (the icon keeps its size), square slot, widget
 
 **Icon Task Manager**:
 Caminito's mate-panel applet for an icon-only task manager: a row of Task items, then the Kept folders and the Trash. It can be in any panel; a panel of its own, floating and with intellihide, makes it look like a dock. It's Plasma's Icons-only Task Manager.
