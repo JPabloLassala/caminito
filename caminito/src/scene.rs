@@ -44,6 +44,7 @@ use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::xwayland::X11Surface;
 
 use crate::esmeril::{self, DrawsEsmeril, Esmeril, SurfacePlace};
+use crate::fast_path::{self, FastPath};
 use crate::open_close_animation::{Closing, Picture};
 use crate::output::{output_geometry, output_id};
 use crate::overview::drag::scaled_into;
@@ -236,6 +237,22 @@ pub(crate) const LAYERS: [SceneLayer; 18] = [
     SceneLayer::Bottom,
     SceneLayer::Background,
 ];
+
+/// `output`'s render elements, front to back, and whether the frame they make can take the
+/// fast path (CMN-312).
+pub(crate) fn output_frame<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    output: &Output,
+) -> (Vec<SceneElement<R>>, FastPath)
+where
+    R: Renderer + ImportAll + ImportMem + DrawsEsmeril,
+    R::TextureId: Send + Clone + 'static,
+{
+    let (elements, layers) = layered_elements(renderer, caminito, output);
+    let fast_path = fast_path::fast_path(caminito, output, &elements, &layers);
+    (elements, fast_path)
+}
 
 /// `output`'s render elements, front to back.
 pub fn output_elements<R>(
@@ -459,13 +476,26 @@ where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Send + Clone + 'static,
 {
+    layered_elements(renderer, caminito, output).1
+}
+
+/// `output`'s render elements, front to back, with the layer of each.
+fn layered_elements<R>(
+    renderer: &mut R,
+    caminito: &Caminito,
+    output: &Output,
+) -> (Vec<SceneElement<R>>, Vec<SceneLayer>)
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Send + Clone + 'static,
+{
     let mut elements = Vec::new();
     let mut layers = Vec::new();
     for layer in shown_layers(caminito) {
         layer_elements(layer, renderer, caminito, output, &mut elements);
         layers.resize(elements.len(), layer);
     }
-    layers
+    (elements, layers)
 }
 
 fn layer_elements<R>(

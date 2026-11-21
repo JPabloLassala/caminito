@@ -91,7 +91,11 @@ expression: without_what_varies(&dump)
         "height": 1080
       },
       "layer_surfaces": [],
-      "lock_surface": false
+      "lock_surface": false,
+      "fast_path": {
+        "eligible": false,
+        "reason": "no-fullscreen-window"
+      }
     },
     {
       "id": 1,
@@ -111,7 +115,11 @@ expression: without_what_varies(&dump)
         "height": 720
       },
       "layer_surfaces": [],
-      "lock_surface": false
+      "lock_surface": false,
+      "fast_path": {
+        "eligible": false,
+        "reason": "no-fullscreen-window"
+      }
     }
   ],
   "primary_output": "headless-1",

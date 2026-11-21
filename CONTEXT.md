@@ -344,6 +344,10 @@ _Avoid_: Caminito integration (the working name, for an extension that would do 
 The order in which Caminito draws an output: the pointer's cursor, a Wayland drag's icon, the lock, then the overlay layer, override-redirect windows, a fullscreen window with its transients while it or one of them was the last window focused on its output, the top layer, the popups of the bottom and background layers' surfaces, the workspace's other windows in policy's stacking order with the tile preview beneath the window being moved, then the bottom and background layers. It's rebuilt every frame, not kept as a tree.
 _Avoid_: scene graph (Caminito has no retained one), space (Smithay's `desktop::Space`, which Caminito doesn't use)
 
+**Fast path**:
+What an output's frame is eligible for when it's one opaque fullscreen window that covers the output, with nothing but the pointer's cursor drawn over it: no popup, Notification bubble, Overview, Workspace slide or other window. It's worked out from the Scene's elements at every frame, so it returns on the frame after what covered the window has gone, and the debug dump reports it per output with the reason it doesn't hold.
+_Avoid_: game mode (any such window is eligible), direct scanout (what the fast path is for, not the test)
+
 **Wallpaper**:
 What an output shows behind caja's desktop and every window. Each output has its own, of one wallpaper kind, unless the user keeps them the same on all outputs.
 _Avoid_: background (that's the layer the wallpaper's surface sits in, and MATE's word for its own setting), desktop background, backdrop

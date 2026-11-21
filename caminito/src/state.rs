@@ -96,6 +96,7 @@ use crate::deadlines::DeadlineTimer;
 use crate::debug::DebugToggles;
 use crate::decoration::FrameContext;
 use crate::decoration::palette::{PaletteSource, PaletteState};
+use crate::fast_path::FastPath;
 use crate::handlers::{CaptureSession, DragIcon, sees_privileged_globals};
 use crate::helpers::{HelperCommand, RestartPolicy, StderrTarget};
 use crate::hot_corner::HotCornerState;
@@ -377,6 +378,9 @@ pub struct Caminito {
     pub(crate) global_menu_offered: bool,
     /// Outputs to render in the next refresh pass.
     pub(crate) redraws: HashSet<OutputId>,
+    /// Whether each output's last frame could take the fast path (CMN-312), from its first
+    /// frame on.
+    pub(crate) fast_paths: HashMap<OutputId, FastPath>,
 
     pub policy: Policy<Mapped>,
     /// Windows asked to show that have no content yet.
@@ -1114,6 +1118,7 @@ impl Caminito {
             menu_claims: Claims::default(),
             global_menu_offered: false,
             redraws: HashSet::new(),
+            fast_paths: HashMap::new(),
             policy: Policy::new(settings.policy.clone()),
             pending: PendingWindows::default(),
             next_window_id: 0,

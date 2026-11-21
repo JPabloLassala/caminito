@@ -10,7 +10,7 @@ use smithay::output::{Mode, Output};
 use smithay::utils::{Physical, Size, Transform};
 
 use crate::backend::Backend;
-use crate::output::{DEFAULT_REFRESH, virtual_output};
+use crate::output::{DEFAULT_REFRESH, output_id, virtual_output};
 use crate::scene::{self, CLEAR_COLOR};
 use crate::state::{Caminito, State};
 
@@ -88,7 +88,8 @@ impl Winit {
                     return None;
                 }
             };
-            let elements = scene::output_elements(renderer, caminito, output);
+            let (elements, fast_path) = scene::output_frame(renderer, caminito, output);
+            caminito.fast_paths.insert(output_id(output), fast_path);
             match self.damage_tracker.render_output(
                 renderer,
                 &mut framebuffer,
