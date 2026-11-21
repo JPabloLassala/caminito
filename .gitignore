@@ -8,3 +8,4 @@
 .*.pending-snap
 # What tools/debian-build leaves: the .debs it built (194).
 /packaging/debian/out/
+.dsh/
